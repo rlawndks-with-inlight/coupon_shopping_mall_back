@@ -14,6 +14,7 @@ import userCtrl from './user.controller.js';
 import postCategoryCtrl from './post_category.controller.js';
 import postCtrl from './post.controller.js';
 import productCategoryGroupCtrl from './product_category_group.controller.js';
+import utilCtrl from './util.controller.js';
 
 export {
     customerCtrl,
@@ -30,4 +31,5 @@ export {
     postCategoryCtrl,
     postCtrl,
     productCategoryGroupCtrl,
+    utilCtrl,
 };

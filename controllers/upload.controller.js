@@ -7,7 +7,6 @@ import 'dotenv/config';
 const uploadCtrl = {
     single: async (req, res, next) => {
         try {
-
             let files = settingFiles(req.files);
             return response(req, res, 100, "success", {
                 url: files?.post_img

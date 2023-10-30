@@ -1,8 +1,8 @@
 'use strict';
 import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQuery, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles } from "../utils.js/util.js";
+import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
+import { categoryDepth, checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 
 const table_name = 'products';
@@ -13,18 +13,33 @@ const productCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0);
             const decode_dns = checkDns(req.cookies.dns);
-            const { category_id } = req.query;
-
+            const { } = req.query;
+            console.log(req.query)
             let columns = [
                 `${table_name}.*`,
-                `product_categories.name AS category_name`
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` LEFT JOIN product_categories ON ${table_name}.category_id=product_categories.id `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
-            if (category_id) sql += ` AND ${table_name}.category_id=${category_id} `;
-            let data = await getSelectQuery(sql, columns, req.query);
+
+            let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id} AND is_delete=0 ORDER BY sort_idx DESC `;
+            let category_groups = await pool.query(category_group_sql);
+            category_groups = category_groups?.result;
+            let category_sql_list = [];
+            for (var i = 0; i < categoryDepth; i++) {
+                if(req.query[`category_id${i}`]){
+                    category_sql_list.push({
+                        table: `category_id${i}`,
+                        sql: `SELECT * FROM product_categories WHERE product_category_group_id=${category_groups[i]?.id} AND is_delete=0 ORDER BY sort_idx DESC`
+                    })
+                }
+            }
+            let category_obj = await getMultipleQueryByWhen(category_sql_list);
+            for(var i = 0;i<Object.keys(category_obj).length;i++){
+                let key = Object.keys(category_obj)[i];
+
+            }
             
+            let data = await getSelectQueryList(sql, columns, req.query);
+
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)

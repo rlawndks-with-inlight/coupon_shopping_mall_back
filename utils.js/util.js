@@ -183,6 +183,8 @@ export const imageFieldList = [
         name: field
     }
 })
+export const categoryDepth = 3;
+
 export const makeObjByList = (key, list = []) => {
     let obj = {};
     for (var i = 0; i < list.length; i++) {
@@ -200,16 +202,14 @@ export const makeChildren = (data_, parent_obj) => {
         for (var i = 0; i < data.children.length; i++) {
             data.children[i] = makeChildren(data.children[i], parent_obj);
         }
-    } else {
-        delete data.children
-    }
+    } 
     return data;
 }
 
 export const makeTree = (list_ = [], item = {}) => {// 트리만들기
     let list = list_;
     let parent_obj = makeObjByList('parent_id', list);
-    let result = [...parent_obj[item?.parent_id ?? '-1']];
+    let result = [...(parent_obj[item?.parent_id ?? '-1'] ?? [])];
     for (var i = 0; i < result.length; i++) {
         result[i] = makeChildren(result[i], parent_obj);
     }
@@ -218,23 +218,23 @@ export const makeTree = (list_ = [], item = {}) => {// 트리만들기
 export function findChildren(tree, id) {
     let stack = [...tree];
     while (stack.length) {
-      let node = stack.pop();
-      if (node.id === id) {
-        return node.children || [];
-      }
-      if (node.children) {
-        stack.push(...node.children);
-      }
+        let node = stack.pop();
+        if (node.id === id) {
+            return node.children || [];
+        }
+        if (node.children) {
+            stack.push(...node.children);
+        }
     }
     return [];
 }
 export function findChildIds(data, id) {
     const children = data.filter(item => item.parent_id == id).map(item => item.id);
     children.forEach(child => {
-      children.push(...findChildIds(data, child));
+        children.push(...findChildIds(data, child));
     });
     return children;
-  }
+}
 export const isParentCheckByUsers = (children, parent, user_list, user_obj_) => {//두 유저가 상하위 관계인지
     let user_obj = user_obj_ || makeObjByList('id', user_list);
     let is_parent = false;

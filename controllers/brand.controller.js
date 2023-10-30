@@ -2,7 +2,7 @@
 import axios from "axios";
 import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQuery, insertQuery, updateQuery } from "../utils.js/query-util.js";
+import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 
@@ -22,7 +22,7 @@ const brandCtrl = {
             if (decode_dns?.is_main_dns != 1) {
                 sql += `WHERE id=${decode_dns?.id}`;
             }
-            let data = await getSelectQuery(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -61,12 +61,12 @@ const brandCtrl = {
             }
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, addr_detail, resident_num, phone_num, fax_num, note, theme_css = {}, setting_obj = {}, shop_obj=[],
+                name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css = {}, setting_obj = {}, shop_obj = [],
                 user_name, user_pw
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, addr_detail, resident_num, phone_num, fax_num, note, theme_css, setting_obj, shop_obj
+                name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css, setting_obj, shop_obj
             };
             obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj['setting_obj'] = JSON.stringify(obj.setting_obj);
@@ -103,7 +103,7 @@ const brandCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, addr_detail, resident_num, phone_num, fax_num, note, theme_css = {}, setting_obj = {}, shop_obj=[],
+                name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css = {}, setting_obj = {}, shop_obj = [],
             } = req.body;
             const { id } = req.params;
             if ((decode_user?.level < 50 && decode_user?.brand_id != id) || decode_user?.level < 40) {
@@ -112,7 +112,7 @@ const brandCtrl = {
             let files = settingFiles(req.files);
 
             let obj = {
-                name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, addr_detail, resident_num, phone_num, fax_num, note, theme_css, setting_obj, shop_obj
+                name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css, setting_obj, shop_obj
             };
             obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj['setting_obj'] = JSON.stringify(obj.setting_obj);

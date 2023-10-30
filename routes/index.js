@@ -13,6 +13,7 @@ import contractRoutes from './contract.route.js';
 import userRoutes from './user.route.js';
 import postRoutes from './post.route.js'
 import postCategorRoutes from './post_category.route.js';
+import utilRoutes from './util.route.js';
 
 const router = express.Router(); // eslint-disable-line new-cap
 
@@ -36,6 +37,7 @@ router.use('/auth', authRoutes);
 //util
 router.use('/domain', domainRoutes);
 router.use('/upload', uploadRoutes);
+router.use('/util', utilRoutes);
 
 //user
 router.use('/shop', shopRoutes);

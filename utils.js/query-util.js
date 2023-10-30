@@ -1,9 +1,10 @@
 import db, { pool } from '../config/db.js';
 import 'dotenv/config';
 import when from 'when';
+import { searchColumns } from './search-columns.js';
 
 export const insertQuery = async (table, obj) => {
-    try{
+    try {
         let keys = Object.keys(obj);
         if (keys.length == 0) {
             return false;
@@ -15,22 +16,22 @@ export const insertQuery = async (table, obj) => {
             return obj[key]
         });
         await db.beginTransaction();
-        
-        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? `,[table]);
+
+        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? `, [table]);
         find_column = find_column?.result;
-        find_column = find_column.map((column)=>{
+        find_column = find_column.map((column) => {
             return column?.COLUMN_NAME
         })
         let result = await pool.query(`INSERT INTO ${table} (${keys.join()}) VALUES (${question_list.join()})`, values);
-        if(find_column.includes('sort_idx')){
-            let setting_sort_idx = await pool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`,[
+        if (find_column.includes('sort_idx')) {
+            let setting_sort_idx = await pool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [
                 result?.result?.insertId,
                 result?.result?.insertId,
             ])
         }
         await db.commit();
         return result;
-    }catch(err){
+    } catch (err) {
         await db.rollback();
         return false;
     }
@@ -87,8 +88,8 @@ export const getTableNameBySelectQuery = (sql) => {// select query 가지고 불
     }
     return table;
 }
-export const getSelectQuery = async (sql_, columns, query, add_sql_list = []) => {
-    const { page = 1, page_size = 100000, is_asc = false, order = 'id' } = query;
+export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []) => {
+    let { page = 1, page_size = 100000, is_asc = false, order, search = "" } = query;
     let sql = sql_;
     let table = getTableNameBySelectQuery(sql);
 
@@ -97,6 +98,20 @@ export const getSelectQuery = async (sql_, columns, query, add_sql_list = []) =>
         add_sql_list[i].sql = settingSelectQueryWhere(add_sql_list[i].sql, query, table);
     }
     let content_sql = sql.replaceAll(process.env.SELECT_COLUMN_SECRET, columns.join());
+    if (order) {
+        order = order
+    } else {
+        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? `, [table]);
+        find_column = find_column?.result;
+        find_column = find_column.map((column) => {
+            return column?.COLUMN_NAME
+        })
+        if (find_column.includes('sort_idx')) {
+            order = 'sort_idx';
+        } else {
+            order = 'id';
+        }
+    }
     content_sql += ` ORDER BY ${table}.${order} ${is_asc ? 'ASC' : 'DESC'} `;
     content_sql += ` LIMIT ${(page - 1) * page_size}, ${page_size} `;
     let total_sql = sql.replaceAll(process.env.SELECT_COLUMN_SECRET, 'COUNT(*) as total');
@@ -138,8 +153,15 @@ const settingSelectQueryWhere = (sql_, query, table) => {
     if (e_dt) {
         sql += ` AND ${table}.created_at <= '${e_dt} 23:59:59' `;
     }
-    if (search) {
-
+    if (search && searchColumns[table]?.length > 0) {
+        sql += ` AND (`
+        for (var i = 0; i < searchColumns[table].length; i++) {
+            if (i > 0) {
+                sql += ' OR '
+            }
+            sql += searchColumns[table][i] + " LIKE '%" + search + "%' ";
+        }
+        sql += `)`
     }
     return sql;
 }
@@ -150,7 +172,7 @@ const settingSelectQueryObj = (obj_) => {
     }
     return obj;
 }
-export const getMultipleQueryByWhen = async (sql_list) => {
+export const getMultipleQueryByWhen = async (sql_list, is_list) => {
     let result_list = [];
     for (var i = 0; i < sql_list.length; i++) {
         result_list.push({
@@ -166,5 +188,6 @@ export const getMultipleQueryByWhen = async (sql_list) => {
     for (var i = 0; i < result.length; i++) {
         data[result[i].table] = result[i]?.content?.result
     }
+    
     return data;
 }

@@ -1,8 +1,8 @@
 'use strict';
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQuery, insertQuery, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 
 const table_name = 'product_categories';
@@ -13,13 +13,19 @@ const productCategoryCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0);
             const decode_dns = checkDns(req.cookies.dns);
-            const { } = req.query;
+            const { product_category_group_id, page, page_size } = req.query;
             let columns = [
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
-            let data = await getSelectQuery(sql, columns, req.query);
+            sql += ` AND product_category_group_id=${product_category_group_id} `;
+
+            let data = await getSelectQueryList(sql, columns, req.query);
+            data.content = await makeTree(data?.content??[]);
+            data.total = data?.content.length ?? 0;
+            data.content = (data?.content ?? []).slice((page - 1) * (page_size), page * page_size);
+
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -53,11 +59,21 @@ const productCategoryCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                brand_id, name, note
+                parent_id=-1,
+                category_type=0,
+                category_name,
+                category_description,
+                product_category_group_id,
+                brand_id,
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, name, note
+                parent_id,
+                category_type,
+                category_name,
+                category_description,
+                product_category_group_id,
+                brand_id,
             };
             obj = { ...obj, ...files };
 
@@ -77,11 +93,20 @@ const productCategoryCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                brand_id, name, note, id
+                parent_id=-1,
+                category_type=0,
+                category_name,
+                category_description,
+                product_category_group_id,
+                id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, name, note
+                parent_id,
+                category_type,
+                category_name,
+                category_description,
+                product_category_group_id,
             };
             obj = { ...obj, ...files };
             let result = await updateQuery(`${table_name}`, obj, id);
@@ -99,9 +124,7 @@ const productCategoryCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            if (!isItemBrandIdSameDnsId(decode_dns, { brand_id: id })) {
-                return lowLevelException(req, res);
-            }
+          
             let result = await deleteQuery(`${table_name}`, {
                 id
             })

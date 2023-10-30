@@ -2,7 +2,7 @@
 import axios from "axios";
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQuery, insertQuery, updateQuery } from "../utils.js/query-util.js";
+import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 
@@ -32,7 +32,7 @@ const logCtrl = {
                 sql += ` AND ${table_name}.response_result ${response_result_type == 1 ? '>=' : '<'} 0 `
             }
 
-            let data = await getSelectQuery(sql, columns, req.query, sql_list);
+            let data = await getSelectQueryList(sql, columns, req.query, sql_list);
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)

@@ -1,7 +1,7 @@
 'use strict';
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQuery, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
+import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 
@@ -28,7 +28,7 @@ const userCtrl = {
             if (decode_dns?.is_main_dns != 1) {
                 sql += `AND id=${decode_dns?.id}`;
             }
-            let data = await getSelectQuery(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
