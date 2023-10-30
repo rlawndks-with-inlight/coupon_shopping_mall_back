@@ -2,7 +2,7 @@
 import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { categoryDepth, checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles } from "../utils.js/util.js";
+import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 
 const table_name = 'products';
@@ -14,11 +14,10 @@ const productCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
-            console.log(req.query)
             let columns = [
                 `${table_name}.*`,
             ]
-            let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+            let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} WHERE 1=1 `;
 
             let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id} AND is_delete=0 ORDER BY sort_idx DESC `;
             let category_groups = await pool.query(category_group_sql);
@@ -26,6 +25,7 @@ const productCtrl = {
             let category_sql_list = [];
             for (var i = 0; i < categoryDepth; i++) {
                 if(req.query[`category_id${i}`]){
+                    
                     category_sql_list.push({
                         table: `category_id${i}`,
                         sql: `SELECT * FROM product_categories WHERE product_category_group_id=${category_groups[i]?.id} AND is_delete=0 ORDER BY sort_idx DESC`
@@ -35,9 +35,10 @@ const productCtrl = {
             let category_obj = await getMultipleQueryByWhen(category_sql_list);
             for(var i = 0;i<Object.keys(category_obj).length;i++){
                 let key = Object.keys(category_obj)[i];
-
+                let category_ids = findChildIds(category_obj[key], req.query[key]);
+                category_ids.unshift(parseInt(req.query[key]));
+                sql += ` AND ${key} IN (${category_ids.join()}) `;
             }
-            
             let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
@@ -56,45 +57,7 @@ const productCtrl = {
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
             data = data?.result[0];
-            data['product_sub_imgs'] = JSON.parse(data?.product_sub_imgs ?? "[]");
-            let budget_product = await pool.query(`SELECT * FROM budget_products WHERE user_id=${decode_user?.id ?? 0} AND product_id=${id}`);
-            budget_product = budget_product?.result[0];
-            data['budget'] = budget_product;
-            let product_groups = await pool.query(`SELECT * FROM product_options WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC `);
-            product_groups = product_groups?.result;
-            let groups = [];
-            let option_obj = makeObjByList('parent_id', product_groups);
-            for (var i = 0; i < product_groups.length; i++) {
-                if (product_groups[i].parent_id < 0) {
-                    option_obj[product_groups[i]?.id] = (option_obj[product_groups[i]?.id] ?? []).map(option => {
-                        return {
-                            ...option,
-                            option_name: option?.name,
-                            option_price: option?.price,
-                        }
-                    })
-                    groups.push({
-                        ...product_groups[i],
-                        group_name: product_groups[i]?.name,
-                        group_price: product_groups[i]?.price,
-                        options: option_obj[product_groups[i]?.id]
-                    })
-                }
-            }
-            data['groups'] = groups;
-            let product_characters = await pool.query(`SELECT * FROM product_characters WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC `);
-            product_characters = product_characters?.result;
-            for (var i = 0; i < product_characters.length; i++) {
-                product_characters[i] = {
-                    ...product_characters[i],
-                    character_key: product_characters[i]?.key_name,
-                    character_value: product_characters[i]?.value,
-                }
-            }
-            data['characters'] = product_characters;
-            if (!isItemBrandIdSameDnsId(decode_dns, data)) {
-                return lowLevelException(req, res);
-            }
+            
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)

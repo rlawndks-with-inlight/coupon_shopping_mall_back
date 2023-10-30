@@ -235,6 +235,16 @@ export function findChildIds(data, id) {
     });
     return children;
 }
+export function findParentIds(data, id) {
+    const item = data.find(item => item.id === id);
+    if (item) {
+        const parent = item.parent_id;
+        if (parent !== undefined) {
+            return [parent, ...findParentIds(data, parent)];
+        }
+    }
+    return [];
+}
 export const isParentCheckByUsers = (children, parent, user_list, user_obj_) => {//두 유저가 상하위 관계인지
     let user_obj = user_obj_ || makeObjByList('id', user_list);
     let is_parent = false;
