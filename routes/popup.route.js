@@ -1,19 +1,17 @@
 import express from 'express';
 import validate from 'express-validation';
-import { productCtrl } from '../controllers/index.js';
+import { popupCtrl } from '../controllers/index.js';
 
 const router = express.Router(); // eslint-disable-line new-cap
 
 router
     .route('/')
-    .get(productCtrl.list)
-    .post(productCtrl.create);
-
+    .get(popupCtrl.list)
+    .post(popupCtrl.create);
 router
     .route('/:id')
-    .get(productCtrl.get)
-    .put(productCtrl.update)
-    .delete(productCtrl.remove)
-
+    .get(popupCtrl.get)
+    .put(popupCtrl.update)
+    .delete(popupCtrl.remove)
 
 export default router;

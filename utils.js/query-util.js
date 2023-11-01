@@ -17,7 +17,7 @@ export const insertQuery = async (table, obj) => {
         });
         await db.beginTransaction();
 
-        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? `, [table]);
+        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
         find_column = find_column?.result;
         find_column = find_column.map((column) => {
             return column?.COLUMN_NAME
@@ -50,13 +50,20 @@ export const insertQueryMultiRow = async (table, list) => {// 개발예정
     let result = await pool.query(`INSERT INTO ${table} (${keys.join()}) VALUES (${question_list.join()})`, values);
     return result;
 }
-export const deleteQuery = async (table, where_obj) => {
+export const deleteQuery = async (table, where_obj, delete_true) => {
     let keys = Object.keys(where_obj);
     let where_list = [];
     for (var i = 0; i < keys.length; i++) {
         where_list.push(` ${keys[i]}=${where_obj[keys[i]]} `);
     }
-    let result = await pool.query(`UPDATE ${table} SET is_delete=1 WHERE ${where_list.join('AND')} `);
+    if(where_list.length == 0){
+        return true;
+    }
+    let sql = `UPDATE ${table} SET is_delete=1 WHERE ${where_list.join('AND')} `;
+    if(delete_true){
+        sql = `DELETE FROM ${table} WHERE ${where_list.join('AND')}`
+    }
+    let result = await pool.query(sql);
     return result;
 }
 export const updateQuery = async (table, obj, id) => {
@@ -92,8 +99,13 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     let { page = 1, page_size = 100000, is_asc = false, order, search = "" } = query;
     let sql = sql_;
     let table = getTableNameBySelectQuery(sql);
+    let find_columns = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
+    find_columns = find_columns?.result;
+    find_columns = find_columns.map((column) => {
+        return column?.COLUMN_NAME
+    })
 
-    sql = settingSelectQueryWhere(sql, query, table);
+    sql = settingSelectQueryWhere(sql, query, table, find_columns);
     for (var i = 0; i < add_sql_list.length; i++) {
         add_sql_list[i].sql = settingSelectQueryWhere(add_sql_list[i].sql, query, table);
     }
@@ -101,12 +113,8 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     if (order) {
         order = order
     } else {
-        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? `, [table]);
-        find_column = find_column?.result;
-        find_column = find_column.map((column) => {
-            return column?.COLUMN_NAME
-        })
-        if (find_column.includes('sort_idx')) {
+        
+        if (find_columns.includes('sort_idx')) {
             order = 'sort_idx';
         } else {
             order = 'id';
@@ -143,10 +151,14 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     }
     return settingSelectQueryObj(obj);
 }
-const settingSelectQueryWhere = (sql_, query, table) => {
+const settingSelectQueryWhere = (sql_, query, table, find_columns=[]) => {
     let sql = sql_;
     const { s_dt, e_dt, search } = query;
-    sql += ` ${sql.includes('WHERE') ? 'AND' : 'WHERE'} ${table}.is_delete=0 `;
+    if(find_columns.includes('is_delete')){
+        sql += ` ${sql.includes('WHERE') ? 'AND' : 'WHERE'} ${table}.is_delete=0 `;
+    } else {
+        sql += ` ${sql.includes('WHERE') ? '' : 'WHERE 1=1'}  `;
+    }
     if (s_dt) {
         sql += ` AND ${table}.created_at >= '${s_dt} 00:00:00' `;
     }
@@ -177,7 +189,7 @@ export const getMultipleQueryByWhen = async (sql_list, is_list) => {
     for (var i = 0; i < sql_list.length; i++) {
         result_list.push({
             table: sql_list[i].table,
-            content: (await pool.query(sql_list[i].sql))
+            content: (await pool.query(sql_list[i].sql, sql_list[i]?.data ?? []))
         });
     }
     for (var i = 0; i < result_list.length; i++) {
@@ -188,6 +200,5 @@ export const getMultipleQueryByWhen = async (sql_list, is_list) => {
     for (var i = 0; i < result.length; i++) {
         data[result[i].table] = result[i]?.content?.result
     }
-    
     return data;
 }

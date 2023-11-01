@@ -15,6 +15,9 @@ import postCategoryCtrl from './post_category.controller.js';
 import postCtrl from './post.controller.js';
 import productCategoryGroupCtrl from './product_category_group.controller.js';
 import utilCtrl from './util.controller.js';
+import productReviewCtrl from './product_review.controller.js';
+import popupCtrl from './popup.controller.js';
+import paymentModuleCtrl from './payment_module.controller.js';
 
 export {
     customerCtrl,
@@ -32,4 +35,7 @@ export {
     postCtrl,
     productCategoryGroupCtrl,
     utilCtrl,
+    productReviewCtrl,
+    popupCtrl,
+    paymentModuleCtrl,
 };

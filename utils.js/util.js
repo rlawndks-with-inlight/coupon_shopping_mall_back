@@ -115,7 +115,7 @@ const logRequestResponse = async (req, res, decode_user, decode_dns) => {//로�
         [request, JSON.stringify(res?.data), res?.result, res?.message, requestIp, user_id, brand_id]
     )
 }
-export const response = async (req, res, code, message, data) => { //응답 포맷
+export const response = async (req, res, code, message, data, is_return) => { //응답 포맷
     var resDict = {
         'result': code,
         'message': message,
@@ -124,12 +124,15 @@ export const response = async (req, res, code, message, data) => { //응답 포�
     const decode_user = checkLevel(req.cookies.token, 0)
     const decode_dns = checkLevel(req.cookies.dns, 0)
     //let save_log = await logRequestResponse(req, resDict, decode_user, decode_dns);
-    if (code == -200) {
-        res.status(500).send(resDict)
-    } else {
-        res.send(resDict);
+    if(is_return){
+        return data;
+    }else{
+        if (code == -200) {
+            res.status(500).send(resDict)
+        } else {
+            res.send(resDict);
+        }
     }
-
 }
 export const lowLevelException = (req, res) => {
     return response(req, res, -150, "권한이 없습니다.", false);
@@ -215,19 +218,7 @@ export const makeTree = (list_ = [], item = {}) => {// 트리만들기
     }
     return result;
 }
-export function findChildren(tree, id) {
-    let stack = [...tree];
-    while (stack.length) {
-        let node = stack.pop();
-        if (node.id === id) {
-            return node.children || [];
-        }
-        if (node.children) {
-            stack.push(...node.children);
-        }
-    }
-    return [];
-}
+
 export function findChildIds(data, id) {
     const children = data.filter(item => item.parent_id == id).map(item => item.id);
     children.forEach(child => {
@@ -235,16 +226,7 @@ export function findChildIds(data, id) {
     });
     return children;
 }
-export function findParentIds(data, id) {
-    const item = data.find(item => item.id === id);
-    if (item) {
-        const parent = item.parent_id;
-        if (parent !== undefined) {
-            return [parent, ...findParentIds(data, parent)];
-        }
-    }
-    return [];
-}
+
 export const isParentCheckByUsers = (children, parent, user_list, user_obj_) => {//두 유저가 상하위 관계인지
     let user_obj = user_obj_ || makeObjByList('id', user_list);
     let is_parent = false;
