@@ -2,7 +2,7 @@
 import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 
 
@@ -36,6 +36,25 @@ const utilCtrl = {
         } catch (err) {
             console.log(err)
             await db.rollback();
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    changeStatus: async (req, res, next) => {
+        try {
+            let is_manager = await checkIsManagerUrl(req);
+            const decode_user = checkLevel(req.cookies.token, 10);
+            const decode_dns = checkDns(req.cookies.dns);
+            const { table, column_name } = req.params;
+            const { value, id } = req.body;
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
+            let result = await pool.query(`UPDATE ${table} SET ${column_name}=? WHERE id=?`, [value, id]);
+            return response(req, res, 100, "success", {});
+        } catch (err) {
+            console.log(err)
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

@@ -180,6 +180,11 @@ export const imageFieldList = [
     'category_file',
     'upload_file',
     'post_file',
+    'background_file',
+    'contract_file',
+    'passbook_file',
+    'bsin_lic_file',
+    'id_file',
 
 ].map(field => {
     return {

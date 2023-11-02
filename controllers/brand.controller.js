@@ -56,13 +56,13 @@ const brandCtrl = {
         try {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 50);
-            if (!decode_user || !is_manager) {
+            if (!decode_user) {
                 return lowLevelException(req, res);
             }
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css = {}, setting_obj = {}, shop_obj = [],
-                user_name, user_pw
+                user_name, user_pw, seller_name
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -78,8 +78,9 @@ const brandCtrl = {
             let user_obj = {
                 user_name: user_name,
                 user_pw: user_pw,
-                name: name,
-                nickname: name,
+                name: seller_name,
+                nickname: seller_name,
+                seller_name: seller_name,
                 level: 40,
                 brand_id: result?.result?.insertId
             }

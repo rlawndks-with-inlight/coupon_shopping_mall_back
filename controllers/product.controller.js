@@ -113,11 +113,13 @@ const productCtrl = {
             }
             let {
                 brand_id,
-                product_img, product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, sub_images = [], groups = [], characters = [],
+                product_img, 
+                product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, sub_images = [], groups = [], characters = [],
             } = req.body;
 
             let obj = {
-                product_img, product_name, product_comment, product_description, product_price, product_sale_price,
+                product_img, 
+                product_name, product_comment, product_description, product_price, product_sale_price, user_id,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -154,8 +156,8 @@ const productCtrl = {
                     }
                     if (result_options.length > 0) {
                         sql_list.push({
-                            table:`group_${group_id}`,
-                            sql:`INSERT INTO product_options (group_id, option_name, option_price, option_description) VALUES ?`,
+                            table: `group_${group_id}`,
+                            sql: `INSERT INTO product_options (group_id, option_name, option_price, option_description) VALUES ?`,
                             data: [result_options]
                         })
                     }
@@ -174,8 +176,8 @@ const productCtrl = {
             }
             if (insert_character_list.length > 0) {
                 sql_list.push({
-                    table:`character`,
-                    sql:`INSERT INTO product_characters (product_id, character_name, character_value) VALUES ?`,
+                    table: `character`,
+                    sql: `INSERT INTO product_characters (product_id, character_name, character_value) VALUES ?`,
                     data: [insert_character_list]
                 })
             }
@@ -191,8 +193,8 @@ const productCtrl = {
 
             if (insert_sub_image_list.length > 0) {
                 sql_list.push({
-                    table:`sub_images`,
-                    sql:`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`,
+                    table: `sub_images`,
+                    sql: `INSERT INTO product_images (product_id, product_sub_img) VALUES ?`,
                     data: [insert_sub_image_list]
                 })
             }
@@ -218,11 +220,13 @@ const productCtrl = {
             }
             let {
                 id,
-                product_img, product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, sub_images = [], groups = [], characters = [],
+                product_img, 
+                product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, sub_images = [], groups = [], characters = [],
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                product_img, product_name, product_comment, product_description, product_price, product_sale_price,
+                product_img, 
+                product_name, product_comment, product_description, product_price, product_sale_price,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -324,11 +328,11 @@ const productCtrl = {
             let delete_sub_image_list = [];
             for (var i = 0; i < sub_images.length; i++) {
                 if (sub_images[i]?.is_delete == 1) {
-                    delete_sub_image_list.push(sub_images[i]?.id??0);
+                    delete_sub_image_list.push(sub_images[i]?.id ?? 0);
                 } else {
-                    if(sub_images[i]?.id){
+                    if (sub_images[i]?.id) {
 
-                    }else{
+                    } else {
                         insert_sub_image_list.push([
                             product_id,
                             sub_images[i]?.product_sub_img,

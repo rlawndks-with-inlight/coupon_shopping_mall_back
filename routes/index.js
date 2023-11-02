@@ -17,6 +17,8 @@ import utilRoutes from './util.route.js';
 import productReviewRoutes from './product_review.route.js';
 import popupRoutes from './popup.route.js';
 import paymentModuleRoutes from './payment_module.route.js';
+import transactionRoutes from './transaction.route.js';
+import sellerRoutes from './seller.route.js';
 
 const router = express.Router(); // eslint-disable-line new-cap
 
@@ -36,6 +38,7 @@ router.use('/post-categories', postCategorRoutes);
 router.use('/posts', postRoutes);
 router.use('/popups', popupRoutes);
 router.use('/payment-modules', paymentModuleRoutes);
+router.use('/transactions', transactionRoutes);
 
 //auth
 router.use('/auth', authRoutes);
@@ -44,6 +47,7 @@ router.use('/auth', authRoutes);
 router.use('/domain', domainRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/util', utilRoutes);
+router.use('/sellers', sellerRoutes);
 
 //user
 router.use('/shop', shopRoutes);
