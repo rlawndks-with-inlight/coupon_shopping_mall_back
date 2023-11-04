@@ -11,14 +11,14 @@ const userCtrl = {
     list: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { is_user, is_seller } = req.query;
             let columns = [
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE 1=1 `
+            sql += ` WHERE brand_id=${decode_dns?.id} `
             if(is_user){
                 sql += ` AND level=0 `
             }
@@ -41,7 +41,7 @@ const userCtrl = {
     organizationalChart: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
             let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id} AND ${table_name}.is_delete=0 `);
@@ -57,7 +57,7 @@ const userCtrl = {
     get: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
@@ -77,7 +77,7 @@ const userCtrl = {
     remove: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let result = await deleteQuery(`${table_name}`, {
@@ -94,10 +94,11 @@ const userCtrl = {
     create: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let {
-                brand_id, user_name, user_pw, name, nickname, level=0, phone_num, profile_img, note,
+                profile_img,
+                brand_id, user_name, user_pw, name, nickname, level=0, phone_num, note,
             } = req.body;
             let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
             if (is_exist_user?.result.length > 0) {
@@ -109,7 +110,8 @@ const userCtrl = {
             let user_salt = pw_data.salt;
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, profile_img, note
+                profile_img,
+                brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, note
             };
             console.log(obj)
             obj = { ...obj, ...files };
@@ -126,14 +128,16 @@ const userCtrl = {
     update: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                brand_id, user_name, name, nickname, level, phone_num, profile_img, note, id
+                profile_img,
+                brand_id, user_name, name, nickname, level, phone_num, note, id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, user_name, name, nickname, level, phone_num, profile_img, note
+                profile_img,
+                brand_id, user_name, name, nickname, level, phone_num, note
             };
             obj = { ...obj, ...files };
             let result = await updateQuery(`${table_name}`, obj, id);
@@ -148,7 +152,7 @@ const userCtrl = {
     changePassword: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params
             let { user_pw } = req.body;
@@ -176,7 +180,7 @@ const userCtrl = {
     changeStatus: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params
             let { status } = req.body;
@@ -198,5 +202,6 @@ const userCtrl = {
 
         }
     },
+
 }
 export default userCtrl;

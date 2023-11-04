@@ -11,7 +11,7 @@ const productCategoryCtrl = {
     list: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { product_category_group_id, page, page_size } = req.query;
             let columns = [
@@ -37,7 +37,7 @@ const productCategoryCtrl = {
     get: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
@@ -56,9 +56,10 @@ const productCategoryCtrl = {
     create: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
+                category_img,
                 parent_id=-1,
                 category_type=0,
                 category_name,
@@ -68,6 +69,7 @@ const productCategoryCtrl = {
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
+                category_img,
                 parent_id,
                 category_type,
                 category_name,
@@ -90,9 +92,10 @@ const productCategoryCtrl = {
     update: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
+                category_img,
                 parent_id=-1,
                 category_type=0,
                 category_name,
@@ -102,6 +105,7 @@ const productCategoryCtrl = {
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
+                category_img,
                 parent_id,
                 category_type,
                 category_name,
@@ -121,7 +125,7 @@ const productCategoryCtrl = {
     remove: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
           

@@ -16,5 +16,12 @@ router
 router
     .route('/product')
     .get(shopCtrl.items)
-    
+router
+    .route('/post/:id')
+    .get(shopCtrl.post.get)
+router
+    .route('/post')
+    .get(shopCtrl.post.list)
+    .post(shopCtrl.post.create)
+
 export default router;

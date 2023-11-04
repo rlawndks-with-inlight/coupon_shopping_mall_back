@@ -11,14 +11,16 @@ const productReviewCtrl = {
     list: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { product_id } = req.query;
-            console.log(req.query)
             let columns = [
                 `${table_name}.*`,
+                `users.nickname`,
+                `users.user_name`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+            sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
             sql += ` AND ${table_name}.product_id=${product_id} `;
 
@@ -35,7 +37,7 @@ const productReviewCtrl = {
     get: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
@@ -54,13 +56,15 @@ const productReviewCtrl = {
     create: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
+                brand_id, title, scope, content, profile_img, product_id, user_id
             } = req.body;
+            console.log(req.body)
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, name, note, price, category_id
+                brand_id, title, scope, content, profile_img, product_id, user_id
             };
 
             obj = { ...obj, ...files };
@@ -78,13 +82,15 @@ const productReviewCtrl = {
     update: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                id
+                id,
+                title, scope, content, profile_img
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
+                title, scope, content, profile_img
             };
             obj = { ...obj, ...files };
 
@@ -101,7 +107,7 @@ const productReviewCtrl = {
     remove: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let result = await deleteQuery(`${table_name}`, {

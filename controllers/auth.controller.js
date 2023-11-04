@@ -8,12 +8,12 @@ import 'dotenv/config';
 const authCtrl = {
     signIn: async (req, res, next) => {
         try {
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let { user_name, user_pw, is_manager } = req.body;
             let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id} OR level >=50 ) LIMIT 1`, user_name);
             user = user?.result[0];
-            console.log(is_manager)
+
             if (!user) {
                 return response(req, res, -100, "가입되지 않은 회원입니다.", {})
             }
@@ -62,14 +62,14 @@ const authCtrl = {
     signUp: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let {
                 user_name,
                 user_pw,
                 name,
                 nickname,
-                parent_id,
+                parent_id = -1,
                 level = 0,
                 phone_num,
                 profile_img,
@@ -110,7 +110,7 @@ const authCtrl = {
     signOut: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             res.clearCookie('token');
             return response(req, res, 100, "success", {})
@@ -124,10 +124,23 @@ const authCtrl = {
     checkSign: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, is_manager ? 1 : 0);
+            const decode_user = checkLevel(req.cookies.token, is_manager ? 1 : 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            return response(req, res, 100, "success", decode_user)
+        } catch (err) {
+            console.log(err)
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    sendPhoneVerifyCode: async (req, res, next) => {
+        try {
+            let is_manager = await checkIsManagerUrl(req);
+            const decode_user = checkLevel(req.cookies.token, is_manager ? 1 : 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            return response(req, res, 100, "success", decode_user)
+            return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
             return response(req, res, -200, "서버 에러 발생", false)

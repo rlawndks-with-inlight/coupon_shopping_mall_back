@@ -11,7 +11,7 @@ const paymentModuleCtrl = {
     list: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
 
@@ -34,7 +34,7 @@ const paymentModuleCtrl = {
     get: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
@@ -53,7 +53,7 @@ const paymentModuleCtrl = {
     create: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 pay_key, mid, tid, trx_type=0, is_old_auth=0, brand_id
@@ -78,7 +78,7 @@ const paymentModuleCtrl = {
     update: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 pay_key, mid, tid, trx_type=0, is_old_auth=0, brand_id,
@@ -103,7 +103,7 @@ const paymentModuleCtrl = {
     remove: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let result = await deleteQuery(`${table_name}`, {

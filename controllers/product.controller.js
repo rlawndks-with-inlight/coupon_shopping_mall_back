@@ -1,4 +1,5 @@
 'use strict';
+import axios from "axios";
 import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
@@ -11,20 +12,32 @@ const productCtrl = {
     list: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { } = req.query;
+            const { seller_id } = req.query;
             let columns = [
                 `${table_name}.*`,
+                `sellers.user_name`,
+                `sellers.seller_name`,
             ]
-            let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} WHERE 1=1 `;
+            let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+            sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
+            let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
+            if (seller_id > 0) {
+                let connect_data = await pool.query(`SELECT * FROM sellers_and_products WHERE seller_id=${seller_id}`);
+                connect_data = connect_data?.result.map(item => {
+                    return item?.product_id
+                })
+                connect_data.unshift(0);
+                where_sql += ` AND (${table_name}.id IN (${connect_data.join()})) `;
+            }
             let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id} AND is_delete=0 ORDER BY sort_idx DESC `;
             let category_groups = await pool.query(category_group_sql);
             category_groups = category_groups?.result;
+
             let category_sql_list = [];
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.query[`category_id${i}`]) {
-
                     category_sql_list.push({
                         table: `category_id${i}`,
                         sql: `SELECT * FROM product_categories WHERE product_category_group_id=${category_groups[i]?.id} AND is_delete=0 ORDER BY sort_idx DESC`
@@ -32,12 +45,16 @@ const productCtrl = {
                 }
             }
             let category_obj = await getMultipleQueryByWhen(category_sql_list);
-            for (var i = 0; i < Object.keys(category_obj).length; i++) {
-                let key = Object.keys(category_obj)[i];
-                let category_ids = findChildIds(category_obj[key], req.query[key]);
-                category_ids.unshift(parseInt(req.query[key]));
-                sql += ` AND ${key} IN (${category_ids.join()}) `;
+
+            if (Object.keys(category_obj).length > 0) {
+                for (var i = 0; i < Object.keys(category_obj).length; i++) {
+                    let key = Object.keys(category_obj)[i];
+                    let category_ids = findChildIds(category_obj[key], req.query[key]);
+                    category_ids.unshift(parseInt(req.query[key]));
+                    where_sql += ` AND ${key} IN (${category_ids.join()}) `;
+                }
             }
+            sql += where_sql;
             let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
@@ -51,13 +68,14 @@ const productCtrl = {
     get: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            const { brand_id } = req.query;
             let sql_list = [
                 {
                     table: 'product',
-                    sql: `SELECT * FROM ${table_name} WHERE id=${id} AND is_delete=0`
+                    sql: `SELECT * FROM ${table_name} WHERE id=${id} AND is_delete=0 AND brand_id=${brand_id} `
                 },
                 {
                     table: 'groups',
@@ -66,6 +84,10 @@ const productCtrl = {
                 {
                     table: 'sub_images',
                     sql: `SELECT * FROM product_images WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC`
+                },
+                {
+                    table: 'scope',
+                    sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=${id} `
                 }
             ];
             let when_data = await getMultipleQueryByWhen(sql_list);
@@ -74,10 +96,12 @@ const productCtrl = {
             for (var i = 0; i < when_data?.groups.length; i++) {
                 option_group_ids.push(when_data?.groups[i]?.id);
             }
-            let sql_list2 = [{
-                table: 'characters',
-                sql: `SELECT * FROM product_characters WHERE product_id=${id}`
-            }]
+            let sql_list2 = [
+                {
+                    table: 'characters',
+                    sql: `SELECT * FROM product_characters WHERE product_id=${id}`
+                }
+            ]
             if (option_group_ids.length > 0) {
                 sql_list2.push({
                     table: 'options',
@@ -94,6 +118,7 @@ const productCtrl = {
                 groups,
                 sub_images: when_data?.sub_images,
                 characters: when_data2?.characters,
+                product_average_scope: when_data?.scope[0]?.product_average_scope,
             }
             return response(req, res, 100, "success", data)
         } catch (err) {
@@ -106,20 +131,20 @@ const productCtrl = {
     create: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            if (decode_user?.level < 40) {
+            if (decode_user?.level < 10) {
                 return lowLevelException(req, res);
             }
             let {
                 brand_id,
-                product_img, 
+                product_img,
                 product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, sub_images = [], groups = [], characters = [],
             } = req.body;
 
             let obj = {
-                product_img, 
-                product_name, product_comment, product_description, product_price, product_sale_price, user_id,
+                product_img,
+                brand_id, product_name, product_comment, product_description, product_price, product_sale_price, user_id,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -129,7 +154,17 @@ const productCtrl = {
 
             await db.beginTransaction();
             let result = await insertQuery(`${table_name}`, obj);
-            let product_id = result?.result?.insertId;
+
+
+
+            const product_id = result?.result?.insertId;
+
+            let user = await pool.query(`SELECT level FROM users WHERE id=?`, [user_id]);
+            user = user?.result[0];
+            if (user?.level == 10) {
+                let insert_and_table = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES (?, ?)`, [user_id, product_id]);
+            }
+
             let sql_list = [];
             for (var i = 0; i < groups.length; i++) {
                 let group = groups[i];
@@ -213,19 +248,19 @@ const productCtrl = {
     update: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             if (decode_user?.level < 40) {
                 return lowLevelException(req, res);
             }
             let {
                 id,
-                product_img, 
+                product_img,
                 product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, sub_images = [], groups = [], characters = [],
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                product_img, 
+                product_img,
                 product_name, product_comment, product_description, product_price, product_sale_price,
             };
             for (var i = 0; i < categoryDepth; i++) {
@@ -360,12 +395,17 @@ const productCtrl = {
     remove: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let result = await deleteQuery(`${table_name}`, {
-                id
-            })
+            if (decode_user?.level >= 40) {
+                let result = await deleteQuery(`${table_name}`, {
+                    id
+                })
+            } else {
+                let result = await pool.query(`DELETE FROM sellers_and_products WHERE seller_id=${decode_user?.id} AND product_id=${id}`);
+            }
+
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)

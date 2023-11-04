@@ -12,7 +12,7 @@ const postCategoryCtrl = {
     list: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { page, page_size } = req.query;
 
@@ -22,7 +22,7 @@ const postCategoryCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, { ...req.query, page_size: 10000 });
 
             data.content = await makeTree(data?.content);
             data.total = data?.content.length ?? 0;
@@ -38,7 +38,7 @@ const postCategoryCtrl = {
     get: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE brand_id=${decode_dns?.id}`);
@@ -61,7 +61,7 @@ const postCategoryCtrl = {
     create: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 post_category_title, parent_id = -1, is_able_user_add = 0, post_category_type = 0, post_category_read_type = 0
@@ -86,7 +86,7 @@ const postCategoryCtrl = {
     update: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 post_category_title, parent_id = -1, is_able_user_add = 0, post_category_type = 0, post_category_read_type = 0, id
@@ -112,7 +112,7 @@ const postCategoryCtrl = {
     remove: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let result = await deleteQuery(`${table_name}`, {

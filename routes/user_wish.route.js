@@ -1,18 +1,17 @@
 import express from 'express';
 import validate from 'express-validation';
-import { customerCtrl } from '../controllers/index.js';
+import { userWishCtrl } from '../controllers/index.js';
 
 const router = express.Router(); // eslint-disable-line new-cap
 
 router
     .route('/')
-    .get(customerCtrl.list)
-    .post(customerCtrl.create)
+    .get(userWishCtrl.list)
+    .post(userWishCtrl.create);
 router
     .route('/:id')
-    .get(customerCtrl.get)
-    .put(customerCtrl.update)
-    .delete(customerCtrl.remove)
-
+    .get(userWishCtrl.get)
+    .put(userWishCtrl.update)
+    .delete(userWishCtrl.remove)
 
 export default router;

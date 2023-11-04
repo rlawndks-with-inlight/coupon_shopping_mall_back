@@ -12,7 +12,7 @@ const brandCtrl = {
     list: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
             let columns = [
@@ -35,7 +35,7 @@ const brandCtrl = {
     get: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
@@ -61,11 +61,19 @@ const brandCtrl = {
             }
             const decode_dns = checkDns(req.cookies.dns);
             const {
+                logo_img,
+                dark_logo_img,
+                favicon_img,
+                og_img,
                 name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css = {}, setting_obj = {}, shop_obj = [],
                 user_name, user_pw, seller_name
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
+                logo_img,
+                dark_logo_img,
+                favicon_img,
+                og_img,
                 name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css, setting_obj, shop_obj
             };
             obj['theme_css'] = JSON.stringify(obj.theme_css);
@@ -89,7 +97,6 @@ const brandCtrl = {
             let user_salt = pw_data.salt;
             user_obj['user_salt'] = user_salt;
             let user_sign_up = await insertQuery('users', user_obj);
-
             await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
@@ -101,9 +108,13 @@ const brandCtrl = {
     update: async (req, res, next) => { // 40레벨일시 자기 브랜드 수정, 50레벨일시 모든 브랜드 수정가능
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
+                logo_img,
+                dark_logo_img,
+                favicon_img,
+                og_img,
                 name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css = {}, setting_obj = {}, shop_obj = [],
             } = req.body;
             const { id } = req.params;
@@ -113,6 +124,10 @@ const brandCtrl = {
             let files = settingFiles(req.files);
 
             let obj = {
+                logo_img,
+                dark_logo_img,
+                favicon_img,
+                og_img,
                 name, dns, og_description, company_name, business_num, pvcy_rep_name, ceo_name, addr, resident_num, phone_num, fax_num, note, theme_css, setting_obj, shop_obj
             };
             obj['theme_css'] = JSON.stringify(obj.theme_css);
@@ -132,7 +147,7 @@ const brandCtrl = {
     remove: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, 0);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let result = await deleteQuery(`${table_name}`, {
@@ -150,7 +165,7 @@ const brandCtrl = {
         get: async (req, res, next) => {
             try {
                 let is_manager = await checkIsManagerUrl(req);
-                const decode_user = checkLevel(req.cookies.token, 0);
+                const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
                 console.log(id)
@@ -167,7 +182,7 @@ const brandCtrl = {
         update: async (req, res, next) => {
             try {
                 let is_manager = await checkIsManagerUrl(req);
-                const decode_user = checkLevel(req.cookies.token, 0);
+                const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
                 console.log(id)

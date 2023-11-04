@@ -32,7 +32,7 @@ export const makeUserToken = (obj) => {
         });
     return token
 }
-export const checkLevel = (token, level) => { //유저 정보 뿌려주기
+export const checkLevel = (token, level, res) => { //유저 정보 뿌려주기
     try {
         if (token == undefined)
             return false
@@ -42,6 +42,7 @@ export const checkLevel = (token, level) => { //유저 정보 뿌려주기
             //console.log(decoded)
             if (err) {
                 console.log("token이 변조되었습니다." + err);
+                res?.clearCookie('token');
                 return false
             }
             else return decoded;
@@ -115,17 +116,17 @@ const logRequestResponse = async (req, res, decode_user, decode_dns) => {//로�
         [request, JSON.stringify(res?.data), res?.result, res?.message, requestIp, user_id, brand_id]
     )
 }
-export const response = async (req, res, code, message, data, is_return) => { //응답 포맷
+export const response = async (req, res, code, message, data) => { //응답 포맷
     var resDict = {
         'result': code,
         'message': message,
         'data': data,
     }
-    const decode_user = checkLevel(req.cookies.token, 0)
+    const decode_user = checkLevel(req.cookies.token, 0, res)
     const decode_dns = checkLevel(req.cookies.dns, 0)
     //let save_log = await logRequestResponse(req, resDict, decode_user, decode_dns);
-    if(is_return){
-        return data;
+    if(req?.IS_RETURN){
+        return resDict;
     }else{
         if (code == -200) {
             res.status(500).send(resDict)
@@ -231,7 +232,14 @@ export function findChildIds(data, id) {
     });
     return children;
 }
-
+export function findParent(data, item) {
+    if(!(item.parent_id > 0)){
+        return item;
+    } else {
+        let result = data.filter(itm=>itm.id == item.parent_id);
+        return findParent(data, result[0]);
+    }
+}
 export const isParentCheckByUsers = (children, parent, user_list, user_obj_) => {//두 유저가 상하위 관계인지
     let user_obj = user_obj_ || makeObjByList('id', user_list);
     let is_parent = false;
