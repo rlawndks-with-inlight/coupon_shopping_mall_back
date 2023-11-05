@@ -13,7 +13,7 @@ const transactionCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { trx_status } = req.query;
+            const { trx_status, cancel_status } = req.query;
             let columns = [
                 `${table_name}.*`,
             ]
@@ -28,6 +28,13 @@ const transactionCtrl = {
             }
             if (trx_status) {
                 sql += ` AND trx_status=${trx_status} `;
+            }
+            if (cancel_status) {
+                if(cancel_status == 1){
+                    sql += ` AND trx_status=1 `;
+                }else if(cancel_status == 5){
+                    sql += ` AND is_cancel=1 `;
+                }
             }
             let data = await getSelectQueryList(sql, columns, req.query);
             let trx_ids = data?.content.map(trx => {
