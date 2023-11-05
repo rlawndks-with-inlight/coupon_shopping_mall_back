@@ -109,41 +109,59 @@ const payCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            let
-                {
-                    mid,
-                    tid,
-                    trx_id,
-                    amount,
-                    ord_num,
-                    appr_num,
-                    item_name,
-                    buyer_name,
-                    buyer_phone,
-                    acquirer,
-                    issuer,
-                    card_num,
-                    installment,
-                    trx_dttm,
-                    is_cancel,
-                    temp
-                } = req.body;
-            const id = temp;
-            console.log(req.body);
-            let files = settingFiles(req.files);
-            let obj = {
+            let {
+                mid,
+                tid,
                 trx_id,
+                amount,
+                ord_num,
                 appr_num,
+                item_name,
+                buyer_name,
+                buyer_phone,
                 acquirer,
                 issuer,
                 card_num,
-                trx_dt: trx_dttm.split(' ')[0],
-                trx_tm: trx_dttm.split(' ')[1],
-                trx_status: 5,
-            };
-            obj = { ...obj, ...files };
+                installment,
+                trx_dttm,
+                is_cancel = 0,
+                temp,
+            } = req.body;
+            const id = temp;
+            console.log(req.body);
 
-            let result = await updateQuery(`${table_name}`, obj, id);
+            let obj = {};
+            if (is_cancel) {
+                let pay_data = await pool.query(`SELECT * FROM ${table_name} WHERE trx_id=? AND is_cancel=0`, [trx_id]);;
+                pay_data = pay_data?.result[0];
+
+                obj = {
+                    ...pay_data,
+                    cxl_dt: trx_dttm.split(' ')[0],
+                    cxl_tm: trx_dttm.split(' ')[1],
+                    is_cancel: 1,
+                    amount: amount * (-1),
+                };
+                delete obj.is_delete
+                delete obj.created_at
+                delete obj.updated_at
+                delete obj.id
+                let result = await insertQuery(`${table_name}`, obj, id);
+            } else {
+                obj = {
+                    trx_id,
+                    appr_num,
+                    acquirer,
+                    issuer,
+                    card_num,
+                    trx_dt: trx_dttm.split(' ')[0],
+                    trx_tm: trx_dttm.split(' ')[1],
+                    trx_status: 5,
+
+                };
+                let result = await updateQuery(`${table_name}`, obj, id);
+
+            }
 
             return response(req, res, 100, "success", {})
         } catch (err) {
@@ -168,23 +186,23 @@ const payCtrl = {
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                
+
             };
-            let payvery_cancel = await axios.post(`${process.env.NOTI_URL}/api/v2/pay/cancel`,{
+            let payvery_cancel = await axios.post(`${process.env.NOTI_URL}/api/v2/pay/cancel`, {
                 trx_id,
                 pay_key,
                 amount,
                 mid,
                 tid,
             })
-            payvery_cancel = payvery_cancel?.data??{};
-            if(payvery_cancel?.result_cd=='0000'){
-                
+            payvery_cancel = payvery_cancel?.data ?? {};
+            if (payvery_cancel?.result_cd == '0000') {
+
                 return response(req, res, 100, "success", {})
-            }else{
+            } else {
                 return response(req, res, -200, payvery_cancel?.result_msg, false)
             }
-           
+
         } catch (err) {
             console.log(err)
             return response(req, res, -200, "서버 에러 발생", false)
