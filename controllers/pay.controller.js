@@ -28,7 +28,7 @@ const payCtrl = {
        
     },
     auth:{
-        ready:async (req, res, next) => { //수기결제
+        ready:async (req, res, next) => { //인증결제
             try {
                 let is_manager = await checkIsManagerUrl(req);
                 const decode_user = checkLevel(req.cookies.token, 0, res);
@@ -47,6 +47,9 @@ const payCtrl = {
                     products=[],
                     buyer_name,
                     buyer_phone,
+                    mid,
+                    tid,
+                    trx_method=2
                 } = req.body;
                 let files = settingFiles(req.files);
                 let obj = {
@@ -62,6 +65,9 @@ const payCtrl = {
                     detail_addr,
                     buyer_name,
                     buyer_phone,
+                    mid,
+                    tid,
+                    trx_method,
                 };
                 
                 obj = { ...obj, ...files };
@@ -150,6 +156,7 @@ const payCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
+                id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
