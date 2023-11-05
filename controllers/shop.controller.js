@@ -2,7 +2,7 @@
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
-import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response } from "../utils.js/util.js";
+import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
 import 'dotenv/config';
 import productCtrl from "./product.controller.js";
 import postCtrl from "./post.controller.js";
@@ -79,6 +79,13 @@ const shopCtrl = {
             seller_sql += ` AND level=10 `;
             seller_sql += ` ORDER BY id DESC`;
 
+            let payment_module_columns = [
+                `payment_modules.*`,
+            ]
+            let payment_module_sql = `SELECT ${payment_module_columns.join()} FROM payment_modules `;
+            payment_module_sql += ` WHERE payment_modules.brand_id=${decode_dns?.id} `;
+            payment_module_sql += ` ORDER BY id DESC`;
+
             //when
             let sql_list = [
                 { table: 'products', sql: product_sql },
@@ -86,6 +93,7 @@ const shopCtrl = {
                 { table: 'post_categories', sql: post_category_sql },
                 { table: 'product_category_groups', sql: product_category_group_sql },
                 { table: 'sellers', sql: seller_sql },
+                { table: 'payment_modules', sql: payment_module_sql },
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
@@ -95,6 +103,13 @@ const shopCtrl = {
                 return {
                     ...item,
                     sns_obj: JSON.parse(item?.sns_obj ?? '{}')
+                }
+            })
+            //결제모듈처리
+            data['payment_modules'] = data?.payment_modules.map((item) => {
+                return {
+                    ...item,
+                    ...getPayType(item?.trx_type)
                 }
             })
             //상품카테고리처리

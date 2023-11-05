@@ -192,6 +192,25 @@ export const imageFieldList = [
         name: field
     }
 })
+export const getPayType = (num) =>{
+    if(num==1){
+        return {
+            title: '카드결제',
+            description: 'Mastercard, Visa 등을 지원합니다.',
+            type:'card',
+        }
+    }else if(num==2){
+        return {
+            title:'인증결제',
+            description:'구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
+            type: 'certification',
+        }
+    }
+    return {
+        title:'',
+        description:'',
+    }
+}
 export const categoryDepth = 3;
 
 export const makeObjByList = (key, list = []) => {

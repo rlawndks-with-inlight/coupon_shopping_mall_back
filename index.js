@@ -52,9 +52,9 @@ if (process.env.NODE_ENV == 'development') {
   });
 } else {
   const options = { // letsencrypt로 받은 인증서 경로를 입력해 줍니다.
-    ca: fs.readFileSync("/etc/letsencrypt/live/purplevery8.cafe24.com/fullchain.pem"),
-    key: fs.readFileSync("/etc/letsencrypt/live/purplevery8.cafe24.com/privkey.pem"),
-    cert: fs.readFileSync("/etc/letsencrypt/live/purplevery8.cafe24.com/cert.pem")
+    ca: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/fullchain.pem"),
+    key: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/privkey.pem"),
+    cert: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/cert.pem")
   };
   server = https.createServer(options, app).listen(HTTPS_PORT, function () {
     console.log("**-------------------------------------**");
