@@ -37,7 +37,8 @@ const transactionCtrl = {
                 let order_data = await pool.query(`SELECT * FROM transaction_orders WHERE trans_id IN (${trx_ids.join()}) ORDER BY id DESC`);
                 order_data = order_data?.result;
                 for (var i = 0; i < order_data.length; i++) {
-                    order_data[i].groups = JSON.parse(order_data[i]?.groups ?? "[]");
+                    order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
+                    delete order_data[i].order_groups
                 }
                 for (var i = 0; i < data?.content.length; i++) {
                     data.content[i].orders = order_data.filter((order) => order?.trans_id == data?.content[i]?.id);

@@ -50,7 +50,17 @@ const authCtrl = {
             let check_last_login_time = await updateQuery('users', {
                 last_login_time: returnMoment()
             }, user.id)
-
+            let wish_columns = [
+                `user_wishs.*`,
+            ]
+            let wish_sql = `SELECT ${wish_columns.join()} FROM user_wishs `;
+            wish_sql += ` WHERE user_wishs.user_id=${user?.id??0} `;
+            let wish_data = await pool.query(wish_sql);
+            wish_data = wish_data?.result;
+            user = {
+                ...user,
+                wish_data
+            }
             return response(req, res, 100, "success", user)
         } catch (err) {
             console.log(err)

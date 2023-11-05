@@ -8,6 +8,10 @@ router
     .route('/')
     .get(userWishCtrl.list)
     .post(userWishCtrl.create);
+
+router
+    .route('/items')
+    .get(userWishCtrl.items)
 router
     .route('/:id')
     .get(userWishCtrl.get)

@@ -1,5 +1,5 @@
 'use strict';
-import { pool } from "../config/db.js";
+import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
@@ -62,14 +62,28 @@ const paymentModuleCtrl = {
             let obj = {
                 brand_id, pay_key, mid, tid, trx_type, is_old_auth
             };
-
+            let columns = [
+                `${table_name}.*`,
+            ]
+            let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
             obj = { ...obj, ...files };
-
+            await db.beginTransaction();
+            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id}`);
+            is_exist_trx_type = is_exist_trx_type?.result;
+            console.log(is_exist_trx_type)
+            if(is_exist_trx_type.length > 0){
+                await db.rollback();
+                return response(req, res, -100, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)
+            }
             let result = await insertQuery(`${table_name}`, obj);
+           
 
+            await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -89,12 +103,20 @@ const paymentModuleCtrl = {
                 pay_key, mid, tid, trx_type, is_old_auth
             };
             obj = { ...obj, ...files };
-
+            await db.beginTransaction();
+            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id} AND id!=${id}`);
+            is_exist_trx_type = is_exist_trx_type?.result;
+            if(is_exist_trx_type.length > 0){
+                await db.rollback();
+                return response(req, res, -200, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)
+            }
             let result = await updateQuery(`${table_name}`, obj, id);
-
+            
+            await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

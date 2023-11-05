@@ -19,9 +19,9 @@ const userAddressCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (user_id) {
-                sql += `AND user_id=${user_id}`
+                sql += `AND user_id=${user_id ?? 0}`
             } else {
                 if (decode_user.level < 10) {
                     lowLevelException(req, res);

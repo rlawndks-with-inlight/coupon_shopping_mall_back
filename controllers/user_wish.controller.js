@@ -2,7 +2,7 @@
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 
 const table_name = 'user_wishs';
@@ -19,11 +19,38 @@ const userWishCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
+            sql += ` WHERE ${table_name}.user_id=${decode_user?.id??0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
+        } catch (err) {
+            console.log(err)
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    items: async (req, res, next) => {
+        try {
+            let is_manager = await checkIsManagerUrl(req);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            const { } = req.query;
+           
+            let sql = `SELECT * FROM ${table_name} `;
+            sql += ` WHERE ${table_name}.user_id=${decode_user?.id??0} AND brand_id=${decode_dns?.id??0} ORDER BY id DESC `;
+
+            let data = await pool.query(sql);
+            data = data?.result;
+            data = data.map(item=>{
+                return item?.product_id
+            })
+            data.unshift(0);
+            let items = await pool.query(`SELECT * FROM products WHERE id IN (${data.join()}) `);
+            items = items?.result;
+
+            return response(req, res, 100, "success", items);
         } catch (err) {
             console.log(err)
             return response(req, res, -200, "서버 에러 발생", false)
@@ -56,10 +83,21 @@ const userWishCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
+                product_id
             } = req.body;
             let files = settingFiles(req.files);
+            if(!decode_user){
+                return lowLevelException(req, res);
+            }
+            let exist_wish = await pool.query(`SELECT * FROM ${table_name} WHERE product_id=? AND user_id=?`,[product_id, decode_user?.id]);
+            exist_wish = exist_wish?.result;
+            if(exist_wish.length > 0){
+                return response(req, res, -100, "이미 찜한 상품입니다.", false)
+            }
             let obj = {
-                brand_id, name, note, price, category_id
+                product_id,
+                user_id:decode_user?.id,
+                brand_id: decode_dns?.id
             };
 
             obj = { ...obj, ...files };
@@ -105,7 +143,7 @@ const userWishCtrl = {
             const { id } = req.params;
             let result = await deleteQuery(`${table_name}`, {
                 id
-            })
+            }, true)
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)

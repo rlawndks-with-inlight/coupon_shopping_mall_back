@@ -139,12 +139,12 @@ const productCtrl = {
             let {
                 brand_id,
                 product_img,
-                product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, sub_images = [], groups = [], characters = [],
+                product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, sub_images = [], groups = [], characters = [],
             } = req.body;
 
             let obj = {
                 product_img,
-                brand_id, product_name, product_comment, product_description, product_price, product_sale_price, user_id,
+                brand_id, product_name, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -256,12 +256,12 @@ const productCtrl = {
             let {
                 id,
                 product_img,
-                product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, sub_images = [], groups = [], characters = [],
+                product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, sub_images = [], groups = [], characters = [],
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 product_img,
-                product_name, product_comment, product_description, product_price, product_sale_price,
+                product_name, product_comment, product_description, product_price, product_sale_price, delivery_fee,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {

@@ -6,10 +6,13 @@ const router = express.Router(); // eslint-disable-line new-cap
 
 router
     .route('/hand')
-    .post(payCtrl.hand);
+    .post(payCtrl.hand.ready);
 router
     .route('/auth')
-    .post(payCtrl.auth);
+    .post(payCtrl.auth.ready);
+router
+    .route('/result')
+    .post(payCtrl.result);
 router
     .route('/cancel')
     .post(payCtrl.cancel);

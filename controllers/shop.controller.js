@@ -86,6 +86,14 @@ const shopCtrl = {
             payment_module_sql += ` WHERE payment_modules.brand_id=${decode_dns?.id} `;
             payment_module_sql += ` ORDER BY id DESC`;
 
+            let user_wish_columns = [
+                `user_wishs.*`,
+
+            ]
+            let user_wish_sql = `SELECT ${user_wish_columns.join()} FROM user_wishs `;
+            user_wish_sql += ` WHERE user_wishs.brand_id=${decode_dns?.id??0} AND user_wishs.user_id=${decode_user?.id??0} `;
+            user_wish_sql += ` ORDER BY id DESC`;
+
             //when
             let sql_list = [
                 { table: 'products', sql: product_sql },
@@ -94,6 +102,7 @@ const shopCtrl = {
                 { table: 'product_category_groups', sql: product_category_group_sql },
                 { table: 'sellers', sql: seller_sql },
                 { table: 'payment_modules', sql: payment_module_sql },
+                { table: 'user_wishs', sql: user_wish_sql },
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);

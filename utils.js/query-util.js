@@ -1,4 +1,4 @@
-import db, { pool } from '../config/db.js';
+import { pool } from '../config/db.js';
 import 'dotenv/config';
 import when from 'when';
 import { searchColumns } from './search-columns.js';
@@ -15,8 +15,6 @@ export const insertQuery = async (table, obj) => {
         let values = keys.map(key => {
             return obj[key]
         });
-        await db.beginTransaction();
-
         let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
         find_column = find_column?.result;
         find_column = find_column.map((column) => {
@@ -29,10 +27,8 @@ export const insertQuery = async (table, obj) => {
                 result?.result?.insertId,
             ])
         }
-        await db.commit();
         return result;
     } catch (err) {
-        await db.rollback();
         return false;
     }
 }
