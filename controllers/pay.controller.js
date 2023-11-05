@@ -126,6 +126,7 @@ const payCtrl = {
                 card_num,
                 trx_dt:trx_dttm.split(' ')[0],
                 trx_tm:trx_dttm.split(' ')[1],
+                trx_status: 5,
             };
             obj = { ...obj, ...files };
 
