@@ -141,7 +141,7 @@ export const lowLevelException = (req, res) => {
 export const isItemBrandIdSameDnsId = (decode_dns, item) => {
     return decode_dns?.id == item?.brand_id
 }
-export const settingFiles = (obj) => {
+export const settingFiles = (obj={}) => {
     let keys = Object.keys(obj);
     let result = {};
     for (var i = 0; i < keys.length; i++) {
