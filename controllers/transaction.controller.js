@@ -184,6 +184,28 @@ const transactionCtrl = {
 
         }
     },
+    cancelRequest: async (req, res, next) => {
+        try {
+            let is_manager = await checkIsManagerUrl(req);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            const { id } = req.params;
+            let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
+            data = data?.result[0];
+            if(data?.user_id != decode_user?.id){
+                return lowLevelException(req, res);
+            }
+            let result = await updateQuery(`${table_name}`, {
+                trx_status:1,
+            }, id)
+            return response(req, res, 100, "success", {})
+        } catch (err) {
+            console.log(err)
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
 };
 
 export default transactionCtrl;

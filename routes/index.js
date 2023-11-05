@@ -20,6 +20,7 @@ import transactionRoutes from './transaction.route.js';
 import sellerRoutes from './seller.route.js';
 import payRoutes from './pay.route.js';
 import userWishRoutes from './user_wish.route.js';
+import pointRoutes from './point.route.js';
 
 const router = express.Router(); // eslint-disable-line new-cap
 
@@ -40,6 +41,7 @@ router.use('/popups', popupRoutes);
 router.use('/payment-modules', paymentModuleRoutes);
 router.use('/transactions', transactionRoutes);
 router.use('/user-wishs', userWishRoutes);
+router.use('/points', pointRoutes);
 
 //auth
 router.use('/auth', authRoutes);

@@ -119,7 +119,6 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     content_sql += ` ORDER BY ${table}.${order} ${is_asc ? 'ASC' : 'DESC'} `;
     content_sql += ` LIMIT ${(page - 1) * page_size}, ${page_size} `;
     let total_sql = sql.replaceAll(process.env.SELECT_COLUMN_SECRET, 'COUNT(*) as total');
-
     let result_list = [];
     let sql_list = [
         { table: 'total', sql: total_sql },

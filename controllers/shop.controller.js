@@ -149,7 +149,6 @@ const shopCtrl = {
             brand_data['blog_obj'] = await finallySettingMainObj(brand_data['blog_obj'], data);
 
             delete data.product_categories;
-            delete data.products;
 
             return response(req, res, 100, "success", {
                 ...data,

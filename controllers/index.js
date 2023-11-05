@@ -21,6 +21,7 @@ import sellerCtrl from './seller.controller.js';
 import userAddressCtrl from './user_address.controller.js';
 import payCtrl from './pay.controller.js';
 import userWishCtrl from './user_wish.controller.js';
+import pointCtrl from './point.controller.js';
 
 export {
     brandCtrl,
@@ -44,4 +45,5 @@ export {
     userAddressCtrl,
     payCtrl,
     userWishCtrl,
+    pointCtrl,
 };

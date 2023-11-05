@@ -16,8 +16,10 @@ const userCtrl = {
             const { is_user, is_seller } = req.query;
             let columns = [
                 `${table_name}.*`,
+                `(SELECT SUM(point) FROM points WHERE user_id=${table_name}.id) AS point`
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+
             sql += ` WHERE brand_id=${decode_dns?.id} `
             if(is_user){
                 sql += ` AND level=0 `
@@ -25,7 +27,6 @@ const userCtrl = {
             if(is_seller){
                 sql += ` AND level=10 `
             }
-            
             let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);

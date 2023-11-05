@@ -16,5 +16,8 @@ router
 router
     .route('/:id/invoice')
     .post(transactionCtrl.changeInvoice)
+router
+    .route('/:id/cancel-request')
+    .post(transactionCtrl.cancelRequest)
 
 export default router;
