@@ -49,6 +49,7 @@ const payCtrl = {
                     buyer_phone,
                     mid,
                     tid,
+                    pay_key,
                     trx_method=2
                 } = req.body;
                 let files = settingFiles(req.files);
@@ -67,6 +68,7 @@ const payCtrl = {
                     buyer_phone,
                     mid,
                     tid,
+                    pay_key,
                     trx_method,
                 };
                 

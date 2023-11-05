@@ -34,7 +34,15 @@ const transactionCtrl = {
                 return trx?.id
             })
             if (trx_ids?.length > 0) {
-                let order_data = await pool.query(`SELECT * FROM transaction_orders WHERE trans_id IN (${trx_ids.join()}) ORDER BY id DESC`);
+                let transaction_orders_column = [
+                    `transaction_orders.*`,
+                    `products.product_img`,
+                ]
+                let order_sql = `SELECT ${transaction_orders_column.join()} FROM transaction_orders `
+                order_sql += `LEFT JOIN products ON transaction_orders.product_id=products.id `
+                order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.join()}) `
+                order_sql += ` ORDER BY transaction_orders.id DESC `
+                let order_data = await pool.query(order_sql);
                 order_data = order_data?.result;
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
