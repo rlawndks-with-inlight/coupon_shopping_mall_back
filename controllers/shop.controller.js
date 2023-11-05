@@ -122,6 +122,7 @@ const shopCtrl = {
             let post_category_ids = data.post_categories.map(item=>{
                 return item?.id
             })
+            post_category_ids.unshift(0);
             let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.join()}) GROUP BY category_id, id HAVING COUNT(*) <= 10`;
             let recent_post_data = await pool.query(recent_post_sql)
             recent_post_data = recent_post_data?.result;
