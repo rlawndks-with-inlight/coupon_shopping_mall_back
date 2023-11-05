@@ -179,7 +179,7 @@ const payCtrl = {
             })
             payvery_cancel = payvery_cancel?.data??{};
             if(payvery_cancel?.result_cd=='0000'){
-    
+                
                 return response(req, res, 100, "success", {})
             }else{
                 return response(req, res, -200, payvery_cancel?.result_msg, false)
