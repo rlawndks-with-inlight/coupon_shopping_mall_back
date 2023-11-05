@@ -177,12 +177,14 @@ const payCtrl = {
                 mid,
                 tid,
             })
-            console.log(payvery_cancel);
-            obj = { ...obj, ...files };
-
-            let result = await insertQuery(`${table_name}`, obj);
-
-            return response(req, res, 100, "success", {})
+            payvery_cancel = payvery_cancel?.data??{};
+            if(payvery_cancel?.result_cd=='0000'){
+    
+                return response(req, res, 100, "success", {})
+            }else{
+                return response(req, res, -200, payvery_cancel?.result_msg, false)
+            }
+           
         } catch (err) {
             console.log(err)
             return response(req, res, -200, "서버 에러 발생", false)
