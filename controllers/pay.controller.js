@@ -205,7 +205,7 @@ const payCtrl = {
 
         } catch (err) {
             console.log(err)
-            return response(req, res, -200, err?.response?.data?.result_msg, false)
+            return response(req, res, -200, err?.response?.data?.result_msg || '서버 에러 발생', false)
         } finally {
 
         }
