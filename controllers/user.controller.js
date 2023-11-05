@@ -25,9 +25,7 @@ const userCtrl = {
             if(is_seller){
                 sql += ` AND level=10 `
             }
-            if (decode_dns?.is_main_dns != 1) {
-                sql += `AND id=${decode_dns?.id}`;
-            }
+            
             let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
