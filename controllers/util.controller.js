@@ -51,6 +51,8 @@ const utilCtrl = {
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
+            console.log(req.params)
+            console.log(req.body)
             let result = await pool.query(`UPDATE ${table} SET ${column_name}=? WHERE id=?`, [value, id]);
             return response(req, res, 100, "success", {});
         } catch (err) {

@@ -35,7 +35,7 @@ const payCtrl = {
                 const decode_dns = checkDns(req.cookies.dns);
                 let {
                     brand_id,
-                    user_id,
+                    user_id=0,
                     password="",
                     seller_id=0,
                     seller_trx_fee=0,
@@ -96,32 +96,40 @@ const payCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            let {
-                mid,
-                tid,
-                trx_id,
-                amount,
-                ord_num,
-                appr_num,
-                item_name,
-                buyer_name,
-                buyer_phone,
-                issuer,
-                card_num,
-                installment,
-                method,
-                trx_dttm,
-                cxl_dttm,
-                is_cancel,
+            let 
+            {
+              mid,
+              tid,
+              trx_id,
+              amount,
+              ord_num,
+              appr_num,
+              item_name,
+              buyer_name,
+              buyer_phone,
+              acquirer,
+              issuer,
+              card_num,
+              installment,
+              trx_dttm,
+              is_cancel,
+              temp
             } = req.body;
+            const id = temp;
             console.log(req.body);
             let files = settingFiles(req.files);
             let obj = {
+                trx_id,
+                appr_num,
+                acquirer,
+                issuer,
+                card_num,
+                trx_dt:trx_dttm.split(' ')[0],
+                trx_tm:trx_dttm.split(' ')[1],
             };
-
             obj = { ...obj, ...files };
 
-            let result = await insertQuery(`${table_name}`, obj);
+            let result = await updateQuery(`${table_name}`, obj, id);
 
             return response(req, res, 100, "success", {})
         } catch (err) {
