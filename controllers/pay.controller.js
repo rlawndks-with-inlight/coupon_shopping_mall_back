@@ -168,7 +168,7 @@ const payCtrl = {
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, name, note, price, category_id
+                
             };
             let payvery_cancel = await axios.post(`${process.env.NOTI_URL}/api/v2/pay/cancel`,{
                 trx_id,
