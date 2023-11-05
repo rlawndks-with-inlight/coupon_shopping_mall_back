@@ -44,7 +44,9 @@ const payCtrl = {
                     item_name,
                     addr,
                     detail_addr,
-                    products=[]
+                    products=[],
+                    buyer_name,
+                    buyer_phone,
                 } = req.body;
                 let files = settingFiles(req.files);
                 let obj = {
@@ -58,6 +60,8 @@ const payCtrl = {
                     item_name,
                     addr,
                     detail_addr,
+                    buyer_name,
+                    buyer_phone,
                 };
                 
                 obj = { ...obj, ...files };
