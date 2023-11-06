@@ -56,12 +56,12 @@ const payCtrl = {
                 pay_key,
                 trx_method,
             };
-
             obj = { ...obj, ...files };
             await db.beginTransaction();
             console.log('222222222222222222222222222222')
             console.log(obj)
             let result = await insertQuery(`${table_name}`, obj);
+            
             let trans_id = result?.result?.insertId
             let insert_item_data = [];
             for (var i = 0; i < products.length; i++) {
