@@ -13,7 +13,7 @@ const userAddressCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { user_id } = req.query;
+            const { user_id=0 } = req.query;
 
             let columns = [
                 `${table_name}.*`,

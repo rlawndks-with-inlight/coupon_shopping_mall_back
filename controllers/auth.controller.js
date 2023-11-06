@@ -58,6 +58,7 @@ const authCtrl = {
             wish_sql += ` WHERE user_wishs.user_id=${user?.id??0} `;
             let wish_data = await pool.query(wish_sql);
             wish_data = wish_data?.result;
+
             user = {
                 ...user,
                 wish_data
@@ -144,7 +145,9 @@ const authCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, is_manager ? 1 : 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            return response(req, res, 100, "success", decode_user)
+            let point_data = await pool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=${decode_user?.id??0}`);
+            let point = point_data?.result[0]?.point;
+            return response(req, res, 100, "success", {...decode_user, point})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
@@ -156,9 +159,9 @@ const authCtrl = {
     sendPhoneVerifyCode: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
-            const decode_user = checkLevel(req.cookies.token, is_manager ? 1 : 0, res);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-
+            
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)

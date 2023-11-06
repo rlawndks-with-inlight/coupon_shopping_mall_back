@@ -24,9 +24,9 @@ const pointCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
             sql += ` LEFT JOIN users AS sender ON ${table_name}.sender_id=sender.id `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
             if (decode_user.level < 10) {
-                sql += ` WHERE ${table_name}.user_id=${decode_user.id} `;
+                sql += ` AND ${table_name}.user_id=${decode_user.id} `;
             }
             let data = await getSelectQueryList(sql, columns, req.query);
 

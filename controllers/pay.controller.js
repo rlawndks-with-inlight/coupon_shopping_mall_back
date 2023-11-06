@@ -33,6 +33,7 @@ const payCtrl = {
                 tid,
                 pay_key,
                 trx_method,
+                use_point=0,
             } = req.body;
             trx_method = (trx_type == 'auth' ? 2 : 1);
             let files = settingFiles(req.files);
@@ -53,6 +54,7 @@ const payCtrl = {
                 tid,
                 pay_key,
                 trx_method,
+                use_point,
             };
             obj = { ...obj, ...files };
             await db.beginTransaction();
