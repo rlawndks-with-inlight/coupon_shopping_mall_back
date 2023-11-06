@@ -91,6 +91,11 @@ const authCtrl = {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
             }
             let pw_data = await createHashedPassword(user_pw);
+            let is_exist_user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id??0}`, [user_name]);
+            if (is_exist_user?.result.length > 0) {
+                return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
+            }
+            
             if (!is_manager) {
                 if (level > 0) {
                     return lowLevelException(req, res);
