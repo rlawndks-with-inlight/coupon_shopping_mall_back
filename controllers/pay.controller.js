@@ -89,6 +89,7 @@ const payCtrl = {
                 id: trans_id
             })
         } catch (err) {
+            console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
             await db.rollback();
             return response(req, res, -200, err?.response?.data?.result_msg || '서버 에러 발생', false)
