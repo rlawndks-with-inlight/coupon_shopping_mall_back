@@ -142,15 +142,17 @@ const payCtrl = {
                 delete obj.updated_at
                 delete obj.id
                 let result = await insertQuery(`${table_name}`, obj);
+                if (amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) < 0) {
+                    let result2 = await insertQuery(`points`, {
+                        brand_id: dns_data?.id,
+                        user_id: pay_data?.user_id,
+                        sender_id: 0,
+                        point: amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
+                        type: 5,
+                        trans_id: result?.result?.insertId,
+                    });
+                }
 
-                let result2 = await insertQuery(`points`, {
-                    brand_id: dns_data?.id,
-                    user_id: pay_data?.user_id,
-                    sender_id: 0,
-                    point: amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
-                    type: 5,
-                    trans_id: result?.result?.insertId,
-                });
             } else {
                 obj = {
                     trx_id,
@@ -163,14 +165,17 @@ const payCtrl = {
                     trx_status: 5,
                 };
                 let result = await updateQuery(`${table_name}`, obj, id);
-                let result2 = await insertQuery(`points`, {
-                    brand_id: dns_data?.id,
-                    user_id: pay_data?.user_id,
-                    sender_id: 0,
-                    point: amount * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
-                    type: 0,
-                    trans_id: id,
-                });
+                if (amount * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) > 0) {
+                    let result2 = await insertQuery(`points`, {
+                        brand_id: dns_data?.id,
+                        user_id: pay_data?.user_id,
+                        sender_id: 0,
+                        point: amount * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
+                        type: 0,
+                        trans_id: id,
+                    });
+                }
+
             }
 
             await db.commit();
