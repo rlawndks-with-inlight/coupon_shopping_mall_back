@@ -15,7 +15,7 @@ const payCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { trx_type } = req.params;
-            console.log(req.body)
+            console.log(req.body);
             let {
                 brand_id,
                 user_id = 0,
@@ -33,8 +33,9 @@ const payCtrl = {
                 mid,
                 tid,
                 pay_key,
-                trx_method = (trx_type == 'auth' ? 2 : 1)
+                trx_method,
             } = req.body;
+            trx_method = (trx_type == 'auth' ? 2 : 1);
             let files = settingFiles(req.files);
             let obj = {
                 brand_id,
