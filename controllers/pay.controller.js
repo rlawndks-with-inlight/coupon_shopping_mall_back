@@ -15,6 +15,7 @@ const payCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { trx_type } = req.params;
+            console.log(1)
             let {
                 brand_id,
                 user_id = 0,
@@ -95,6 +96,8 @@ const payCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            console.log(2)
+
             let {
                 mid,
                 tid,
@@ -141,10 +144,11 @@ const payCtrl = {
                 delete obj.created_at
                 delete obj.updated_at
                 delete obj.id
+                console.log(obj);
                 let result = await insertQuery(`${table_name}`, obj);
                 if (amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) < 0) {
                     let result2 = await insertQuery(`points`, {
-                        brand_id: dns_data?.id,
+                        brand_id: dns_data?.id??0,
                         user_id: pay_data?.user_id,
                         sender_id: 0,
                         point: amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
@@ -164,6 +168,7 @@ const payCtrl = {
                     trx_tm: trx_dttm.split(' ')[1],
                     trx_status: 5,
                 };
+                console.log(obj);
                 let result = await updateQuery(`${table_name}`, obj, id);
                 if (amount * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) > 0) {
                     let result2 = await insertQuery(`points`, {
