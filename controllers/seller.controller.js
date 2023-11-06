@@ -1,5 +1,5 @@
 'use strict';
-import { pool } from "../config/db.js";
+import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
@@ -26,7 +26,7 @@ const sellerCtrl = {
             if (decode_dns?.is_main_dns != 1) {
                 sql += `AND id=${decode_dns?.id}`;
             }
-            if(decode_user?.level <= 10){
+            if (decode_user?.level <= 10) {
                 sql += `AND id=${decode_user?.id}`;
             }
             let data = await getSelectQueryList(sql, columns, req.query);
@@ -68,8 +68,11 @@ const sellerCtrl = {
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
+            let products = await pool.query(`SELECT * FROM products WHERE id IN (SELECT product_id FROM sellers_and_products WHERE seller_id=${id} ORDER BY id DESC)`);
+            products = products?.result;
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
-            return response(req, res, 100, "success", data)
+            data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
+            return response(req, res, 100, "success", {...data, products})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
@@ -110,7 +113,8 @@ const sellerCtrl = {
                 id_img,
                 profile_img,
                 brand_id, user_name, user_pw, name, nickname, level = 10, phone_num, note,
-                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, mcht_trx_fee = 0,
+                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, seller_trx_fee = 0,
+                product_ids = [],
             } = req.body;
             let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
             if (is_exist_user?.result.length > 0) {
@@ -129,16 +133,34 @@ const sellerCtrl = {
                 id_img,
                 profile_img,
                 brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, note,
-                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, mcht_trx_fee
+                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, seller_trx_fee
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
+            obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj = { ...obj, ...files };
+            await db.beginTransaction();
             let result = await insertQuery(`${table_name}`, obj);
+            let user_id = result?.result?.insertId;
 
-            return response(req, res, 100, "success", {})
+
+            if (product_ids.length > 0) {
+                let insert_products = [];
+                for (var i = 0; i < product_ids.length; i++) {
+                    insert_products.push([
+                        user_id,
+                        product_ids[i],
+                    ])
+                }
+                let result2 = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES ?`,[insert_products]);
+            }
+            await db.commit();
+            return response(req, res, 100, "success", {
+                id:user_id
+            })
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
+            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -157,7 +179,8 @@ const sellerCtrl = {
                 id_img,
                 profile_img,
                 user_name, name, nickname, level = 10, phone_num, note,
-                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, mcht_trx_fee = 0,
+                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css={}, seller_trx_fee = 0,
+                product_ids = [],
                 id
             } = req.body;
             let files = settingFiles(req.files);
@@ -169,15 +192,31 @@ const sellerCtrl = {
                 id_img,
                 profile_img,
                 user_name, name, nickname, level, phone_num, note,
-                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, mcht_trx_fee
+                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, seller_trx_fee
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
+            obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj = { ...obj, ...files };
+            await db.beginTransaction();
             let result = await updateQuery(`${table_name}`, obj, id);
+            let delete_connect = await pool.query(`DELETE FROM sellers_and_products WHERE seller_id=${id}`);
+            
+            if (product_ids.length > 0) {
+                let insert_products = [];
+                for (var i = 0; i < product_ids.length; i++) {
+                    insert_products.push([
+                        id,
+                        product_ids[i],
+                    ])
+                }
+                let result2 = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES ?`,[insert_products]);
+            }
+            await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
+            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

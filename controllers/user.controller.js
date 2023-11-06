@@ -67,6 +67,7 @@ const userCtrl = {
                 return lowLevelException(req, res);
             }
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
+            data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)

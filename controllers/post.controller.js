@@ -105,7 +105,6 @@ const postCtrl = {
                 post_title_img,
                 category_id, parent_id = -1, post_title, post_content, is_reply = 0
             } = req.body;
-            console.log(parent_id)
             let files = settingFiles(req.files);
 
             let obj = {
@@ -113,7 +112,6 @@ const postCtrl = {
                 category_id, parent_id, post_title, post_content, is_reply,
                 user_id: decode_user?.id,
             };
-            console.log(obj)
             obj = { ...obj, ...files };
 
             let result = await insertQuery(`${table_name}`, obj);

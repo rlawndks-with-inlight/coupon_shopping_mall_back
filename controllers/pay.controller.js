@@ -19,8 +19,6 @@ const payCtrl = {
                 brand_id,
                 user_id = 0,
                 password = "",
-                seller_id = 0,
-                seller_trx_fee = 0,
                 ord_num,
                 amount,
                 item_name,
@@ -33,7 +31,7 @@ const payCtrl = {
                 tid,
                 pay_key,
                 trx_method,
-                use_point=0,
+                use_point = 0,
             } = req.body;
             trx_method = (trx_type == 'auth' ? 2 : 1);
             let files = settingFiles(req.files);
@@ -41,8 +39,6 @@ const payCtrl = {
                 brand_id,
                 user_id,
                 password,
-                seller_id,
-                seller_trx_fee,
                 ord_num,
                 amount,
                 item_name,
@@ -58,10 +54,15 @@ const payCtrl = {
             };
             obj = { ...obj, ...files };
             await db.beginTransaction();
+
             let result = await insertQuery(`${table_name}`, obj);
-            
+
             let trans_id = result?.result?.insertId
             let insert_item_data = [];
+            let product_seller_ids = products.map(item => { return item?.seller_id ?? 0 });
+            product_seller_ids.unshift(0);
+            let seller_data = await pool.query(`SELECT * FROM users WHERE brand_id=${brand_id ?? 0} AND id IN (${product_seller_ids.join()})`);
+            seller_data = seller_data?.result;
             for (var i = 0; i < products.length; i++) {
                 insert_item_data.push([
                     trans_id,
@@ -71,9 +72,11 @@ const payCtrl = {
                     parseInt(products[i]?.order_count),
                     JSON.stringify(products[i]?.groups ?? []),
                     products[i]?.delivery_fee,
+                    parseInt(products[i]?.seller_id ?? 0),
+                    parseFloat(_.find(seller_data, { id: parseInt(products[i]?.seller_id) })?.seller_trx_fee ?? 0),
                 ])
             }
-            let insert_item_result = await pool.query(`INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee) VALUES ?`, [insert_item_data])
+            let insert_item_result = await pool.query(`INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`, [insert_item_data])
             if (trx_method == 1) {
                 let result = await axios.post(`${process.env.NOTI_URL}/api/v2/pay/hand`, { ...req.body, temp: trans_id });
                 if (result?.data?.result_cd != '0000') {
@@ -146,7 +149,7 @@ const payCtrl = {
                 let result = await insertQuery(`${table_name}`, obj);
                 if (amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) < 0) {
                     let result2 = await insertQuery(`points`, {
-                        brand_id: dns_data?.id??0,
+                        brand_id: dns_data?.id ?? 0,
                         user_id: pay_data?.user_id,
                         sender_id: 0,
                         point: amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),

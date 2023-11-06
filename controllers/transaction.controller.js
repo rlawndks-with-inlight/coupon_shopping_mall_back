@@ -16,6 +16,7 @@ const transactionCtrl = {
             const { trx_status, cancel_status } = req.query;
             let columns = [
                 `${table_name}.*`,
+                `sellers.user_name AS seller_user_name`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id`

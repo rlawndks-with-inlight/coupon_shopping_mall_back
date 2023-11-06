@@ -111,7 +111,8 @@ const shopCtrl = {
             data['sellers'] = data?.sellers.map((item) => {
                 return {
                     ...item,
-                    sns_obj: JSON.parse(item?.sns_obj ?? '{}')
+                    sns_obj: JSON.parse(item?.sns_obj ?? '{}'),
+                    theme_css: JSON.parse(item?.theme_css ?? '{}'),
                 }
             })
             //결제모듈처리
