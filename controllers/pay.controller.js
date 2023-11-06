@@ -15,6 +15,7 @@ const payCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { trx_type } = req.params;
+            console.log(req.body)
             let {
                 brand_id,
                 user_id = 0,
