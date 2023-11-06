@@ -1,0 +1,22 @@
+2023-11-06 17:16:30 [] error: uncaughtException: connect ETIMEDOUT
+Error: connect ETIMEDOUT
+    at Connection._handleConnectTimeout (C:\Users\pc\Desktop\project\asapmall\back\node_modules\mysql\lib\Connection.js:409:13)
+    at Object.onceWrapper (node:events:627:28)
+    at Socket.emit (node:events:513:28)
+    at Socket._onTimeout (node:net:570:8)
+    at listOnTimeout (node:internal/timers:569:17)
+    at process.processTimers (node:internal/timers:512:7)
+    --------------------
+    at Protocol._enqueue (C:\Users\pc\Desktop\project\asapmall\back\node_modules\mysql\lib\protocol\Protocol.js:144:48)
+    at Protocol.handshake (C:\Users\pc\Desktop\project\asapmall\back\node_modules\mysql\lib\protocol\Protocol.js:51:23)
+    at Connection.connect (C:\Users\pc\Desktop\project\asapmall\back\node_modules\mysql\lib\Connection.js:116:18)
+    at file:///C:/Users/pc/Desktop/project/asapmall/back/config/db.js:14:4
+    at ModuleJob.run (node:internal/modules/esm/module_job:194:25)
+2023-11-06 17:28:37 [] error: uncaughtException: Cannot read properties of undefined (reading 'ready')
+TypeError: Cannot read properties of undefined (reading 'ready')
+    at file:///C:/Users/pc/Desktop/project/asapmall/back/routes/pay.route.js:9:24
+    at ModuleJob.run (node:internal/modules/esm/module_job:194:25)
+2023-11-06 17:28:52 [] error: uncaughtException: Cannot read properties of undefined (reading 'ready')
+TypeError: Cannot read properties of undefined (reading 'ready')
+    at file:///C:/Users/pc/Desktop/project/asapmall/back/routes/pay.route.js:9:24
+    at ModuleJob.run (node:internal/modules/esm/module_job:194:25)

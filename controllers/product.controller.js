@@ -235,13 +235,13 @@ const productCtrl = {
                     data: [insert_sub_image_list]
                 })
             }
+            asd
             let when = await getMultipleQueryByWhen(sql_list);
 
             await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
-            console.log((err?.response?.data || err))
             logger.error(JSON.stringify(err?.response?.data || err))
             await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)

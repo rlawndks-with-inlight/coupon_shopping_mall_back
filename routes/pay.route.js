@@ -5,11 +5,8 @@ import { payCtrl } from '../controllers/index.js';
 const router = express.Router(); // eslint-disable-line new-cap
 
 router
-    .route('/hand')
-    .post(payCtrl.hand.ready);
-router
-    .route('/auth')
-    .post(payCtrl.auth.ready);
+    .route('/:trx_type')
+    .post(payCtrl.ready);
 router
     .route('/result')
     .post(payCtrl.result);

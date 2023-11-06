@@ -7,6 +7,7 @@ import { readSync } from 'fs';
 import when from 'when';
 import _ from 'lodash';
 import logger from './winston/index.js';
+
 const randomBytesPromise = util.promisify(crypto.randomBytes);
 const pbkdf2Promise = util.promisify(crypto.pbkdf2);
 
@@ -46,8 +47,6 @@ export const checkLevel = (token, level, res) => { //유저 정보 뿌려주기
             return decoded
     }
     catch (err) {
-        console.log(err)
-        logger.error(JSON.stringify(err?.response?.data || err))
         return false
     }
 }

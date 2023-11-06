@@ -23,16 +23,16 @@ const transactionCtrl = {
             if (decode_user?.level == 10) {
                 sql += ` AND seller_id=${decode_user?.id} `;
             }
-            if (decode_user?.level == 0) {
-                sql += ` AND user_id=${decode_user?.id} `;
+            if (decode_user?.level == 0 || !decode_user) {
+                sql += ` AND user_id=${decode_user?.id ?? -1} `;
             }
             if (trx_status) {
                 sql += ` AND trx_status=${trx_status} `;
             }
             if (cancel_status) {
-                if(cancel_status == 1){
+                if (cancel_status == 1) {
                     sql += ` AND trx_status=1 `;
-                }else if(cancel_status == 5){
+                } else if (cancel_status == 5) {
                     sql += ` AND is_cancel=1 `;
                 }
             }
@@ -75,20 +75,22 @@ const transactionCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id, } = req.params;
-            const {ord_num, password} = req.query;
+            const { ord_num, password } = req.query;
             console.log(req.query);
             let sql = `SELECT * FROM ${table_name} WHERE id=${id}`
-            if(ord_num){
+            if (ord_num) {
                 sql = `SELECT * FROM ${table_name} WHERE ord_num='${ord_num}' AND password='${password}'`;
             } else {
-                if(!id){
+                if (!id) {
                     return response(req, res, -100, "존재하지 않는 주문입니다.", false)
                 }
             }
-            console.log(123)
             let data = await pool.query(sql)
             data = data?.result[0];
-            let order_data = await pool.query(`SELECT * FROM transaction_orders WHERE trans_id=${data?.id} ORDER BY id DESC`);
+            if(!data){
+                return response(req, res, -100, "존재하지 않는 주문번호 입니다.", {})
+            }
+            let order_data = await pool.query(`SELECT * FROM transaction_orders WHERE trans_id=${data?.id??0} ORDER BY id DESC`);
             order_data = order_data?.result;
             for (var i = 0; i < order_data.length; i++) {
                 order_data[i].groups = JSON.parse(order_data[i]?.groups ?? "[]");
@@ -198,11 +200,11 @@ const transactionCtrl = {
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
             data = data?.result[0];
-            if(data?.user_id != decode_user?.id){
+            if (data?.user_id != decode_user?.id) {
                 return lowLevelException(req, res);
             }
             let result = await updateQuery(`${table_name}`, {
-                trx_status:1,
+                trx_status: 1,
             }, id)
             return response(req, res, 100, "success", {})
         } catch (err) {
