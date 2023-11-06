@@ -15,6 +15,7 @@ const payCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { trx_type } = req.params;
+            console.log('11111111111111111111111111111111111111111111')
             console.log(req.body);
             let {
                 brand_id,
@@ -58,6 +59,7 @@ const payCtrl = {
 
             obj = { ...obj, ...files };
             await db.beginTransaction();
+            console.log('222222222222222222222222222222')
             console.log(obj)
             let result = await insertQuery(`${table_name}`, obj);
             let trans_id = result?.result?.insertId
