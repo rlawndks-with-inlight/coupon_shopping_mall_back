@@ -45,9 +45,11 @@ const transactionCtrl = {
                 let transaction_orders_column = [
                     `transaction_orders.*`,
                     `products.product_img`,
+                    `sellers.user_name AS seller_user_name`,
                 ]
                 let order_sql = `SELECT ${transaction_orders_column.join()} FROM transaction_orders `
-                order_sql += `LEFT JOIN products ON transaction_orders.product_id=products.id `
+                order_sql += ` LEFT JOIN products ON transaction_orders.product_id=products.id `
+                order_sql += ` LEFT JOIN users AS sellers ON transaction_orders.seller_id=sellers.id `
                 order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.join()}) `
                 order_sql += ` ORDER BY transaction_orders.id DESC `
                 let order_data = await pool.query(order_sql);
