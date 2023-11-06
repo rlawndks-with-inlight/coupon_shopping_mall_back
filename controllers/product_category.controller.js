@@ -4,7 +4,7 @@ import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
-
+import logger from "../utils.js/winston/index.js";
 const table_name = 'product_categories';
 
 const productCategoryCtrl = {
@@ -29,6 +29,7 @@ const productCategoryCtrl = {
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -48,6 +49,7 @@ const productCategoryCtrl = {
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -84,6 +86,7 @@ const productCategoryCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -117,6 +120,7 @@ const productCategoryCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -136,6 +140,7 @@ const productCategoryCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

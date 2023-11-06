@@ -3,7 +3,7 @@ import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { checkLevel, makeUserToken, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
-
+import logger from "../utils.js/winston/index.js";
 const uploadCtrl = {
     single: async (req, res, next) => {
         try {
@@ -13,6 +13,7 @@ const uploadCtrl = {
             });
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -25,6 +26,7 @@ const uploadCtrl = {
             return response(req, res, 100, "success", []);
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

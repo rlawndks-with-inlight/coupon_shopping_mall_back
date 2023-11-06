@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": false,
+        "amount": 30
+    },
+    "auditLog": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\.879916fd01e4458ca41f14f24ad44cd7265d48ed-audit.json",
+    "files": [
+        {
+            "date": 1699256425913,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-11-06.exception.log",
+            "hash": "dc32c0884f8901934310c4a6b9896b712a3adf7611be0641747140621975bb1b"
+        }
+    ],
+    "hashType": "sha256"
+}

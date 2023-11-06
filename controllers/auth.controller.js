@@ -4,6 +4,7 @@ import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
 import { insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { createHashedPassword, checkLevel, makeUserToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
 import 'dotenv/config';
+import logger from "../utils.js/winston/index.js";
 
 const authCtrl = {
     signIn: async (req, res, next) => {
@@ -64,6 +65,7 @@ const authCtrl = {
             return response(req, res, 100, "success", user)
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -126,6 +128,7 @@ const authCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -139,6 +142,7 @@ const authCtrl = {
             return response(req, res, 100, "success", decode_user)
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -153,6 +157,7 @@ const authCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

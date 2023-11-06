@@ -76,7 +76,9 @@
     "socket.io": "^4.6.1",
     "url": "^0.11.1",
     "util": "^0.12.5",
-    "when": "^3.7.8"
+    "when": "^3.7.8",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
   },
   "type": "module",
   "babel": {

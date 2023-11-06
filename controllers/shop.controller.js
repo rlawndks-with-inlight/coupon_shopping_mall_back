@@ -7,7 +7,7 @@ import 'dotenv/config';
 import productCtrl from "./product.controller.js";
 import postCtrl from "./post.controller.js";
 import _ from "lodash";
-
+import logger from "../utils.js/winston/index.js";
 
 const shopCtrl = {
     setting: async (req, res, next) => {
@@ -156,6 +156,7 @@ const shopCtrl = {
             });
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -169,6 +170,7 @@ const shopCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -185,6 +187,7 @@ const shopCtrl = {
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -200,6 +203,7 @@ const shopCtrl = {
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -221,6 +225,7 @@ const shopCtrl = {
                 return response(req, res, 100, "success", data);
             } catch (err) {
                 console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
                 return response(req, res, -200, "서버 에러 발생", false)
             } finally {
 
@@ -236,6 +241,7 @@ const shopCtrl = {
                 return response(req, res, 100, "success", data);
             } catch (err) {
                 console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
                 return response(req, res, -200, "서버 에러 발생", false)
             } finally {
 
@@ -263,6 +269,7 @@ const shopCtrl = {
                 return response(req, res, 100, "success", {})
             } catch (err) {
                 console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
                 return response(req, res, -200, "서버 에러 발생", false)
             } finally {
 

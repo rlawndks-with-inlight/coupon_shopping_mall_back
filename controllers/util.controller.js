@@ -4,7 +4,7 @@ import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
-
+import logger from "../utils.js/winston/index.js";
 
 const utilCtrl = {
     sort: async (req, res, next) => {
@@ -35,6 +35,7 @@ const utilCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
@@ -57,6 +58,7 @@ const utilCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -83,6 +85,7 @@ const utilCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

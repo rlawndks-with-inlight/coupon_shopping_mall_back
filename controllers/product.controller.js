@@ -5,7 +5,7 @@ import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
-
+import logger from "../utils.js/winston/index.js";
 const table_name = 'products';
 
 const productCtrl = {
@@ -60,6 +60,7 @@ const productCtrl = {
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -123,6 +124,7 @@ const productCtrl = {
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -239,6 +241,8 @@ const productCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            console.log((err?.response?.data || err))
+            logger.error(JSON.stringify(err?.response?.data || err))
             await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
@@ -385,7 +389,8 @@ const productCtrl = {
             await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
-            console.log(err);
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err));
             await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
@@ -409,6 +414,7 @@ const productCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

@@ -5,6 +5,7 @@ import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
+import logger from "../utils.js/winston/index.js";
 
 const table_name = 'brands';
 
@@ -27,6 +28,7 @@ const brandCtrl = {
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -47,6 +49,7 @@ const brandCtrl = {
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -100,7 +103,9 @@ const brandCtrl = {
             await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
+            
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         }
@@ -139,6 +144,7 @@ const brandCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -156,6 +162,7 @@ const brandCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -174,6 +181,7 @@ const brandCtrl = {
                 return response(req, res, 100, "success", {})
             } catch (err) {
                 console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
                 return response(req, res, -200, "서버 에러 발생", false)
             } finally {
 
@@ -191,6 +199,7 @@ const brandCtrl = {
                 return response(req, res, 100, "success", {})
             } catch (err) {
                 console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
                 return response(req, res, -200, "서버 에러 발생", false)
             } finally {
 

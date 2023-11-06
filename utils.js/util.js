@@ -6,7 +6,7 @@ import 'dotenv/config';
 import { readSync } from 'fs';
 import when from 'when';
 import _ from 'lodash';
-
+import logger from './winston/index.js';
 const randomBytesPromise = util.promisify(crypto.randomBytes);
 const pbkdf2Promise = util.promisify(crypto.pbkdf2);
 
@@ -38,16 +38,8 @@ export const checkLevel = (token, level, res) => { //유저 정보 뿌려주기
             return false
 
         //const decoded = jwt.decode(token)
-        const decoded = jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-            //console.log(decoded)
-            if (err) {
-                console.log("token이 변조되었습니다." + err);
-                res?.clearCookie('token');
-                return false
-            }
-            else return decoded;
-        })
-        const user_level = decoded.level
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user_level = decoded?.level
         if (level > user_level)
             return false
         else
@@ -55,6 +47,7 @@ export const checkLevel = (token, level, res) => { //유저 정보 뿌려주기
     }
     catch (err) {
         console.log(err)
+        logger.error(JSON.stringify(err?.response?.data || err))
         return false
     }
 }
@@ -64,15 +57,8 @@ export const checkDns = (token) => { //dns 정보 뿌려주기
             return false
 
         //const decoded = jwt.decode(token)
-        const decoded = jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-            //console.log(decoded)
-            if (err) {
-                console.log("token이 변조되었습니다." + err);
-                return false
-            }
-            else return decoded;
-        })
-        const user_level = decoded.level
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
         if (decoded?.id)
             return decoded
         else
@@ -80,6 +66,7 @@ export const checkDns = (token) => { //dns 정보 뿌려주기
     }
     catch (err) {
         console.log(err)
+        logger.error(JSON.stringify(err?.response?.data || err))
         return false
     }
 }
@@ -123,7 +110,7 @@ export const response = async (req, res, code, message, data) => { //응답 포�
         'data': data,
     }
     const decode_user = checkLevel(req.cookies.token, 0, res)
-    const decode_dns = checkLevel(req.cookies.dns, 0)
+    const decode_dns = checkDns(req.cookies.dns, 0)
     //let save_log = await logRequestResponse(req, resDict, decode_user, decode_dns);
     if(req?.IS_RETURN){
         return resDict;
