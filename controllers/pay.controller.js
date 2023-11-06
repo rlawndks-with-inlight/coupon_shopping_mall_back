@@ -58,6 +58,7 @@ const payCtrl = {
 
             obj = { ...obj, ...files };
             await db.beginTransaction();
+            console.log(obj)
             let result = await insertQuery(`${table_name}`, obj);
             let trans_id = result?.result?.insertId
             let insert_item_data = [];
