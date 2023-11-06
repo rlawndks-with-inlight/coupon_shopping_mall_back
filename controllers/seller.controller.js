@@ -24,7 +24,7 @@ const sellerCtrl = {
                 sql += ` AND level=10 `
             }
             if (decode_dns?.is_main_dns != 1) {
-                sql += `AND id=${decode_dns?.id}`;
+                sql += `AND brand_id=${decode_dns?.id}`;
             }
             if (decode_user?.level <= 10) {
                 sql += `AND id=${decode_user?.id}`;
