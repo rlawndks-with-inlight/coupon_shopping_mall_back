@@ -115,7 +115,7 @@ export const response = async (req, res, code, message, data) => { //응답 포�
         return resDict;
     }else{
         if (code < 0) {
-            res.status(500).send(resDict)
+            res.status(200).send(resDict)
         } else {
             res.status(200).send(resDict)
         }
