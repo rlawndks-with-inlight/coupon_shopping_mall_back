@@ -114,10 +114,10 @@ export const response = async (req, res, code, message, data) => { //응답 포�
     if(req?.IS_RETURN){
         return resDict;
     }else{
-        if (code == -200) {
+        if (code < 0) {
             res.status(500).send(resDict)
         } else {
-            res.send(resDict);
+            res.status(200).send(resDict)
         }
     }
 }
