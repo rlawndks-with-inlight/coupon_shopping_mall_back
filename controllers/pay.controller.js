@@ -15,8 +15,6 @@ const payCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { trx_type } = req.params;
-            console.log('11111111111111111111111111111111111111111111')
-            console.log(req.body);
             let {
                 brand_id,
                 user_id = 0,
@@ -58,8 +56,6 @@ const payCtrl = {
             };
             obj = { ...obj, ...files };
             await db.beginTransaction();
-            console.log('222222222222222222222222222222')
-            console.log(obj)
             let result = await insertQuery(`${table_name}`, obj);
             
             let trans_id = result?.result?.insertId
@@ -130,12 +126,9 @@ const payCtrl = {
                 pay_data = await pool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
                 pay_data = pay_data?.result[0];
             }
-            console.log('@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
-            console.log(pay_data);
             let dns_data = await pool.query('SELECT * FROM brands WHERE id=?', [pay_data?.brand_id]);
             dns_data = dns_data?.result[0];
             dns_data['setting_obj'] = JSON.parse(dns_data?.setting_obj ?? '{}');
-            console.log('########################################')
             if (is_cancel) {
                 obj = {
                     ...pay_data,
@@ -148,7 +141,6 @@ const payCtrl = {
                 delete obj.created_at
                 delete obj.updated_at
                 delete obj.id
-                console.log(obj);
                 let result = await insertQuery(`${table_name}`, obj);
                 if (amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) < 0) {
                     let result2 = await insertQuery(`points`, {
@@ -172,7 +164,6 @@ const payCtrl = {
                     trx_tm: trx_dttm.split(' ')[1],
                     trx_status: 5,
                 };
-                console.log(obj);
                 let result = await updateQuery(`${table_name}`, obj, id);
                 if (amount * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) > 0) {
                     let result2 = await insertQuery(`points`, {
