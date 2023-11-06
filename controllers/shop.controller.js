@@ -375,6 +375,11 @@ const finallySettingMainObj = async (main_obj_ = [], data) => {
             main_obj[i].list = data?.post_categories ?? [];
         }
     }
+    for (var i = 0; i < main_obj.length; i++) {
+        if (main_obj[i]?.type == 'sellers') {
+            main_obj[i].list = data?.sellers ?? [];
+        }
+    }
     return main_obj;
 }
 export default shopCtrl;
