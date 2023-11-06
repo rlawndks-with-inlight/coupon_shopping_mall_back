@@ -235,7 +235,6 @@ const productCtrl = {
                     data: [insert_sub_image_list]
                 })
             }
-            asd
             let when = await getMultipleQueryByWhen(sql_list);
 
             await db.commit();
