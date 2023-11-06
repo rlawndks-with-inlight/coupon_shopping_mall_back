@@ -127,11 +127,12 @@ const payCtrl = {
                 pay_data = await pool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
                 pay_data = pay_data?.result[0];
             }
-
+            console.log('@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
+            console.log(pay_data);
             let dns_data = await pool.query('SELECT * FROM brands WHERE id=?', [pay_data?.brand_id]);
             dns_data = dns_data?.result[0];
             dns_data['setting_obj'] = JSON.parse(dns_data?.setting_obj ?? '{}');
-
+            console.log('########################################')
             if (is_cancel) {
                 obj = {
                     ...pay_data,
