@@ -71,9 +71,9 @@ const payCtrl = {
                 ])
             }
             let insert_item_result = await pool.query(`INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee) VALUES ?`, [insert_item_data])
-            if(trx_method == 1){
-                let result = await axios.post(`${process.env.NOTI_URL}/api/v2/pay/hand`, {...req.body, temp: trans_id});
-                if(result?.data?.result_cd!='0000'){
+            if (trx_method == 1) {
+                let result = await axios.post(`${process.env.NOTI_URL}/api/v2/pay/hand`, { ...req.body, temp: trans_id });
+                if (result?.data?.result_cd != '0000') {
                     await db.rollback();
                     return response(req, res, -100, result?.data?.result_msg, false)
                 }
@@ -114,13 +114,22 @@ const payCtrl = {
                 temp,
             } = req.body;
             const id = temp;
-            console.log(req.body);
-
+            await db.beginTransaction();
             let obj = {};
+            let pay_data = {};
             if (is_cancel) {
-                let pay_data = await pool.query(`SELECT * FROM ${table_name} WHERE trx_id=? AND is_cancel=0`, [trx_id]);;
+                pay_data = await pool.query(`SELECT * FROM ${table_name} WHERE trx_id=? AND is_cancel=0`, [trx_id]);
                 pay_data = pay_data?.result[0];
+            } else {
+                pay_data = await pool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
+                pay_data = pay_data?.result[0];
+            }
 
+            let dns_data = await pool.query('SELECT * FROM brands WHERE id=?', [pay_data?.brand_id]);
+            dns_data = dns_data?.result[0];
+            dns_data['setting_obj'] = JSON.parse(dns_data?.setting_obj ?? '{}');
+
+            if (is_cancel) {
                 obj = {
                     ...pay_data,
                     cxl_dt: trx_dttm.split(' ')[0],
@@ -132,7 +141,16 @@ const payCtrl = {
                 delete obj.created_at
                 delete obj.updated_at
                 delete obj.id
-                let result = await insertQuery(`${table_name}`, obj, id);
+                let result = await insertQuery(`${table_name}`, obj);
+
+                let result2 = await insertQuery(`points`, {
+                    brand_id: dns_data?.id,
+                    user_id: pay_data?.user_id,
+                    sender_id: 0,
+                    point: amount * (-1) * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
+                    type: 5,
+                    trans_id: result?.result?.insertId,
+                });
             } else {
                 obj = {
                     trx_id,
@@ -143,16 +161,24 @@ const payCtrl = {
                     trx_dt: trx_dttm.split(' ')[0],
                     trx_tm: trx_dttm.split(' ')[1],
                     trx_status: 5,
-
                 };
                 let result = await updateQuery(`${table_name}`, obj, id);
-
+                let result2 = await insertQuery(`points`, {
+                    brand_id: dns_data?.id,
+                    user_id: pay_data?.user_id,
+                    sender_id: 0,
+                    point: amount * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
+                    type: 0,
+                    trans_id: id,
+                });
             }
 
+            await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
+            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
