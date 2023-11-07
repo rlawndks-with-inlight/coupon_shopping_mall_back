@@ -77,6 +77,7 @@ const shopCtrl = {
             let seller_sql = `SELECT ${seller_columns.join()} FROM users `;
             seller_sql += ` WHERE users.brand_id=${decode_dns?.id} `;
             seller_sql += ` AND level=10 `;
+            seller_sql += ` AND is_delete=0 `;
             seller_sql += ` ORDER BY id DESC`;
 
             let payment_module_columns = [
