@@ -19,7 +19,7 @@ const paymentModuleCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
@@ -68,10 +68,10 @@ const paymentModuleCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
             obj = { ...obj, ...files };
             await db.beginTransaction();
-            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id}`);
+            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id??0}`);
             is_exist_trx_type = is_exist_trx_type?.result;
             if(is_exist_trx_type.length > 0){
                 await db.rollback();
@@ -106,7 +106,7 @@ const paymentModuleCtrl = {
             };
             obj = { ...obj, ...files };
             await db.beginTransaction();
-            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id} AND id!=${id}`);
+            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id??0} AND id!=${id}`);
             is_exist_trx_type = is_exist_trx_type?.result;
             if(is_exist_trx_type.length > 0){
                 await db.rollback();

@@ -20,7 +20,7 @@ const Ctrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
 

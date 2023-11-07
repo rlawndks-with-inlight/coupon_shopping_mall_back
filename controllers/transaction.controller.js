@@ -20,7 +20,7 @@ const transactionCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id`
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
             if (decode_user?.level == 10) {
                 sql += ` AND seller_id=${decode_user?.id} `;
             }

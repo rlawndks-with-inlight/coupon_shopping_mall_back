@@ -21,7 +21,7 @@ const brandCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             if (decode_dns?.is_main_dns != 1) {
-                sql += `WHERE id=${decode_dns?.id}`;
+                sql += `WHERE id=${decode_dns?.id??0}`;
             }
             let data = await getSelectQueryList(sql, columns, req.query);
 

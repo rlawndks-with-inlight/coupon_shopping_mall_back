@@ -21,7 +21,7 @@ const productReviewCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
             sql += ` AND ${table_name}.product_id=${product_id} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);

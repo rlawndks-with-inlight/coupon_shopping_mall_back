@@ -12,7 +12,7 @@ const authCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let { user_name, user_pw, is_manager } = req.body;
-            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id} OR level >=50 ) LIMIT 1`, user_name);
+            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id??0} OR level >=50 ) LIMIT 1`, user_name);
             user = user?.result[0];
 
             if (!user) {

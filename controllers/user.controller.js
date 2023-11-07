@@ -20,7 +20,7 @@ const userCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
 
-            sql += ` WHERE brand_id=${decode_dns?.id} `
+            sql += ` WHERE brand_id=${decode_dns?.id??0} `
             if(is_user){
                 sql += ` AND level=0 `
             }
@@ -44,7 +44,7 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id} AND ${table_name}.is_delete=0 `);
+            let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id??0} AND ${table_name}.is_delete=0 `);
             let user_tree = makeTree(user_list?.result, decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {

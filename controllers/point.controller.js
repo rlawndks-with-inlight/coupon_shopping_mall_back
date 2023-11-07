@@ -76,7 +76,7 @@ const pointCtrl = {
                 note,
                 brand_id
             } = req.body;
-            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id}`, [user_name]);
+            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id??0}`, [user_name]);
             user = user?.result[0];
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)
@@ -117,7 +117,7 @@ const pointCtrl = {
                 note,
                 id
             } = req.body;
-            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id} `, [user_name]);
+            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id??0} `, [user_name]);
             user = user?.result[0];
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)

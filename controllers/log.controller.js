@@ -22,7 +22,7 @@ const logCtrl = {
             sql += ` LEFT JOIN users ON users.id=${table_name}.user_id `
             sql += ` WHERE 1=1 `
             if (decode_dns?.is_main_dns != 1) {
-                sql += ` AND ${table_name}.brand_id=${decode_dns?.id}`
+                sql += ` AND ${table_name}.brand_id=${decode_dns?.id??0}`
             }
             let sql_list = [
                 { table: 'success', sql: (sql + ` ${sql.includes('WHERE') ? 'AND' : 'WHERE'} response_result > 0 `).replaceAll(process.env.SELECT_COLUMN_SECRET, 'COUNT(*) AS success') },

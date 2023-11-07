@@ -17,7 +17,7 @@ const postCtrl = {
             const { category_id } = req.query;
 
             let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-            category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id} `;
+            category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id??0} `;
             let category_list = await pool.query(category_sql);
             category_list = category_list?.result;
 
