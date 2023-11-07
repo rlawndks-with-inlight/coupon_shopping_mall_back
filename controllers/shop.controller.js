@@ -49,6 +49,7 @@ const shopCtrl = {
             product_sql += ` WHERE products.id IN(${product_ids.join()}) `;
             product_sql += ` AND products.is_delete=0 `
             product_sql = product_sql.replaceAll(process.env.SELECT_COLUMN_SECRET, product_columns.join());
+
             //상품카테고리그룹
             let product_category_group_columns = [
                 `product_category_groups.*`,
@@ -56,6 +57,7 @@ const shopCtrl = {
             let product_category_group_sql = `SELECT ${product_category_group_columns.join()} FROM product_category_groups `;
             product_category_group_sql += ` WHERE product_category_groups.brand_id=${decode_dns?.id} `;
             product_category_group_sql += ` AND product_category_groups.is_delete=0 ORDER BY sort_idx DESC`;
+
             //상품카테고리  
             let product_category_columns = [
                 `product_categories.*`,
@@ -63,13 +65,15 @@ const shopCtrl = {
             let product_category_sql = `SELECT ${product_category_columns.join()} FROM product_categories `;
             product_category_sql += ` WHERE product_categories.brand_id=${decode_dns?.id} `;
             product_category_sql += ` AND product_categories.is_delete=0 ORDER BY sort_idx DESC`;
+
             //상품리뷰     
             let product_review_columns = [
                 `product_reviews.*`,
             ]
             let product_review_sql = `SELECT ${product_review_columns.join()} FROM product_reviews `;
+            product_review_sql += ` LEFT JOIN products ON product_reviews.product_id=products.id `;
             product_review_sql += ` WHERE product_reviews.brand_id=${decode_dns?.id} `;
-            product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY sort_idx DESC`;
+            product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY id DESC LIMIT 0, 10`;
 
             //게시물카테고리
             let post_category_columns = [
@@ -78,6 +82,7 @@ const shopCtrl = {
             let post_category_sql = `SELECT ${post_category_columns.join()} FROM post_categories `;
             post_category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id} `;
             post_category_sql += ` AND post_categories.is_delete=0 ORDER BY sort_idx DESC`;
+
             //셀러
             let seller_columns = [
                 `users.*`,
@@ -87,6 +92,7 @@ const shopCtrl = {
             seller_sql += ` AND level=10 `;
             seller_sql += ` AND is_delete=0 `;
             seller_sql += ` ORDER BY id DESC`;
+
             //결제모듈
             let payment_module_columns = [
                 `payment_modules.*`,
@@ -94,6 +100,7 @@ const shopCtrl = {
             let payment_module_sql = `SELECT ${payment_module_columns.join()} FROM payment_modules `;
             payment_module_sql += ` WHERE payment_modules.brand_id=${decode_dns?.id} `;
             payment_module_sql += ` ORDER BY id DESC`;
+
             //유저찜
             let user_wish_columns = [
                 `user_wishs.*`,
@@ -109,13 +116,13 @@ const shopCtrl = {
                 { table: 'product_categories', sql: product_category_sql },
                 { table: 'post_categories', sql: post_category_sql },
                 { table: 'product_category_groups', sql: product_category_group_sql },
+                { table: 'product_reviews', sql: product_review_sql },
                 { table: 'sellers', sql: seller_sql },
                 { table: 'payment_modules', sql: payment_module_sql },
                 { table: 'user_wishs', sql: user_wish_sql },
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
-
             //셀러처리
             data['sellers'] = data?.sellers.map((item) => {
                 return {
@@ -124,6 +131,7 @@ const shopCtrl = {
                     theme_css: JSON.parse(item?.theme_css ?? '{}'),
                 }
             })
+
             //결제모듈처리
             data['payment_modules'] = data?.payment_modules.map((item) => {
                 return {
@@ -154,6 +162,7 @@ const shopCtrl = {
                 }
             }
             data.post_categories = await makeTree(data?.post_categories ?? []);
+
             //메인obj처리
             brand_data['shop_obj'] = await finallySettingMainObj(brand_data['shop_obj'], data);
             brand_data['blog_obj'] = await finallySettingMainObj(brand_data['blog_obj'], data);
@@ -428,7 +437,7 @@ const settingMainObj = async (main_obj_ = []) => {
         product_review_ids,
     }
 }
-const finallySettingMainObj = async (main_obj_ = [], data) => {
+const finallySettingMainObj = async (main_obj_ = [], data={}) => {
     let main_obj = main_obj_;
     main_obj = getMainObjContentByIdList(main_obj, 'item-reviews-select', data?.product_reviews);
     main_obj = getMainObjContentByIdList(main_obj, 'item-reviews', data?.product_reviews, false, true);
@@ -443,7 +452,7 @@ const finallySettingMainObj = async (main_obj_ = [], data) => {
         }
     }
     for (var i = 0; i < main_obj.length; i++) {
-        if (main_obj[i]?.type == 'sellers') {
+        if (main_obj[i]?.type == 'product') {
             main_obj[i].list = data?.sellers ?? [];
         }
     }
