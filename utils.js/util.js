@@ -238,11 +238,19 @@ export function findChildIds(data, id) {
     return children;
 }
 export function findParent(data, item) {
-    if(!(item.parent_id > 0)){
+    if(!(item?.parent_id > 0)){
         return item;
     } else {
         let result = data.filter(itm=>itm.id == item.parent_id);
         return findParent(data, result[0]);
+    }
+}
+export function findParents(data, item) {
+    if(!(item?.parent_id > 0)){
+        return [];
+    }else{
+        const parent = data.filter(itm => itm.id == item.parent_id);
+        return [...findParents(data, parent[0]),...parent]
     }
 }
 export const isParentCheckByUsers = (children, parent, user_list, user_obj_) => {//두 유저가 상하위 관계인지
