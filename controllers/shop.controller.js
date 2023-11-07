@@ -429,7 +429,7 @@ const finallySettingMainObj = async (main_obj_ = [], data) => {
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
     for (var i = 0; i < main_obj.length; i++) {
         if (main_obj[i]?.type == 'post') {
-            main_obj[i].list = main_obj[i].list.map(id => {
+            main_obj[i].list = (main_obj[i]?.list??[]).map(id => {
                 return _.find(data?.post_categories, { id: parseInt(id) })
             })
         }
