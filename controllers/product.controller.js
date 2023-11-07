@@ -19,10 +19,12 @@ const productCtrl = {
                 `${table_name}.*`,
                 `sellers.user_name`,
                 `sellers.seller_name`,
+                `(SELECT COUNT(*) FROM transaction_orders LEFT JOIN transactions ON transactions.id=transaction_orders.trans_id WHERE transaction_orders.product_id=${table_name}.id AND transactions.is_cancel=0 AND transactions.trx_status >=5 AND transactions.is_delete=0) AS order_count`,
+                `(SELECT COUNT(*) FROM product_reviews WHERE product_id=${table_name}.id AND is_delete=0) AS review_count`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
-            let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (seller_id > 0) {
                 let connect_data = await pool.query(`SELECT * FROM sellers_and_products WHERE seller_id=${seller_id}`);
                 connect_data = connect_data?.result.map(item => {
@@ -31,7 +33,7 @@ const productCtrl = {
                 connect_data.unshift(0);
                 where_sql += ` AND (${table_name}.id IN (${connect_data.join()})) `;
             }
-            let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id??0} AND is_delete=0 ORDER BY sort_idx DESC `;
+            let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id ?? 0} AND is_delete=0 ORDER BY sort_idx DESC `;
             let category_groups = await pool.query(category_group_sql);
             category_groups = category_groups?.result;
 
