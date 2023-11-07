@@ -2,7 +2,7 @@
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 const table_name = 'product_reviews';
@@ -89,14 +89,16 @@ const productReviewCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 id,
-                title, scope, content, profile_img
+                title, scope, content, profile_img, user_id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 title, scope, content, profile_img
             };
             obj = { ...obj, ...files };
-
+            if(!(decode_user?.level >= 10 || user_id == decode_user?.id)){
+                return lowLevelException(req, res);
+            }
             let result = await updateQuery(`${table_name}`, obj, id);
 
             return response(req, res, 100, "success", {})

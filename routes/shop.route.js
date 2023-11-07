@@ -19,9 +19,13 @@ router
 router
     .route('/post/:id')
     .get(shopCtrl.post.get)
+    .put(shopCtrl.post.update)
+    .delete(shopCtrl.post.remove)
+    
 router
     .route('/post')
     .get(shopCtrl.post.list)
     .post(shopCtrl.post.create)
+    
 
 export default router;

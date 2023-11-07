@@ -1,7 +1,7 @@
 'use strict';
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
+import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
 import 'dotenv/config';
 import productCtrl from "./product.controller.js";
@@ -92,7 +92,7 @@ const shopCtrl = {
 
             ]
             let user_wish_sql = `SELECT ${user_wish_columns.join()} FROM user_wishs `;
-            user_wish_sql += ` WHERE user_wishs.brand_id=${decode_dns?.id??0} AND user_wishs.user_id=${decode_user?.id??0} `;
+            user_wish_sql += ` WHERE user_wishs.brand_id=${decode_dns?.id ?? 0} AND user_wishs.user_id=${decode_user?.id ?? 0} `;
             user_wish_sql += ` ORDER BY id DESC`;
 
             //when
@@ -130,18 +130,18 @@ const shopCtrl = {
                 data.product_category_groups[i].product_categories = category_list;
             }
             //게시물카테고리처리
-            let post_category_ids = data.post_categories.map(item=>{
+            let post_category_ids = data.post_categories.map(item => {
                 return item?.id
             })
             post_category_ids.unshift(0);
             let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.join()}) GROUP BY category_id, id HAVING COUNT(*) <= 10`;
             let recent_post_data = await pool.query(recent_post_sql)
             recent_post_data = recent_post_data?.result;
-            for(var i = 0;i<data?.post_categories.length;i++){
-                if(!(data?.post_categories[i]?.parent_id > 0)){
+            for (var i = 0; i < data?.post_categories.length; i++) {
+                if (!(data?.post_categories[i]?.parent_id > 0)) {
                     let children_ids = findChildIds(data?.post_categories, data?.post_categories[i]?.id);
                     children_ids.unshift(data?.post_categories[i]?.id);
-                    data.post_categories[i].recent_posts = recent_post_data.filter(item=>children_ids.includes(item?.category_id));
+                    data.post_categories[i].recent_posts = recent_post_data.filter(item => children_ids.includes(item?.category_id));
                     data.post_categories[i].recent_posts = data.post_categories[i].recent_posts.slice(0, 10);
                 }
             }
@@ -168,7 +168,7 @@ const shopCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-           
+
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
@@ -277,6 +277,62 @@ const shopCtrl = {
 
             }
         },
+        update: async (req, res, next) => { //게시물 수정
+            try {
+                const decode_user = checkLevel(req.cookies.token, 0, res);
+                const decode_dns = checkDns(req.cookies.dns);
+                const { category_id, id } = req.body;
+
+                let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
+                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id} `;
+                let category_list = await pool.query(category_sql);
+                category_list = category_list?.result;
+
+                let category = _.find(category_list, { id: parseInt(category_id) });
+                let top_parent = findParent(category_list, category);
+                top_parent = _.find(category_list, { id: parseInt(top_parent?.id) });
+                if (top_parent?.is_able_user_add != 1) {
+                    return lowLevelException(req, res);
+                }
+                let post = await pool.query(`SELECT * FROM posts WHERE id=${id}`);
+                post = post?.result[0];
+                if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
+                    return lowLevelException(req, res);
+                }
+                let result = await postCtrl.update({ ...req, IS_RETURN: true }, res, next);
+
+                return response(req, res, 100, "success", {})
+            } catch (err) {
+                console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
+                return response(req, res, -200, "서버 에러 발생", false)
+            } finally {
+
+            }
+        },
+        remove: async (req, res, next) => {
+            try {
+                let is_manager = await checkIsManagerUrl(req);
+                const decode_user = checkLevel(req.cookies.token, 0, res);
+                const decode_dns = checkDns(req.cookies.dns);
+                const { id } = req.params;
+                let post = await pool.query(`SELECT * FROM posts WHERE id=${id}`);
+                post = post?.result[0];
+                if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
+                    return lowLevelException(req, res);
+                }
+                let result = await deleteQuery(`posts`, {
+                    id
+                })
+                return response(req, res, 100, "success", {})
+            } catch (err) {
+                console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
+                return response(req, res, -200, "서버 에러 발생", false)
+            } finally {
+
+            }
+        },
     }
 }
 const getMainObjIdList = (main_obj = [], type, id_list_ = [], is_children) => {// 같은 타입에서 WHERE IN 문에 사용될 ids를 세팅한다.
@@ -373,7 +429,9 @@ const finallySettingMainObj = async (main_obj_ = [], data) => {
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
     for (var i = 0; i < main_obj.length; i++) {
         if (main_obj[i]?.type == 'post') {
-            main_obj[i].list = data?.post_categories ?? [];
+            main_obj[i].list = main_obj[i].list.map(id => {
+                return _.find(data?.post_categories, { id: parseInt(id) })
+            })
         }
     }
     for (var i = 0; i < main_obj.length; i++) {

@@ -31,6 +31,7 @@ const postCtrl = {
                 `${table_name}.*`,
                 `users.nickname AS writer_nickname`,
                 `users.user_name AS writer_user_name`,
+                `users.nickname AS writer_nickname`,
                 `post_categories.post_category_title`,
             ]
 

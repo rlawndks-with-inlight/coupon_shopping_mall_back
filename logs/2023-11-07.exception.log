@@ -1,0 +1,5 @@
+2023-11-07 15:51:47 [] error: uncaughtException: Route.delete() requires a callback function but got a [object Undefined]
+Error: Route.delete() requires a callback function but got a [object Undefined]
+    at Route.<computed> [as delete] (C:\Users\pc\Desktop\project\asapmall\back\node_modules\express\lib\router\route.js:211:15)
+    at file:///C:/Users/pc/Desktop/project/asapmall/back/routes/shop.route.js:23:12
+    at ModuleJob.run (node:internal/modules/esm/module_job:194:25)
