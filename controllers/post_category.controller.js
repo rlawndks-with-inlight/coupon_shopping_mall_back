@@ -94,8 +94,6 @@ const postCategoryCtrl = {
             const {
                 post_category_title, parent_id = -1, is_able_user_add = 0, post_category_type = 0, post_category_read_type = 0, id
             } = req.body;
-            console.log(req.body);
-            console.log(req.params);
             let files = settingFiles(req.files);
             let obj = {
                 post_category_title, parent_id, is_able_user_add, post_category_type, post_category_read_type

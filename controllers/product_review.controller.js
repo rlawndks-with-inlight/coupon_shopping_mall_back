@@ -63,7 +63,6 @@ const productReviewCtrl = {
             const {
                 brand_id, title, scope, content, profile_img, product_id, user_id
             } = req.body;
-            console.log(req.body)
             let files = settingFiles(req.files);
             let obj = {
                 brand_id, title, scope, content, profile_img, product_id, user_id

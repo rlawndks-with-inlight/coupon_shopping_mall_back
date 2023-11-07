@@ -12,7 +12,6 @@ const payveryCtrl = {
                 user_pw: 'qjfwk100djr!',
             }
             let result = await axios.post(`${PAYVERY_URL}/api/v1/auth/sign-in`,obj);
-            console.log(result);
 
         } catch (err) {
             return false;

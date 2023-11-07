@@ -73,7 +73,6 @@ const paymentModuleCtrl = {
             await db.beginTransaction();
             let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id}`);
             is_exist_trx_type = is_exist_trx_type?.result;
-            console.log(is_exist_trx_type)
             if(is_exist_trx_type.length > 0){
                 await db.rollback();
                 return response(req, res, -100, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)

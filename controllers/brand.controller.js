@@ -138,7 +138,6 @@ const brandCtrl = {
             obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj['setting_obj'] = JSON.stringify(obj.setting_obj);
             obj['shop_obj'] = JSON.stringify(obj.shop_obj);
-            console.log(obj['shop_obj'])
             obj = { ...obj, ...files };
 
             let result = await updateQuery(`${table_name}`, obj, id);

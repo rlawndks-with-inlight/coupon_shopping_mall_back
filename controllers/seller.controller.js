@@ -98,7 +98,6 @@ const sellerCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            console.log(123)
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
@@ -256,7 +255,6 @@ const sellerCtrl = {
             const { id } = req.params
             let { status } = req.body;
             let user = await selectQuerySimple(table_name, id);
-            console.log(status)
             user = user?.result[0];
             if (!user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)

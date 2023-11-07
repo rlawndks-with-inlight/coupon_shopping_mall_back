@@ -15,7 +15,6 @@ const utilCtrl = {
             let { source_id, source_sort_idx, dest_id, dest_sort_idx } = req.body;
             const { table } = req.params;
             await db.beginTransaction();
-            console.log(req.body)
             let update_sql = ` UPDATE ${table} SET `
             source_id = parseInt(source_id);
             source_sort_idx = parseInt(source_sort_idx);
@@ -26,7 +25,6 @@ const utilCtrl = {
             } else {//드래그한게 더 작을때
                 update_sql += ` sort_idx=sort_idx-1 WHERE sort_idx > ${source_sort_idx} AND sort_idx <= ${dest_sort_idx} AND id!=${source_id} `;
             }
-            console.log(update_sql)
             let update_result = await pool.query(update_sql);
 
             let result = await pool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [dest_sort_idx, source_id]);
@@ -52,8 +50,6 @@ const utilCtrl = {
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
-            console.log(req.params)
-            console.log(req.body)
             let result = await pool.query(`UPDATE ${table} SET ${column_name}=? WHERE id=?`, [value, id]);
             return response(req, res, 100, "success", {});
         } catch (err) {
