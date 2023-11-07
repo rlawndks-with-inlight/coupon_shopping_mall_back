@@ -69,7 +69,7 @@ const shopCtrl = {
             //상품리뷰     
             let product_review_columns = [
                 `product_reviews.*`,
-                `products.product_im`,
+                `products.product_img`,
             ]
             let product_review_sql = `SELECT ${product_review_columns.join()} FROM product_reviews `;
             product_review_sql += ` LEFT JOIN products ON product_reviews.product_id=products.id `;
