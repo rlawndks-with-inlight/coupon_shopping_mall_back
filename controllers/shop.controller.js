@@ -62,7 +62,15 @@ const shopCtrl = {
             ]
             let product_category_sql = `SELECT ${product_category_columns.join()} FROM product_categories `;
             product_category_sql += ` WHERE product_categories.brand_id=${decode_dns?.id} `;
-            product_category_sql += ` AND product_categories.is_delete=0 ORDER BY sort_idx DESC`;
+            product_category_sql += ` AND product_categories.is_delete=0 ORDER BY id DESC LIMIT 0, 10 `;
+
+            let product_review_columns = [
+                `product_reviews.*`,
+            ]
+            let product_review_sql = `SELECT ${product_review_columns.join()} FROM product_reviews `;
+            product_review_sql += ` WHERE product_reviews.brand_id=${decode_dns?.id} `;
+            product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY sort_idx DESC`;
+
 
             let post_category_columns = [
                 `post_categories.*`,
@@ -134,7 +142,7 @@ const shopCtrl = {
                 return item?.id
             })
             post_category_ids.unshift(0);
-            let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.join()}) GROUP BY category_id, id HAVING COUNT(*) <= 10`;
+            let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.join()}) AND is_delete=0 GROUP BY category_id, id HAVING COUNT(*) <= 10`;
             let recent_post_data = await pool.query(recent_post_sql)
             recent_post_data = recent_post_data?.result;
             for (var i = 0; i < data?.post_categories.length; i++) {
