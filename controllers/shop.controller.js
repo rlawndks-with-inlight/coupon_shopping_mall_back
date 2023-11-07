@@ -62,7 +62,7 @@ const shopCtrl = {
             ]
             let product_category_sql = `SELECT ${product_category_columns.join()} FROM product_categories `;
             product_category_sql += ` WHERE product_categories.brand_id=${decode_dns?.id} `;
-            product_category_sql += ` AND product_categories.is_delete=0 ORDER BY id DESC LIMIT 0, 10 `;
+            product_category_sql += ` AND product_categories.is_delete=0 ORDER BY sort_idx DESC`;
 
             let product_review_columns = [
                 `product_reviews.*`,
