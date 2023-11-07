@@ -69,7 +69,7 @@ const shopCtrl = {
             ]
             let product_review_sql = `SELECT ${product_review_columns.join()} FROM product_reviews `;
             product_review_sql += ` WHERE product_reviews.brand_id=${decode_dns?.id} `;
-            product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY id DESC`;
+            product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY sort_idx DESC`;
 
 
             let post_category_columns = [
@@ -109,7 +109,6 @@ const shopCtrl = {
                 { table: 'product_categories', sql: product_category_sql },
                 { table: 'post_categories', sql: post_category_sql },
                 { table: 'product_category_groups', sql: product_category_group_sql },
-                { table: 'product_reviews', sql: product_review_sql },
                 { table: 'sellers', sql: seller_sql },
                 { table: 'payment_modules', sql: payment_module_sql },
                 { table: 'user_wishs', sql: user_wish_sql },
@@ -143,7 +142,7 @@ const shopCtrl = {
                 return item?.id
             })
             post_category_ids.unshift(0);
-            let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.join()}) AND is_delete=0 GROUP BY category_id, id HAVING COUNT(*) <= 10`;
+            let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.join()}) GROUP BY category_id, id HAVING COUNT(*) <= 10`;
             let recent_post_data = await pool.query(recent_post_sql)
             recent_post_data = recent_post_data?.result;
             for (var i = 0; i < data?.post_categories.length; i++) {
@@ -438,7 +437,7 @@ const finallySettingMainObj = async (main_obj_ = [], data) => {
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
     for (var i = 0; i < main_obj.length; i++) {
         if (main_obj[i]?.type == 'post') {
-            main_obj[i].list = (main_obj[i]?.list ?? []).map(id => {
+            main_obj[i].list = (main_obj[i]?.list??[]).map(id => {
                 return _.find(data?.post_categories, { id: parseInt(id) })
             })
         }
@@ -448,7 +447,6 @@ const finallySettingMainObj = async (main_obj_ = [], data) => {
             main_obj[i].list = data?.sellers ?? [];
         }
     }
-
     return main_obj;
 }
 export default shopCtrl;
