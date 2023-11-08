@@ -124,6 +124,14 @@ const shopCtrl = {
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
+            
+            //상품이미지처리
+            let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
+            sub_images = sub_images?.result;
+            for (var i = 0; i < data?.products.length; i++) {
+                let images = sub_images.filter(item => item?.product_id == data?.products[i]?.id);
+                data.products[i].sub_images = images ?? [];
+            }
             //셀러처리
             data['sellers'] = data?.sellers.map((item) => {
                 return {

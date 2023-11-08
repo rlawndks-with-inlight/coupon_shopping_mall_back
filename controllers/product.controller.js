@@ -58,7 +58,14 @@ const productCtrl = {
             }
             sql += where_sql;
             let data = await getSelectQueryList(sql, columns, req.query);
-
+            let product_ids = data?.content.map(item => { return item?.id });
+            product_ids.unshift(0);
+            let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
+            sub_images = sub_images?.result;
+            for (var i = 0; i < data?.content.length; i++) {
+                let images = sub_images.filter(item => item?.product_id == data?.content[i]?.id);
+                data.content[i].sub_images = images ?? [];
+            }
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
