@@ -21,7 +21,7 @@ const shopCtrl = {
                 'shop_obj',
                 'blog_obj',
             ]
-            let brand_data = await pool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=${decode_dns?.id??0}`);
+            let brand_data = await pool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=${decode_dns?.id ?? 0}`);
             brand_data = brand_data?.result[0];
             brand_data['shop_obj'] = JSON.parse(brand_data?.shop_obj ?? '[]');
             brand_data['blog_obj'] = JSON.parse(brand_data?.blog_obj ?? '[]');
@@ -55,7 +55,7 @@ const shopCtrl = {
                 `product_category_groups.*`,
             ]
             let product_category_group_sql = `SELECT ${product_category_group_columns.join()} FROM product_category_groups `;
-            product_category_group_sql += ` WHERE product_category_groups.brand_id=${decode_dns?.id??0} `;
+            product_category_group_sql += ` WHERE product_category_groups.brand_id=${decode_dns?.id ?? 0} `;
             product_category_group_sql += ` AND product_category_groups.is_delete=0 ORDER BY sort_idx DESC`;
 
             //상품카테고리  
@@ -63,7 +63,7 @@ const shopCtrl = {
                 `product_categories.*`,
             ]
             let product_category_sql = `SELECT ${product_category_columns.join()} FROM product_categories `;
-            product_category_sql += ` WHERE product_categories.brand_id=${decode_dns?.id??0} `;
+            product_category_sql += ` WHERE product_categories.brand_id=${decode_dns?.id ?? 0} `;
             product_category_sql += ` AND product_categories.is_delete=0 ORDER BY sort_idx DESC`;
 
             //상품리뷰     
@@ -73,7 +73,7 @@ const shopCtrl = {
             ]
             let product_review_sql = `SELECT ${product_review_columns.join()} FROM product_reviews `;
             product_review_sql += ` LEFT JOIN products ON product_reviews.product_id=products.id `;
-            product_review_sql += ` WHERE product_reviews.brand_id=${decode_dns?.id??0} `;
+            product_review_sql += ` WHERE product_reviews.brand_id=${decode_dns?.id ?? 0} `;
             product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY id DESC LIMIT 0, 10`;
 
             //게시물카테고리
@@ -81,7 +81,7 @@ const shopCtrl = {
                 `post_categories.*`,
             ]
             let post_category_sql = `SELECT ${post_category_columns.join()} FROM post_categories `;
-            post_category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id??0} `;
+            post_category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
             post_category_sql += ` AND post_categories.is_delete=0 ORDER BY sort_idx DESC`;
 
             //셀러
@@ -89,7 +89,7 @@ const shopCtrl = {
                 `users.*`,
             ]
             let seller_sql = `SELECT ${seller_columns.join()} FROM users `;
-            seller_sql += ` WHERE users.brand_id=${decode_dns?.id??0} `;
+            seller_sql += ` WHERE users.brand_id=${decode_dns?.id ?? 0} `;
             seller_sql += ` AND level=10 `;
             seller_sql += ` AND is_delete=0 `;
             seller_sql += ` ORDER BY id DESC`;
@@ -99,7 +99,7 @@ const shopCtrl = {
                 `payment_modules.*`,
             ]
             let payment_module_sql = `SELECT ${payment_module_columns.join()} FROM payment_modules `;
-            payment_module_sql += ` WHERE payment_modules.brand_id=${decode_dns?.id??0} `;
+            payment_module_sql += ` WHERE payment_modules.brand_id=${decode_dns?.id ?? 0} `;
             payment_module_sql += ` ORDER BY id DESC`;
 
             //유저찜
@@ -167,7 +167,6 @@ const shopCtrl = {
             //메인obj처리
             brand_data['shop_obj'] = await finallySettingMainObj(brand_data['shop_obj'], data);
             brand_data['blog_obj'] = await finallySettingMainObj(brand_data['blog_obj'], data);
-
             delete data.product_categories;
 
             return response(req, res, 100, "success", {
@@ -274,7 +273,7 @@ const shopCtrl = {
                 const { category_id } = req.body;
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id??0} `;
+                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
                 let category_list = await pool.query(category_sql);
                 category_list = category_list?.result;
 
@@ -302,7 +301,7 @@ const shopCtrl = {
                 const { category_id, id } = req.body;
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id??0} `;
+                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
                 let category_list = await pool.query(category_sql);
                 category_list = category_list?.result;
 
@@ -438,7 +437,7 @@ const settingMainObj = async (main_obj_ = []) => {
         product_review_ids,
     }
 }
-const finallySettingMainObj = async (main_obj_ = [], data={}) => {
+const finallySettingMainObj = async (main_obj_ = [], data = {}) => {
     let main_obj = main_obj_;
     main_obj = getMainObjContentByIdList(main_obj, 'item-reviews-select', data?.product_reviews);
     main_obj = getMainObjContentByIdList(main_obj, 'item-reviews', data?.product_reviews, false, true);
@@ -447,13 +446,13 @@ const finallySettingMainObj = async (main_obj_ = [], data={}) => {
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
     for (var i = 0; i < main_obj.length; i++) {
         if (main_obj[i]?.type == 'post') {
-            main_obj[i].list = (main_obj[i]?.list??[]).map(id => {
+            main_obj[i].list = (main_obj[i]?.list ?? []).map(id => {
                 return _.find(data?.post_categories, { id: parseInt(id) })
             })
         }
     }
     for (var i = 0; i < main_obj.length; i++) {
-        if (main_obj[i]?.type == 'product') {
+        if (main_obj[i]?.type == 'sellers') {
             main_obj[i].list = data?.sellers ?? [];
         }
     }

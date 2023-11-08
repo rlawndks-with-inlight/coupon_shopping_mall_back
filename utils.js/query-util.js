@@ -5,6 +5,12 @@ import { searchColumns } from './search-columns.js';
 
 export const insertQuery = async (table, obj) => {
     try {
+        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
+        find_column = find_column?.result;
+        find_column = find_column.map((column) => {
+            return column?.COLUMN_NAME
+        })
+        
         let keys = Object.keys(obj);
         if (keys.length == 0) {
             return false;
@@ -15,11 +21,7 @@ export const insertQuery = async (table, obj) => {
         let values = keys.map(key => {
             return obj[key]
         });
-        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
-        find_column = find_column?.result;
-        find_column = find_column.map((column) => {
-            return column?.COLUMN_NAME
-        })
+        
         let result = await pool.query(`INSERT INTO ${table} (${keys.join()}) VALUES (${question_list.join()})`, values);
         if (find_column.includes('sort_idx')) {
             let setting_sort_idx = await pool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [
