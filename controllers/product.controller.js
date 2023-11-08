@@ -312,7 +312,7 @@ const productCtrl = {
                             if (option?.id) {
                                 let option_result = await updateQuery(`product_options`, {
                                     option_name: option?.option_name,
-                                    option_price: option?.option_price ?? 0,
+                                    option_price: (option?.option_price ?? 0),
                                     option_description: option?.option_description,
                                 }, option?.id);
                             } else {
