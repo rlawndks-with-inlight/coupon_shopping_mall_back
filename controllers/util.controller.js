@@ -243,11 +243,12 @@ const utilCtrl = {
                             post_list[j]?.is_reply,
                         ])
                     }
-                    let result = await pool.query('INSERT INTO posts (category_id,user_id,post_title,post_content,post_title_img,is_reply) VALUES ?', [insert_data])
-                    if (i == 0) {
-                        first_insert_post_idx = result?.result?.insertId
+                    if(insert_data.length > 0){
+                        let result = await pool.query('INSERT INTO posts (category_id,user_id,post_title,post_content,post_title_img,is_reply) VALUES ?', [insert_data])
+                        if (i == 0) {
+                            first_insert_post_idx = result?.result?.insertId
+                        }
                     }
-
                 }
             }
             await db.commit();
