@@ -176,11 +176,12 @@ const utilCtrl = {
                             manager?.id
                         ])
                     }
-                    let result = await pool.query('INSERT INTO products (category_id0,category_id1,category_id2,product_name,product_price,product_sale_price,product_img,product_comment,product_description,brand_id,user_id) VALUES ?', [insert_data])
-                    if (i == 0) {
-                        first_insert_product_idx = result?.result?.insertId
+                    if(insert_data.length > 0){
+                        let result = await pool.query('INSERT INTO products (category_id0,category_id1,category_id2,product_name,product_price,product_sale_price,product_img,product_comment,product_description,brand_id,user_id) VALUES ?', [insert_data])
+                        if (i == 0) {
+                            first_insert_product_idx = result?.result?.insertId
+                        }
                     }
-
                 }
                 let update_sort_idx = await pool.query(`UPDATE products SET sort_idx=id WHERE brand_id=${dns_data?.id} AND id>=${first_insert_product_idx}`);
                 let new_products = await pool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 AND id>=${first_insert_product_idx} ORDER BY id DESC`);
@@ -252,6 +253,7 @@ const utilCtrl = {
                 }
             }
             await db.commit();
+            
             return response(req, res, 100, "success", {});
         } catch (err) {
             await db.rollback();
