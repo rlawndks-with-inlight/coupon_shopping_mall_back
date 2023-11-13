@@ -1,6 +1,6 @@
 'use strict';
 import { pool } from "../config/db.js";
-import { checkIsManagerUrl } from "../utils.js/function.js";
+import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
 import 'dotenv/config';
@@ -12,10 +12,13 @@ import logger from "../utils.js/winston/index.js";
 const shopCtrl = {
     setting: async (req, res, next) => {
         try {
+
             // 상품 카테고리 그룹, 상품 리뷰, 상품 포스트카테고리
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
+
+            let return_moment = returnMoment();
 
             let brand_column = [
                 'shop_obj',
@@ -110,7 +113,14 @@ const shopCtrl = {
             let user_wish_sql = `SELECT ${user_wish_columns.join()} FROM user_wishs `;
             user_wish_sql += ` WHERE user_wishs.brand_id=${decode_dns?.id ?? 0} AND user_wishs.user_id=${decode_user?.id ?? 0} `;
             user_wish_sql += ` ORDER BY id DESC`;
+            //팝업
+            let popup_columns = [
+                `popups.*`,
 
+            ]
+            let popup_sql = `SELECT ${popup_columns.join()} FROM popups `;
+            popup_sql += ` WHERE popups.brand_id=${decode_dns?.id ?? 0} AND popups.open_s_dt <= '${return_moment.substring(0, 10)}' AND popups.open_e_dt >= '${return_moment.substring(0, 10)}' `;
+            popup_sql += ` ORDER BY id DESC`;
             //when
             let sql_list = [
                 { table: 'products', sql: product_sql },
@@ -121,10 +131,11 @@ const shopCtrl = {
                 { table: 'sellers', sql: seller_sql },
                 { table: 'payment_modules', sql: payment_module_sql },
                 { table: 'user_wishs', sql: user_wish_sql },
+                { table: 'popups', sql: popup_sql },
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
-            
+
             //상품이미지처리
             let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
             sub_images = sub_images?.result;

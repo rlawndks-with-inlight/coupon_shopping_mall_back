@@ -19,7 +19,7 @@ const popupCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
@@ -60,12 +60,9 @@ const popupCtrl = {
             const {
                 popup_title, popup_content, open_s_dt, open_e_dt, brand_id
             } = req.body;
-            let files = settingFiles(req.files);
             let obj = {
                 popup_title, popup_content, open_s_dt, open_e_dt, brand_id
             };
-
-            obj = { ...obj, ...files };
 
             let result = await insertQuery(`${table_name}`, obj);
 
@@ -87,11 +84,9 @@ const popupCtrl = {
                 popup_title, popup_content, open_s_dt, open_e_dt,
                 id
             } = req.body;
-            let files = settingFiles(req.files);
             let obj = {
                 popup_title, popup_content, open_s_dt, open_e_dt
             };
-            obj = { ...obj, ...files };
 
             let result = await updateQuery(`${table_name}`, obj, id);
 
