@@ -52,6 +52,9 @@ const domainCtrl = {
         //sameSite: 'none',
         //secure: true
       });
+      console.log(product_id)
+      console.log(post_id)
+      console.log(seller_id)
       brand.ssr_content = {};
       if (product_id > 0) {
         let product = await pool.query(`SELECT * FROM products WHERE id=${product_id} AND brand_id=${brand?.id}`);
