@@ -7,7 +7,12 @@ import logger from "../utils.js/winston/index.js";
 const domainCtrl = {
   get: async (req, res, next) => {
     try {
-      const { dns } = req.query;
+      const {
+        dns,
+        product_id = -1,
+        post_id = -1,
+        seller_id = -1,
+      } = req.query;
       let columns = [
         "id",
         "name",
@@ -47,6 +52,27 @@ const domainCtrl = {
         //sameSite: 'none',
         //secure: true
       });
+      brand.ssr_content = {};
+      if (product_id > 0) {
+        let product = await pool.query(`SELECT * FROM products WHERE id=${product_id} AND brand_id=${brand?.id}`);
+        product = product?.result[0];
+        if (product) {
+          brand.ssr_content.title = `${brand?.name} - ${product?.product_name}`;
+          brand.ssr_content.og_img = `${product?.product_img}`;
+          brand.ssr_content.og_description = `${product?.product_comment}`;
+        }
+      } else if (post_id > 0) {
+        let posts = await pool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE posts.id=${post_id} AND brand_id=${brand?.id}`);
+        posts = posts?.result[0];
+        brand.ssr_content.title = `${brand?.name} - ${posts?.post_title}`;
+      } else if (seller_id > 0) {
+        let seller = await pool.query(`SELECT * FROM users WHERE id=${seller_id} AND brand_id=${brand?.id} AND level>=10`);
+        seller = seller?.result[0];
+
+        brand.ssr_content.title = `${brand?.name} - ${seller?.nickname}`;
+        brand.ssr_content.og_img = `${seller?.profile_img}`;
+        brand.ssr_content.og_description = `${seller?.seller_name}`;
+      }
       return response(req, res, 100, "success", brand);
     } catch (err) {
       console.log(err);
