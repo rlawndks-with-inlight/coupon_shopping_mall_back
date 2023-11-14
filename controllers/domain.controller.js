@@ -57,21 +57,21 @@ const domainCtrl = {
         let product = await pool.query(`SELECT * FROM products WHERE id=${product_id} AND brand_id=${brand?.id}`);
         product = product?.result[0];
         if (product) {
-          brand.ssr_content.title = `${brand?.name} - ${product?.product_name}`;
-          brand.ssr_content.og_img = `${product?.product_img}`;
-          brand.ssr_content.og_description = `${product?.product_comment}`;
+          brand.name = `${brand?.name} - ${product?.product_name}`;
+          brand.og_img = `${product?.product_img}`;
+          brand.og_description = `${product?.product_comment}`;
         }
       } else if (post_id > 0) {
         let post = await pool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE posts.id=${post_id} AND post_categories.brand_id=${brand?.id}`);
         post = post?.result[0];
-        brand.ssr_content.title = `${brand?.name} - ${post?.post_title}`;
+        brand.name = `${brand?.name} - ${post?.post_title}`;
       } else if (seller_id > 0) {
         let seller = await pool.query(`SELECT * FROM users WHERE id=${seller_id} AND brand_id=${brand?.id} AND level>=10`);
         seller = seller?.result[0];
 
-        brand.ssr_content.title = `${brand?.name} - ${seller?.nickname}`;
-        brand.ssr_content.og_img = `${seller?.profile_img}`;
-        brand.ssr_content.og_description = `${seller?.seller_name}`;
+        brand.name = `${brand?.name} - ${seller?.nickname}`;
+        brand.og_img = `${seller?.profile_img}`;
+        brand.og_description = `${seller?.seller_name}`;
       }
       return response(req, res, 100, "success", brand);
     } catch (err) {
