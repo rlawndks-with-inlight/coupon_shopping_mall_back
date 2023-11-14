@@ -119,7 +119,7 @@ const shopCtrl = {
 
             ]
             let popup_sql = `SELECT ${popup_columns.join()} FROM popups `;
-            popup_sql += ` WHERE popups.brand_id=${decode_dns?.id ?? 0} AND popups.open_s_dt <= '${return_moment.substring(0, 10)}' AND popups.open_e_dt >= '${return_moment.substring(0, 10)}' `;
+            popup_sql += ` WHERE popups.brand_id=${decode_dns?.id ?? 0} AND popups.is_delete=0 AND popups.open_s_dt <= '${return_moment.substring(0, 10)}' AND popups.open_e_dt >= '${return_moment.substring(0, 10)}' `;
             popup_sql += ` ORDER BY id DESC`;
             //when
             let sql_list = [
