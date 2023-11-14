@@ -27,13 +27,21 @@ const brandCtrl = {
       let is_manager = await checkIsManagerUrl(req);
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
-      const {} = req.query;
+      const { } = req.query;
       let columns = [`${table_name}.*`];
       let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
       if (decode_dns?.is_main_dns != 1) {
         sql += `WHERE id=${decode_dns?.id ?? 0}`;
       }
       let data = await getSelectQueryList(sql, columns, req.query);
+      let setting_list = await axios.get(`${process.env.SETTING_SITEMAP_URL}/api/setting-check-list`);
+      setting_list = setting_list?.data?.data
+      for (var i = 0; i < data.content.length; i++) {
+        let brand = data.content[i]
+        if (setting_list['letsencrypt_files'].includes(brand?.dns) && setting_list['letsencrypt_files'].includes(brand?.dns)) {
+          data.content[i].is_linux_setting_confirm = 1;
+        }
+      }
 
       return response(req, res, 100, "success", data);
     } catch (err) {
