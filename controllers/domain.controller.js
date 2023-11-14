@@ -62,9 +62,9 @@ const domainCtrl = {
           brand.ssr_content.og_description = `${product?.product_comment}`;
         }
       } else if (post_id > 0) {
-        let posts = await pool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE posts.id=${post_id} AND brand_id=${brand?.id}`);
-        posts = posts?.result[0];
-        brand.ssr_content.title = `${brand?.name} - ${posts?.post_title}`;
+        let post = await pool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE posts.id=${post_id} AND post_categories.brand_id=${brand?.id}`);
+        post = post?.result[0];
+        brand.ssr_content.title = `${brand?.name} - ${post?.post_title}`;
       } else if (seller_id > 0) {
         let seller = await pool.query(`SELECT * FROM users WHERE id=${seller_id} AND brand_id=${brand?.id} AND level>=10`);
         seller = seller?.result[0];
