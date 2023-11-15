@@ -12,7 +12,7 @@ const authCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let { user_name, user_pw, is_manager } = req.body;
-            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id??0} OR level >=50 ) LIMIT 1`, user_name);
+            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id ?? 0} OR level >=50 ) LIMIT 1`, user_name);
             user = user?.result[0];
 
             if (!user) {
@@ -55,7 +55,7 @@ const authCtrl = {
                 `user_wishs.*`,
             ]
             let wish_sql = `SELECT ${wish_columns.join()} FROM user_wishs `;
-            wish_sql += ` WHERE user_wishs.user_id=${user?.id??0} `;
+            wish_sql += ` WHERE user_wishs.user_id=${user?.id ?? 0} `;
             let wish_data = await pool.query(wish_sql);
             wish_data = wish_data?.result;
 
@@ -92,11 +92,11 @@ const authCtrl = {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
             }
             let pw_data = await createHashedPassword(user_pw);
-            let is_exist_user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id??0}`, [user_name]);
+            let is_exist_user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0}`, [user_name]);
             if (is_exist_user?.result.length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
-            
+
             if (!is_manager) {
                 if (level > 0) {
                     return lowLevelException(req, res);
@@ -145,9 +145,9 @@ const authCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, is_manager ? 1 : 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            let point_data = await pool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=${decode_user?.id??0}`);
+            let point_data = await pool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=${decode_user?.id ?? 0}`);
             let point = point_data?.result[0]?.point;
-            return response(req, res, 100, "success", {...decode_user, point})
+            return response(req, res, 100, "success", { ...decode_user, point })
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
@@ -161,7 +161,10 @@ const authCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            
+            const {
+                phone_num,
+                message,
+            } = req.body;
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)

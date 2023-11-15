@@ -44,6 +44,16 @@
             "date": 1699890138539,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2023-11-14.error.log",
             "hash": "67de0cae2fda6c3e24959903478923ff321f2d7939368316ac45bbdfa3f10dbe"
+        },
+        {
+            "date": 1699980490689,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2023-11-15.error.log",
+            "hash": "2648fa16c6e6b8cce8792d2f7be05001a3b64ea272401bb84e5ba6582443768d"
+        },
+        {
+            "date": 1700066518791,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2023-11-16.error.log",
+            "hash": "66110cf0958a9cab09b1b66c1cc00aedf96c28550182eea33687c4473cf3b428"
         }
     ],
     "hashType": "sha256"
