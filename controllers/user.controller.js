@@ -20,11 +20,11 @@ const userCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
 
-            sql += ` WHERE brand_id=${decode_dns?.id??0} `
-            if(is_user){
+            sql += ` WHERE brand_id=${decode_dns?.id ?? 0} `
+            if (is_user) {
                 sql += ` AND level=0 `
             }
-            if(is_seller){
+            if (is_seller) {
                 sql += ` AND level=10 `
             }
             let data = await getSelectQueryList(sql, columns, req.query);
@@ -44,7 +44,7 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id??0} AND ${table_name}.is_delete=0 `);
+            let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} AND ${table_name}.is_delete=0 `);
             let user_tree = makeTree(user_list?.result, decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -102,13 +102,13 @@ const userCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             let {
                 profile_img,
-                brand_id, user_name, user_pw, name, nickname, level=0, phone_num, note,
+                brand_id, user_name, user_pw, name, nickname, level = 0, phone_num, note,
             } = req.body;
             let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
             if (is_exist_user?.result.length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
-            
+
             let pw_data = await createHashedPassword(user_pw);
             user_pw = pw_data.hashedPassword;
             let user_salt = pw_data.salt;
@@ -169,7 +169,7 @@ const userCtrl = {
 
             let user = await selectQuerySimple(table_name, id);
             user = user?.result[0];
-            if(!user || decode_user?.level < user?.level){
+            if (!user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
             let pw_data = await createHashedPassword(user_pw);
@@ -196,9 +196,8 @@ const userCtrl = {
             const { id } = req.params
             let { status } = req.body;
             let user = await selectQuerySimple(table_name, id);
-            console.log(status)
             user = user?.result[0];
-            if(!user || decode_user?.level < user?.level){
+            if (!user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
             let obj = {

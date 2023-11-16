@@ -265,7 +265,6 @@ const brandCtrl = {
         const decode_user = checkLevel(req.cookies.token, 0, res);
         const decode_dns = checkDns(req.cookies.dns);
         const { id } = req.params;
-        console.log(id);
         let files = settingFiles(req.files);
 
         return response(req, res, 100, "success", {});
@@ -282,7 +281,6 @@ const brandCtrl = {
         const decode_user = checkLevel(req.cookies.token, 0, res);
         const decode_dns = checkDns(req.cookies.dns);
         const { id } = req.params;
-        console.log(id);
         let files = settingFiles(req.files);
 
         return response(req, res, 100, "success", {});

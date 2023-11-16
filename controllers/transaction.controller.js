@@ -20,7 +20,7 @@ const transactionCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id`
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (decode_user?.level == 10) {
                 sql += ` AND seller_id=${decode_user?.id} `;
             }
@@ -79,7 +79,6 @@ const transactionCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { id, } = req.params;
             const { ord_num, password } = req.query;
-            console.log(req.query);
             let sql = `SELECT * FROM ${table_name} WHERE id=${id}`
             if (ord_num) {
                 sql = `SELECT * FROM ${table_name} WHERE ord_num='${ord_num}' AND password='${password}'`;
@@ -90,10 +89,10 @@ const transactionCtrl = {
             }
             let data = await pool.query(sql)
             data = data?.result[0];
-            if(!data){
+            if (!data) {
                 return response(req, res, -100, "존재하지 않는 주문번호 입니다.", {})
             }
-            let order_data = await pool.query(`SELECT * FROM transaction_orders WHERE trans_id=${data?.id??0} ORDER BY id DESC`);
+            let order_data = await pool.query(`SELECT * FROM transaction_orders WHERE trans_id=${data?.id ?? 0} ORDER BY id DESC`);
             order_data = order_data?.result;
             for (var i = 0; i < order_data.length; i++) {
                 order_data[i].groups = JSON.parse(order_data[i]?.groups ?? "[]");
