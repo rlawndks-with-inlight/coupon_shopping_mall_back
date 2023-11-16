@@ -162,6 +162,13 @@ const shopCtrl = {
             //상품카테고리처리
             for (var i = 0; i < data?.product_category_groups.length; i++) {
                 let category_list = data?.product_categories.filter((item) => item?.product_category_group_id == data?.product_category_groups[i]?.id);
+                if (data?.product_category_groups[i]?.sort_type == 1) {
+                    category_list = category_list.sort((a, b) => {
+                        if (a.category_name > b.category_name) return 1
+                        if (a.category_name < b.category_name) return -1
+                        return 0
+                    })
+                }
                 category_list = await makeTree(category_list ?? []);
                 data.product_category_groups[i].product_categories = category_list;
             }
@@ -204,7 +211,15 @@ const shopCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
+            let order_sql = `SELECT * FROM transactions WHERE user_id=${decode_user?.id} AND is_cancel=0 ORDER BY id DESC LIMIT 0, 10`;
+            let sql_list = [
+                { table: 'orders', sql: order_sql },
+            ]
 
+            let data = await getMultipleQueryByWhen(sql_list);
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
@@ -238,7 +253,26 @@ const shopCtrl = {
             const { id } = req.params;
             let data = await productCtrl.get({ ...req, IS_RETURN: true }, res, next);
             data = data?.data;
+            let view_count = await pool.query('INSERT INTO product_views (product_id, user_id, brand_id) VALUES (?, ?, ?)', [
+                id,
+                decode_user?.id ?? -1,
+                decode_dns?.id
+            ]);
             return response(req, res, 100, "success", data)
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    userInfo: async (req, res, next) => { //유저정보
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+
+            return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))

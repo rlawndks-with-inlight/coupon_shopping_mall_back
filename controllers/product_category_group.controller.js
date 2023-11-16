@@ -19,7 +19,7 @@ const productCategoryGroupCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
@@ -59,13 +59,15 @@ const productCategoryGroupCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 category_group_name,
-                max_depth=10
+                max_depth = 10,
+                sort_type = 0,
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 category_group_name,
                 brand_id: decode_dns?.id,
                 max_depth,
+                sort_type,
             };
             obj = { ...obj, ...files };
 
@@ -86,14 +88,16 @@ const productCategoryGroupCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                category_group_name, 
-                max_depth=10,
+                category_group_name,
+                max_depth = 10,
+                sort_type = 0,
                 id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 category_group_name,
-                max_depth
+                max_depth,
+                sort_type
             };
             obj = { ...obj, ...files };
 

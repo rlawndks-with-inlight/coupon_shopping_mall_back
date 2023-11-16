@@ -57,7 +57,7 @@ export const checkDns = (token) => { //dns 정보 뿌려주기
 
         //const decoded = jwt.decode(token)
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
+
         if (decoded?.id)
             return decoded
         else
@@ -111,9 +111,9 @@ export const response = async (req, res, code, message, data) => { //응답 포�
     const decode_user = checkLevel(req.cookies.token, 0, res)
     const decode_dns = checkDns(req.cookies.dns, 0)
     //let save_log = await logRequestResponse(req, resDict, decode_user, decode_dns);
-    if(req?.IS_RETURN){
+    if (req?.IS_RETURN) {
         return resDict;
-    }else{
+    } else {
         if (code < 0) {
             res.status(500).send(resDict)
         } else {
@@ -127,7 +127,7 @@ export const lowLevelException = (req, res) => {
 export const isItemBrandIdSameDnsId = (decode_dns, item) => {
     return decode_dns?.id == item?.brand_id
 }
-export const settingFiles = (obj={}) => {
+export const settingFiles = (obj = {}) => {
     let keys = Object.keys(obj);
     let result = {};
     for (var i = 0; i < keys.length; i++) {
@@ -178,23 +178,23 @@ export const imageFieldList = [
         name: field
     }
 })
-export const getPayType = (num) =>{
-    if(num==1){
+export const getPayType = (num) => {
+    if (num == 1) {
         return {
             title: '카드결제',
             description: 'Mastercard, Visa 등을 지원합니다.',
-            type:'card',
+            type: 'card',
         }
-    }else if(num==2){
+    } else if (num == 2) {
         return {
-            title:'인증결제',
-            description:'구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
+            title: '인증결제',
+            description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
             type: 'certification',
         }
     }
     return {
-        title:'',
-        description:'',
+        title: '',
+        description: '',
     }
 }
 export const categoryDepth = 3;
@@ -216,7 +216,7 @@ export const makeChildren = (data_, parent_obj) => {
         for (var i = 0; i < data.children.length; i++) {
             data.children[i] = makeChildren(data.children[i], parent_obj);
         }
-    } 
+    }
     return data;
 }
 
@@ -238,19 +238,19 @@ export function findChildIds(data, id) {
     return children;
 }
 export function findParent(data, item) {
-    if(!(item?.parent_id > 0)){
+    if (!(item?.parent_id > 0)) {
         return item;
     } else {
-        let result = data.filter(itm=>itm.id == item.parent_id);
+        let result = data.filter(itm => itm.id == item.parent_id);
         return findParent(data, result[0]);
     }
 }
 export function findParents(data, item) {
-    if(!(item?.parent_id > 0)){
+    if (!(item?.parent_id > 0)) {
         return [];
-    }else{
+    } else {
         const parent = data.filter(itm => itm.id == item.parent_id);
-        return [...findParents(data, parent[0]),...parent]
+        return [...findParents(data, parent[0]), ...parent]
     }
 }
 export const isParentCheckByUsers = (children, parent, user_list, user_obj_) => {//두 유저가 상하위 관계인지

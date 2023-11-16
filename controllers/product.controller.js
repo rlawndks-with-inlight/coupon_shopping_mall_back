@@ -270,6 +270,7 @@ const productCtrl = {
                 product_img,
                 product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, sub_images = [], groups = [], characters = [],
             } = req.body;
+            console.log(req.body)
             let files = settingFiles(req.files);
             let obj = {
                 product_img,

@@ -21,11 +21,13 @@ router
     .get(shopCtrl.post.get)
     .put(shopCtrl.post.update)
     .delete(shopCtrl.post.remove)
-    
+
 router
     .route('/post')
     .get(shopCtrl.post.list)
     .post(shopCtrl.post.create)
-    
+router
+    .route('/user-info')
+    .get(shopCtrl.userInfo)
 
 export default router;
