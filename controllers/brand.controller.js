@@ -61,6 +61,7 @@ const brandCtrl = {
       data = data?.result[0];
       data["theme_css"] = JSON.parse(data?.theme_css ?? "{}");
       data["setting_obj"] = JSON.parse(data?.setting_obj ?? "{}");
+      data["bonaeja_obj"] = JSON.parse(data?.bonaeja_obj ?? "{}");
       data["shop_obj"] = JSON.parse(data?.shop_obj ?? "[]");
       data["blog_obj"] = JSON.parse(data?.blog_obj ?? "[]");
       data["seo_obj"] = JSON.parse(data?.seo_obj ?? "{}");
@@ -101,6 +102,7 @@ const brandCtrl = {
         note,
         theme_css = {},
         setting_obj = {},
+        bonaeja_obj = {},
         shop_obj = [],
         blog_obj = [],
         seo_obj = {},
@@ -128,12 +130,14 @@ const brandCtrl = {
         note,
         theme_css,
         setting_obj,
+        bonaeja_obj,
         shop_obj,
         blog_obj,
         seo_obj,
       };
       obj["theme_css"] = JSON.stringify(obj.theme_css);
       obj["setting_obj"] = JSON.stringify(obj.setting_obj);
+      obj["bonaeja_obj"] = JSON.stringify(obj.bonaeja_obj);
       obj["shop_obj"] = JSON.stringify(obj.shop_obj);
       obj["blog_obj"] = JSON.stringify(obj.blog_obj);
       obj["seo_obj"] = JSON.stringify(obj.seo_obj);
@@ -189,6 +193,7 @@ const brandCtrl = {
         note,
         theme_css = {},
         setting_obj = {},
+        bonaeja_obj = {},
         shop_obj = [],
         blog_obj = [],
         seo_obj = {},
@@ -221,12 +226,14 @@ const brandCtrl = {
         note,
         theme_css,
         setting_obj,
+        bonaeja_obj,
         shop_obj,
         blog_obj,
         seo_obj,
       };
       obj["theme_css"] = JSON.stringify(obj.theme_css);
       obj["setting_obj"] = JSON.stringify(obj.setting_obj);
+      obj["bonaeja_obj"] = JSON.stringify(obj.bonaeja_obj);
       obj["shop_obj"] = JSON.stringify(obj.shop_obj);
       obj["blog_obj"] = JSON.stringify(obj.blog_obj);
       obj["seo_obj"] = JSON.stringify(obj.seo_obj);

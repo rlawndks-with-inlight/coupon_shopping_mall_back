@@ -253,11 +253,13 @@ const shopCtrl = {
             const { id } = req.params;
             let data = await productCtrl.get({ ...req, IS_RETURN: true }, res, next);
             data = data?.data;
-            let view_count = await pool.query('INSERT INTO product_views (product_id, user_id, brand_id) VALUES (?, ?, ?)', [
-                id,
-                decode_user?.id ?? -1,
-                decode_dns?.id
-            ]);
+            if (decode_user?.id > 0) {
+                let view_count = await pool.query('INSERT INTO product_views (product_id, user_id, brand_id) VALUES (?, ?, ?)', [
+                    id,
+                    decode_user?.id ?? -1,
+                    decode_dns?.id
+                ]);
+            }
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)

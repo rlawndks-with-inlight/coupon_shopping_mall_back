@@ -61,6 +61,7 @@ const productCategoryGroupCtrl = {
                 category_group_name,
                 max_depth = 10,
                 sort_type = 0,
+                is_show_header_menu = 1,
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -68,6 +69,7 @@ const productCategoryGroupCtrl = {
                 brand_id: decode_dns?.id,
                 max_depth,
                 sort_type,
+                is_show_header_menu,
             };
             obj = { ...obj, ...files };
 
@@ -91,13 +93,15 @@ const productCategoryGroupCtrl = {
                 category_group_name,
                 max_depth = 10,
                 sort_type = 0,
+                is_show_header_menu = 1,
                 id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 category_group_name,
                 max_depth,
-                sort_type
+                sort_type,
+                is_show_header_menu
             };
             obj = { ...obj, ...files };
 

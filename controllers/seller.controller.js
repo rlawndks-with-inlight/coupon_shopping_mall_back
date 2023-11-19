@@ -18,7 +18,7 @@ const sellerCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE brand_id=${decode_dns?.id??0} `
+            sql += ` WHERE brand_id=${decode_dns?.id ?? 0} `
 
             if (is_seller) {
                 sql += ` AND level=10 `
@@ -43,7 +43,7 @@ const sellerCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id??0} AND ${table_name}.is_delete=0 `);
+            let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} AND ${table_name}.is_delete=0 `);
             let user_tree = makeTree(user_list?.result, decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -69,7 +69,7 @@ const sellerCtrl = {
             products = products?.result;
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
-            return response(req, res, 100, "success", {...data, products})
+            return response(req, res, 100, "success", { ...data, products })
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
@@ -147,11 +147,11 @@ const sellerCtrl = {
                         product_ids[i],
                     ])
                 }
-                let result2 = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES ?`,[insert_products]);
+                let result2 = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES ?`, [insert_products]);
             }
             await db.commit();
             return response(req, res, 100, "success", {
-                id:user_id
+                id: user_id
             })
         } catch (err) {
             console.log(err)
@@ -175,7 +175,7 @@ const sellerCtrl = {
                 id_img,
                 profile_img,
                 user_name, name, nickname, level = 10, phone_num, note,
-                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css={}, seller_trx_fee = 0,
+                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, seller_trx_fee = 0,
                 product_ids = [],
                 id
             } = req.body;
@@ -196,7 +196,7 @@ const sellerCtrl = {
             await db.beginTransaction();
             let result = await updateQuery(`${table_name}`, obj, id);
             let delete_connect = await pool.query(`DELETE FROM sellers_and_products WHERE seller_id=${id}`);
-            
+
             if (product_ids.length > 0) {
                 let insert_products = [];
                 for (var i = 0; i < product_ids.length; i++) {
@@ -205,7 +205,7 @@ const sellerCtrl = {
                         product_ids[i],
                     ])
                 }
-                let result2 = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES ?`,[insert_products]);
+                let result2 = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES ?`, [insert_products]);
             }
             await db.commit();
             return response(req, res, 100, "success", {})

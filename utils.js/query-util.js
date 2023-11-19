@@ -10,7 +10,7 @@ export const insertQuery = async (table, obj) => {
         find_column = find_column.map((column) => {
             return column?.COLUMN_NAME
         })
-        
+
         let keys = Object.keys(obj);
         if (keys.length == 0) {
             return false;
@@ -21,7 +21,7 @@ export const insertQuery = async (table, obj) => {
         let values = keys.map(key => {
             return obj[key]
         });
-        
+
         let result = await pool.query(`INSERT INTO ${table} (${keys.join()}) VALUES (${question_list.join()})`, values);
         if (find_column.includes('sort_idx')) {
             let setting_sort_idx = await pool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [
@@ -54,11 +54,11 @@ export const deleteQuery = async (table, where_obj, delete_true) => {
     for (var i = 0; i < keys.length; i++) {
         where_list.push(` ${keys[i]}=${where_obj[keys[i]]} `);
     }
-    if(where_list.length == 0){
+    if (where_list.length == 0) {
         return true;
     }
     let sql = `UPDATE ${table} SET is_delete=1 WHERE ${where_list.join('AND')} `;
-    if(delete_true){
+    if (delete_true) {
         sql = `DELETE FROM ${table} WHERE ${where_list.join('AND')}`
     }
     let result = await pool.query(sql);
@@ -94,7 +94,7 @@ export const getTableNameBySelectQuery = (sql) => {// select query 가지고 불
     return table;
 }
 export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []) => {
-    let { page = 1, page_size = 100000, is_asc = false, order, search = "" } = query;
+    let { page = 1, page_size = 100000, is_asc = 0, order, search = "" } = query;
     let sql = sql_;
     let table = getTableNameBySelectQuery(sql);
     let find_columns = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
@@ -111,14 +111,14 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     if (order) {
         order = order
     } else {
-        
+
         if (find_columns.includes('sort_idx')) {
             order = 'sort_idx';
         } else {
             order = 'id';
         }
     }
-    content_sql += ` ORDER BY ${table}.${order} ${is_asc ? 'ASC' : 'DESC'} `;
+    content_sql += ` ORDER BY ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
     content_sql += ` LIMIT ${(page - 1) * page_size}, ${page_size} `;
     let total_sql = sql.replaceAll(process.env.SELECT_COLUMN_SECRET, 'COUNT(*) as total');
     let result_list = [];
@@ -148,10 +148,10 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     }
     return settingSelectQueryObj(obj);
 }
-const settingSelectQueryWhere = (sql_, query, table, find_columns=[]) => {
+const settingSelectQueryWhere = (sql_, query, table, find_columns = []) => {
     let sql = sql_;
     const { s_dt, e_dt, search } = query;
-    if(find_columns.includes('is_delete')){
+    if (find_columns.includes('is_delete')) {
         sql += ` ${sql.includes('WHERE') ? 'AND' : 'WHERE'} ${table}.is_delete=0 `;
     } else {
         sql += ` ${sql.includes('WHERE') ? '' : 'WHERE 1=1'}  `;
