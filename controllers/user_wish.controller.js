@@ -19,7 +19,7 @@ const userWishCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.user_id=${decode_user?.id??0} `;
+            sql += ` WHERE ${table_name}.user_id=${decode_user?.id ?? 0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
@@ -38,13 +38,13 @@ const userWishCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
-           
+
             let sql = `SELECT * FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.user_id=${decode_user?.id??0} AND brand_id=${decode_dns?.id??0} ORDER BY id DESC `;
+            sql += ` WHERE ${table_name}.user_id=${decode_user?.id ?? 0} AND brand_id=${decode_dns?.id ?? 0} ORDER BY id DESC `;
 
             let data = await pool.query(sql);
             data = data?.result;
-            data = data.map(item=>{
+            data = data.map(item => {
                 return item?.product_id
             })
             data.unshift(0);
@@ -89,17 +89,17 @@ const userWishCtrl = {
                 product_id
             } = req.body;
             let files = settingFiles(req.files);
-            if(!decode_user){
-                return lowLevelException(req, res);
+            if (!decode_user) {
+                return response(req, res, -100, "로그인을 해주세요.", false)
             }
-            let exist_wish = await pool.query(`SELECT * FROM ${table_name} WHERE product_id=? AND user_id=?`,[product_id, decode_user?.id]);
+            let exist_wish = await pool.query(`SELECT * FROM ${table_name} WHERE product_id=? AND user_id=?`, [product_id, decode_user?.id]);
             exist_wish = exist_wish?.result;
-            if(exist_wish.length > 0){
+            if (exist_wish.length > 0) {
                 return response(req, res, -100, "이미 찜한 상품입니다.", false)
             }
             let obj = {
                 product_id,
-                user_id:decode_user?.id,
+                user_id: decode_user?.id,
                 brand_id: decode_dns?.id
             };
 
