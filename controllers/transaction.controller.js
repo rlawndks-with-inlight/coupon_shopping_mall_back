@@ -14,6 +14,9 @@ const transactionCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { trx_status, cancel_status } = req.query;
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
             let columns = [
                 `${table_name}.*`,
                 `sellers.user_name AS seller_user_name`,

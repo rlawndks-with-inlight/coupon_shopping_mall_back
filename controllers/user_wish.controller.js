@@ -14,10 +14,11 @@ const userWishCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
-
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
             let columns = [
                 `${table_name}.*`,
-
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             if (decode_user?.level >= 40) {

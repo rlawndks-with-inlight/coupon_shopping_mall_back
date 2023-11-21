@@ -22,5 +22,8 @@ router
 router
     .route('/code/check')
     .post(authCtrl.checkPhoneVerifyCode);
+router
+    .route('/change-password')
+    .post(authCtrl.changePassword);
 
 export default router;

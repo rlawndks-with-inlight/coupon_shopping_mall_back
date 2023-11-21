@@ -29,8 +29,21 @@ export const returnMoment = (d) => {
 export const differenceTwoDate = (f_d_, s_d_) => {//두날짜의 시간차
     let f_d = new Date(f_d_).getTime();//큰시간
     let s_d = new Date(s_d_).getTime();//작은시간
+    let day = (f_d - s_d) / (1000 * 3600 * 24);
     let hour = (f_d - s_d) / (1000 * 3600);
     let minute = (f_d - s_d) / (1000 * 60);
-    let day = (f_d - s_d) / (1000 * 3600 * 24);
-    return day;
+    let second = (f_d - s_d) / (1000);
+    return {
+        day,
+        minute,
+        hour,
+        second,
+    };
+}
+export function generateRandomCode(n) {
+    let str = ''
+    for (let i = 0; i < n; i++) {
+        str += Math.floor(Math.random() * 10)
+    }
+    return str
 }
