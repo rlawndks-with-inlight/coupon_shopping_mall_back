@@ -335,6 +335,24 @@ const authCtrl = {
 
         }
     },
+    resign: async (req, res, next) => {
+        try {
+            let is_manager = await checkIsManagerUrl(req);
+            const decode_user = checkLevel(req.cookies.token, is_manager ? 1 : 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            const {
+
+            } = req.body;
+
+            return response(req, res, 100, "success", {})
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
 };
 
 export default authCtrl;

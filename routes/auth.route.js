@@ -25,5 +25,8 @@ router
 router
     .route('/change-password')
     .post(authCtrl.changePassword);
+router
+    .route('/resign')
+    .post(authCtrl.resign);
 
 export default router;
