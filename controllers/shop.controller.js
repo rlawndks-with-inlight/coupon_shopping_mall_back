@@ -254,6 +254,11 @@ const shopCtrl = {
             let data = await productCtrl.get({ ...req, IS_RETURN: true }, res, next);
             data = data?.data;
             if (decode_user?.id > 0) {
+                let view_delete = await pool.query('DELETE FROM product_views WHERE product_id=? AND user_id=? AND brand_id=? ', [
+                    id,
+                    decode_user?.id ?? -1,
+                    decode_dns?.id
+                ]);
                 let view_count = await pool.query('INSERT INTO product_views (product_id, user_id, brand_id) VALUES (?, ?, ?)', [
                     id,
                     decode_user?.id ?? -1,
@@ -273,8 +278,25 @@ const shopCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            let data = {
+                user: decode_user,
+            }
+            let point_sql = `SELECT SUM(point) FROM points WHERE user_id=${decode_user?.id}`;
+            let order_sql = `SELECT * FROM transactions WHERE user_id=${decode_user?.id} ORDER BY id DESC LIMIT 0, 5`;
+            let product_view_sql = `SELECT product_views.*, products.product_name, products.product_img, products.product_comment, products.status FROM product_views `;
+            product_view_sql += ` LEFT JOIN products ON product_views.product_id=products.id `;
 
-            return response(req, res, 100, "success", {})
+            let sql_list = [
+                { table: 'point', sql: point_sql },
+                { table: 'orders', sql: order_sql },
+                { table: 'product_views', sql: product_view_sql },
+            ]
+            let sql_result = await getMultipleQueryByWhen(sql_list);
+            data = {
+                ...data,
+                ...sql_result,
+            }
+            return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))

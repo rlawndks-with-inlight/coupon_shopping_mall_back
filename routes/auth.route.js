@@ -19,5 +19,8 @@ router
 router
     .route('/code')
     .post(authCtrl.sendPhoneVerifyCode);
+router
+    .route('/code/check')
+    .post(authCtrl.checkPhoneVerifyCode);
 
 export default router;

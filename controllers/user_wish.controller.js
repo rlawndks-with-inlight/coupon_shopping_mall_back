@@ -17,9 +17,20 @@ const userWishCtrl = {
 
             let columns = [
                 `${table_name}.*`,
+
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.user_id=${decode_user?.id ?? 0} `;
+            if (decode_user?.level >= 40) {
+                columns.push(`products.product_name`);
+                columns.push(`users.user_name`);
+                sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
+                sql += ` LEFT JOIN products ON ${table_name}.product_id=products.id `;
+            }
+
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            if (!(decode_user?.level >= 40)) {
+                sql += ` AND ${table_name}.user_id=${decode_user?.id ?? 0} `;
+            }
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
