@@ -10,7 +10,7 @@ const table_name = 'popups';
 const popupCtrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
@@ -34,7 +34,7 @@ const popupCtrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -54,7 +54,7 @@ const popupCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
@@ -77,7 +77,7 @@ const popupCtrl = {
     },
     update: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
@@ -101,7 +101,7 @@ const popupCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;

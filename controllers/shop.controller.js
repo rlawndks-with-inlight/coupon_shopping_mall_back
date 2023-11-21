@@ -308,7 +308,7 @@ const shopCtrl = {
     post: {
         list: async (req, res, next) => { //게시물 리스트출력
             try {
-                let is_manager = await checkIsManagerUrl(req);
+
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { category_id } = req.query;
@@ -406,7 +406,7 @@ const shopCtrl = {
         },
         remove: async (req, res, next) => {
             try {
-                let is_manager = await checkIsManagerUrl(req);
+
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;

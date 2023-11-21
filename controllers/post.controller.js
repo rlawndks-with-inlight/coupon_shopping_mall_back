@@ -11,13 +11,13 @@ const table_name = 'posts';
 const postCtrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { category_id } = req.query;
 
             let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-            category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id??0} `;
+            category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
             let category_list = await pool.query(category_sql);
             category_list = category_list?.result;
 
@@ -42,23 +42,23 @@ const postCtrl = {
             if (category_id) {
                 sql += ` AND ${table_name}.category_id IN (${category_ids.join()}) `
             }
-            if(req.IS_RETURN){
+            if (req.IS_RETURN) {
                 if (top_parent?.post_category_read_type == 1) {
                     sql += ` AND user_id=${decode_user?.id ?? 0} `;
                 }
             }
             let data = await getSelectQueryList(sql, columns, req.query);
 
-            let post_ids = data.content.map(item=>{
+            let post_ids = data.content.map(item => {
                 return item?.id
             });
             post_ids.unshift(0);
             let child_posts = await pool.query(`SELECT * FROM posts WHERE parent_id IN (${post_ids.join()}) ORDER BY id DESC`);
             child_posts = child_posts?.result;
-            data.content = data.content.map((item)=>{
+            data.content = data.content.map((item) => {
                 return {
                     ...item,
-                    replies:child_posts.filter(itm=> itm.parent_id == item.id),
+                    replies: child_posts.filter(itm => itm.parent_id == item.id),
                 }
             })
             return response(req, res, 100, "success", data);
@@ -72,7 +72,7 @@ const postCtrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -99,7 +99,7 @@ const postCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
@@ -128,7 +128,7 @@ const postCtrl = {
     },
     update: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
@@ -155,7 +155,7 @@ const postCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;

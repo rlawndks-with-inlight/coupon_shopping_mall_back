@@ -11,7 +11,6 @@ const table_name = 'table_name';
 const Ctrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
@@ -20,7 +19,7 @@ const Ctrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
@@ -35,7 +34,6 @@ const Ctrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -55,7 +53,6 @@ const Ctrl = {
     },
     create: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
@@ -80,7 +77,6 @@ const Ctrl = {
     },
     update: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
@@ -104,7 +100,6 @@ const Ctrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;

@@ -11,7 +11,7 @@ const table_name = 'products';
 const productCtrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { seller_id } = req.query;
@@ -77,7 +77,7 @@ const productCtrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -141,7 +141,7 @@ const productCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             if (decode_user?.level < 10) {
@@ -259,7 +259,7 @@ const productCtrl = {
     },
     update: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             if (decode_user?.level < 40) {
@@ -407,7 +407,7 @@ const productCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;

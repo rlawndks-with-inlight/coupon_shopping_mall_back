@@ -10,7 +10,7 @@ const table_name = 'product_reviews';
 const productReviewCtrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { product_id } = req.query;
@@ -21,7 +21,7 @@ const productReviewCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             sql += ` AND ${table_name}.product_id=${product_id} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
@@ -37,7 +37,7 @@ const productReviewCtrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -57,7 +57,7 @@ const productReviewCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
@@ -83,7 +83,7 @@ const productReviewCtrl = {
     },
     update: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
@@ -95,7 +95,7 @@ const productReviewCtrl = {
                 title, scope, content, profile_img
             };
             obj = { ...obj, ...files };
-            if(!(decode_user?.level >= 10 || user_id == decode_user?.id)){
+            if (!(decode_user?.level >= 10 || user_id == decode_user?.id)) {
                 return lowLevelException(req, res);
             }
             let result = await updateQuery(`${table_name}`, obj, id);
@@ -111,7 +111,7 @@ const productReviewCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;

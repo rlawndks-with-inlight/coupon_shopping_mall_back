@@ -10,7 +10,7 @@ const table_name = 'payment_modules';
 const paymentModuleCtrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
@@ -19,7 +19,7 @@ const paymentModuleCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
@@ -34,7 +34,7 @@ const paymentModuleCtrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -54,11 +54,11 @@ const paymentModuleCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                pay_key, mid, tid, trx_type=0, is_old_auth=0, brand_id
+                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -68,17 +68,17 @@ const paymentModuleCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             obj = { ...obj, ...files };
             await db.beginTransaction();
-            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id??0}`);
+            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id ?? 0}`);
             is_exist_trx_type = is_exist_trx_type?.result;
-            if(is_exist_trx_type.length > 0){
+            if (is_exist_trx_type.length > 0) {
                 await db.rollback();
                 return response(req, res, -100, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)
             }
             let result = await insertQuery(`${table_name}`, obj);
-           
+
 
             await db.commit();
             return response(req, res, 100, "success", {})
@@ -93,11 +93,11 @@ const paymentModuleCtrl = {
     },
     update: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                pay_key, mid, tid, trx_type=0, is_old_auth=0, brand_id,
+                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id,
                 id
             } = req.body;
             let files = settingFiles(req.files);
@@ -106,14 +106,14 @@ const paymentModuleCtrl = {
             };
             obj = { ...obj, ...files };
             await db.beginTransaction();
-            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id??0} AND id!=${id}`);
+            let is_exist_trx_type = await pool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id ?? 0} AND id!=${id}`);
             is_exist_trx_type = is_exist_trx_type?.result;
-            if(is_exist_trx_type.length > 0){
+            if (is_exist_trx_type.length > 0) {
                 await db.rollback();
                 return response(req, res, -200, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)
             }
             let result = await updateQuery(`${table_name}`, obj, id);
-            
+
             await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
@@ -127,7 +127,7 @@ const paymentModuleCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;

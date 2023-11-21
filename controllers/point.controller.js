@@ -10,7 +10,7 @@ const table_name = 'points';
 const pointCtrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { } = req.query;
@@ -24,7 +24,7 @@ const pointCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
             sql += ` LEFT JOIN users AS sender ON ${table_name}.sender_id=sender.id `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (decode_user.level < 10) {
                 sql += ` AND ${table_name}.user_id=${decode_user.id} `;
             }
@@ -41,7 +41,7 @@ const pointCtrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -61,7 +61,7 @@ const pointCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             if (decode_user.level < 10) {
@@ -76,7 +76,7 @@ const pointCtrl = {
                 note,
                 brand_id
             } = req.body;
-            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id??0}`, [user_name]);
+            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0}`, [user_name]);
             user = user?.result[0];
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)
@@ -105,7 +105,7 @@ const pointCtrl = {
     },
     update: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             if (decode_user.level < 10) {
@@ -117,7 +117,7 @@ const pointCtrl = {
                 note,
                 id
             } = req.body;
-            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id??0} `, [user_name]);
+            let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0} `, [user_name]);
             user = user?.result[0];
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)
@@ -144,7 +144,7 @@ const pointCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 

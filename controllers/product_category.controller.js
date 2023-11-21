@@ -10,7 +10,7 @@ const table_name = 'product_categories';
 const productCategoryCtrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { product_category_group_id, page, page_size } = req.query;
@@ -18,11 +18,11 @@ const productCategoryCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id??0} `;
+            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             sql += ` AND product_category_group_id=${product_category_group_id} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
-            data.content = await makeTree(data?.content??[]);
+            data.content = await makeTree(data?.content ?? []);
             data.total = data?.content.length ?? 0;
             data.content = (data?.content ?? []).slice((page - 1) * (page_size), page * page_size);
 
@@ -37,7 +37,7 @@ const productCategoryCtrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -57,13 +57,13 @@ const productCategoryCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 category_img,
-                parent_id=-1,
-                category_type=0,
+                parent_id = -1,
+                category_type = 0,
                 category_name,
                 category_description,
                 product_category_group_id,
@@ -94,13 +94,13 @@ const productCategoryCtrl = {
     },
     update: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 category_img,
-                parent_id=-1,
-                category_type=0,
+                parent_id = -1,
+                category_type = 0,
                 category_name,
                 category_description,
                 product_category_group_id,
@@ -128,11 +128,11 @@ const productCategoryCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-          
+
             let result = await deleteQuery(`${table_name}`, {
                 id
             })

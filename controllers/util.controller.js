@@ -9,7 +9,7 @@ import logger from "../utils.js/winston/index.js";
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let { source_id, source_sort_idx, dest_id, dest_sort_idx } = req.body;
@@ -42,7 +42,7 @@ const utilCtrl = {
     },
     changeStatus: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 10);
             const decode_dns = checkDns(req.cookies.dns);
             const { table, column_name } = req.params;
@@ -62,7 +62,7 @@ const utilCtrl = {
     },
     copy: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 50);
             const decode_dns = checkDns(req.cookies.dns);
 

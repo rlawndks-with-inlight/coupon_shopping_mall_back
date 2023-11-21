@@ -24,7 +24,7 @@ const table_name = "brands";
 const brandCtrl = {
   list: async (req, res, next) => {
     try {
-      let is_manager = await checkIsManagerUrl(req);
+
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { } = req.query;
@@ -53,7 +53,7 @@ const brandCtrl = {
   },
   get: async (req, res, next) => {
     try {
-      let is_manager = await checkIsManagerUrl(req);
+
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { id } = req.params;
@@ -77,7 +77,7 @@ const brandCtrl = {
   create: async (req, res, next) => {
     // 50레벨이상 관리자 url만
     try {
-      let is_manager = await checkIsManagerUrl(req);
+
       const decode_user = checkLevel(req.cookies.token, 50);
       if (!decode_user) {
         return lowLevelException(req, res);
@@ -171,7 +171,7 @@ const brandCtrl = {
   update: async (req, res, next) => {
     // 40레벨일시 자기 브랜드 수정, 50레벨일시 모든 브랜드 수정가능
     try {
-      let is_manager = await checkIsManagerUrl(req);
+
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const {
@@ -250,7 +250,7 @@ const brandCtrl = {
   },
   remove: async (req, res, next) => {
     try {
-      let is_manager = await checkIsManagerUrl(req);
+
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { id } = req.params;
@@ -268,7 +268,7 @@ const brandCtrl = {
   design: {
     get: async (req, res, next) => {
       try {
-        let is_manager = await checkIsManagerUrl(req);
+
         const decode_user = checkLevel(req.cookies.token, 0, res);
         const decode_dns = checkDns(req.cookies.dns);
         const { id } = req.params;
@@ -284,7 +284,7 @@ const brandCtrl = {
     },
     update: async (req, res, next) => {
       try {
-        let is_manager = await checkIsManagerUrl(req);
+
         const decode_user = checkLevel(req.cookies.token, 0, res);
         const decode_dns = checkDns(req.cookies.dns);
         const { id } = req.params;

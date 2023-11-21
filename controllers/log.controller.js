@@ -10,7 +10,7 @@ const table_name = 'logs'
 const logCtrl = {
     list: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { response_result_type } = req.query;
@@ -22,7 +22,7 @@ const logCtrl = {
             sql += ` LEFT JOIN users ON users.id=${table_name}.user_id `
             sql += ` WHERE 1=1 `
             if (decode_dns?.is_main_dns != 1) {
-                sql += ` AND ${table_name}.brand_id=${decode_dns?.id??0}`
+                sql += ` AND ${table_name}.brand_id=${decode_dns?.id ?? 0}`
             }
             let sql_list = [
                 { table: 'success', sql: (sql + ` ${sql.includes('WHERE') ? 'AND' : 'WHERE'} response_result > 0 `).replaceAll(process.env.SELECT_COLUMN_SECRET, 'COUNT(*) AS success') },
@@ -44,7 +44,7 @@ const logCtrl = {
     },
     get: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -64,7 +64,7 @@ const logCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
+
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;

@@ -15,10 +15,7 @@ const authCtrl = {
             let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id ?? 0} OR level >=50 ) LIMIT 1`, user_name);
             user = user?.result[0];
 
-            if (!user) {
-                return response(req, res, -100, "가입되지 않은 회원입니다.", {})
-            }
-            if (is_manager && user.level <= 0) {
+            if (!user || (is_manager && user.level <= 0)) {
                 return response(req, res, -100, "가입되지 않은 회원입니다.", {})
             }
             if (user?.status == 1) {
@@ -26,6 +23,9 @@ const authCtrl = {
             }
             if (user?.status == 2) {
                 return response(req, res, -100, "로그인 불가 회원입니다.", {})
+            }
+            if (user?.status == 3) {
+                return response(req, res, -100, "탈퇴회원입니다.", {})
             }
             user_pw = (await createHashedPassword(user_pw, user.user_salt)).hashedPassword;
             if (user_pw != user.user_pw) {
@@ -127,7 +127,6 @@ const authCtrl = {
     },
     signOut: async (req, res, next) => {
         try {
-            let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             res.clearCookie('token');
@@ -141,6 +140,22 @@ const authCtrl = {
         }
     },
     checkSign: async (req, res, next) => {
+        try {
+            let is_manager = await checkIsManagerUrl(req);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            let point_data = await pool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=${decode_user?.id ?? 0}`);
+            let point = point_data?.result[0]?.point;
+            return response(req, res, 100, "success", { ...decode_user, point })
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    changeInfo: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, is_manager ? 1 : 0, res);

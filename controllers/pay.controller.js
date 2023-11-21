@@ -25,7 +25,7 @@ const payCtrl = {
   ready: async (req, res, next) => {
     //인증결제
     try {
-      let is_manager = await checkIsManagerUrl(req);
+
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { trx_type } = req.params;
@@ -78,8 +78,7 @@ const payCtrl = {
       });
       product_seller_ids.unshift(0);
       let seller_data = await pool.query(
-        `SELECT * FROM users WHERE brand_id=${
-          brand_id ?? 0
+        `SELECT * FROM users WHERE brand_id=${brand_id ?? 0
         } AND id IN (${product_seller_ids.join()})`
       );
       seller_data = seller_data?.result;
@@ -134,7 +133,7 @@ const payCtrl = {
   result: async (req, res, next) => {
     //결제완료
     try {
-      let is_manager = await checkIsManagerUrl(req);
+
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
 
@@ -241,7 +240,7 @@ const payCtrl = {
   cancel: async (req, res, next) => {
     //결제취소
     try {
-      let is_manager = await checkIsManagerUrl(req);
+
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { trx_id, pay_key, amount, mid, tid, id } = req.body;
