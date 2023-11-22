@@ -204,6 +204,7 @@ const authCtrl = {
                 receiver: phone_num.replaceAll(' ', '').replaceAll('-', ''),
                 msg: `[${decode_dns?.name}] 인증번호 ${rand_num}을(를) 입력해주세요.`,
             })
+            console.log(send_message)
             if (send_message?.data?.code == 100) {
                 let result = await pool.query(`INSERT INTO phone_check_tokens (brand_id, phone_num, token, rand_num) VALUES (?, ?, ?, ?)`, [
                     decode_dns?.id,
