@@ -13,7 +13,7 @@ const transactionCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { trx_status, cancel_status } = req.query;
+            const { trx_status, cancel_status, is_confirm } = req.query;
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
@@ -32,6 +32,9 @@ const transactionCtrl = {
             }
             if (trx_status) {
                 sql += ` AND trx_status=${trx_status} `;
+            }
+            if (is_confirm) {
+                sql += ` AND trx_status>=5 `;
             }
             if (cancel_status) {
                 if (cancel_status == 1) {
