@@ -24,9 +24,12 @@ router
     .post(authCtrl.checkPhoneVerifyCode);
 router
     .route('/change-password')
-    .post(authCtrl.changePassword);
+    .put(authCtrl.changePassword);
 router
     .route('/resign')
     .post(authCtrl.resign);
+router
+    .route('/change-info')
+    .put(authCtrl.changeInfo);
 
 export default router;

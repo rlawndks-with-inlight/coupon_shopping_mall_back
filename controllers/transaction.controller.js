@@ -202,7 +202,6 @@ const transactionCtrl = {
     },
     cancelRequest: async (req, res, next) => {
         try {
-
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
