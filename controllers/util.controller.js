@@ -5,6 +5,7 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import grandDb, { grandPool } from "../config/grandparis-db.js";
 
 const utilCtrl = {
     sort: async (req, res, next) => {
@@ -265,4 +266,55 @@ const utilCtrl = {
         }
     },
 };
+const setProducts = async () => {
+    try {
+
+        let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
+        grand_products = grand_products?.result;
+        let grand_product_obj = {};
+        for (var i = 0; i < grand_products.length; i++) {
+            grand_product_obj[grand_products[i]?.SEQ] = grand_products[i];
+        }
+        let grand_users = await grandPool.query(`SELECT * FROM MEMBER ORDER BY SEQ ASC`);
+        grand_users = grand_users?.result;
+        let grand_user_obj = {};
+        for (var i = 0; i < grand_users.length; i++) {
+            grand_user_obj[grand_users[i]?.SEQ] = grand_users[i];
+        }
+        let products = await pool.query(`SELECT * FROM products WHERE brand_id=5 ORDER BY id ASC`);
+        products = products?.result;
+        let product_obj = {};
+        for (var i = 0; i < products.length; i++) {
+            product_obj[products[i]?.id] = products[i];
+        }
+        let users = await pool.query(`SELECT * FROM users WHERE brand_id=5 ORDER BY id ASC`);
+        users = users?.result;
+        let user_obj = {};
+        for (var i = 0; i < users.length; i++) {
+            user_obj[users[i]?.id] = users[i];
+        }
+
+        let sql_list = [];
+
+        for (var i = 0; i < products.length; i++) {
+            if (grand_product_obj[products[i]?.id]?.SELLER_MEMBER_SEQ > 0) {
+                sql_list.push(`UPDATE products SET consignment_user_id=${grand_product_obj[products[i]?.id]?.SELLER_MEMBER_SEQ + 1000} WHERE id=${products[i]?.id}`);
+            } else if (grand_product_obj[products[i]?.id]?.SELLER_NAME) {
+                sql_list.push(`UPDATE products SET consignment_none_user_name='${grand_product_obj[products[i]?.id]?.SELLER_NAME}',consignment_none_user_name='${grand_product_obj[products[i]?.id]?.SELLER_MOBILE}' WHERE id=${products[i]?.id}`)
+            }
+        }
+        console.log(sql_list);
+        await db.beginTransaction();
+        for (var i = 0; i < sql_list.length; i++) {
+            let result = await pool.query(sql_list[i]);
+        }
+        console.log('success');
+        await db.commit();
+    } catch (err) {
+        await db.rollback();
+        console.log(err)
+    }
+
+}
+//setProducts();
 export default utilCtrl;
