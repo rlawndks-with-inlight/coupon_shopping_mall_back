@@ -80,13 +80,23 @@ const productCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { id } = req.params;
+            let { id = 0 } = req.params;
             const { brand_id } = req.query;
+
+            let product_columns = [
+                `${table_name}.*`,
+                `consignment_user.user_name AS consignment_user_name`,
+                `consignment_user.phone_num AS consignment_user_phone_num`,
+            ]
+            let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
+            product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
+            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 AND ${table_name}.brand_id=${brand_id} `;
+
+            let data = await pool.query(product_sql);
+            data = data?.result[0];
+            id = data?.id;
+
             let sql_list = [
-                {
-                    table: 'product',
-                    sql: `SELECT * FROM ${table_name} WHERE id=${id} AND is_delete=0 AND brand_id=${brand_id} `
-                },
                 {
                     table: 'groups',
                     sql: `SELECT * FROM product_option_groups WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC`
@@ -101,7 +111,6 @@ const productCtrl = {
                 }
             ];
             let when_data = await getMultipleQueryByWhen(sql_list);
-            let data = when_data?.product[0];
             let option_group_ids = [];
             for (var i = 0; i < when_data?.groups.length; i++) {
                 option_group_ids.push(when_data?.groups[i]?.id);
@@ -150,12 +159,15 @@ const productCtrl = {
             let {
                 brand_id,
                 product_img,
-                product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, sub_images = [], groups = [], characters = [],
+                product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
+                consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
+                sub_images = [], groups = [], characters = [],
             } = req.body;
 
             let obj = {
                 product_img,
-                brand_id, product_name, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee
+                brand_id, product_name, product_code, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
+                consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -164,6 +176,14 @@ const productCtrl = {
             }
 
             await db.beginTransaction();
+            if (consignment_user_name) {
+                let consignment_user = await pool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
+                consignment_user = consignment_user?.result[0];
+                if (!consignment_user) {
+                    return response(req, res, -100, "위탁할 회원정보를 찾을 수 없습니다.", false);
+                }
+                obj['consignment_user_id'] = consignment_user?.id;
+            }
             let result = await insertQuery(`${table_name}`, obj);
 
 
@@ -266,14 +286,18 @@ const productCtrl = {
                 return lowLevelException(req, res);
             }
             let {
+                brand_id,
                 id,
                 product_img,
-                product_name, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, sub_images = [], groups = [], characters = [],
+                product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
+                consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
+                sub_images = [], groups = [], characters = [],
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 product_img,
-                product_name, product_comment, product_description, product_price, product_sale_price, delivery_fee,
+                product_name, product_code, product_comment, product_description, product_price, product_sale_price, delivery_fee, product_type,
+                consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -282,6 +306,15 @@ const productCtrl = {
             }
             obj = { ...obj, ...files };
             await db.beginTransaction();
+
+            if (consignment_user_name) {
+                let consignment_user = await pool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
+                consignment_user = consignment_user?.result[0];
+                if (!consignment_user) {
+                    return response(req, res, -100, "위탁할 회원정보를 찾을 수 없습니다.", false);
+                }
+                obj['consignment_user_id'] = consignment_user?.id;
+            }
             let result = await updateQuery(`${table_name}`, obj, id);
 
             const product_id = id;

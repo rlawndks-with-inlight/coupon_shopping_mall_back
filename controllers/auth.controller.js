@@ -373,7 +373,7 @@ const authCtrl = {
             let user = await pool.query(`SELECT * FROM users WHERE id=${decode_user?.id ?? 0} `);
             let user_pw = (await createHashedPassword(password, user.user_salt)).hashedPassword;
             if (user_pw != user.user_pw) {
-                return response(req, res, -100, "현재비밀번호가 일치하지 않습니다.", {})
+                return response(req, res, -100, "비밀번호가 일치하지 않습니다.", {})
             }
             await updateQuery('users', {
                 status: 3
