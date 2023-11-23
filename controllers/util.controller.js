@@ -5,7 +5,6 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-import grandDb, { grandPool } from "../config/grandparis-db.js";
 
 const utilCtrl = {
     sort: async (req, res, next) => {
