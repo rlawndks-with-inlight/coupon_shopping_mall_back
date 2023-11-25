@@ -185,7 +185,10 @@ const productCtrl = {
                 obj['consignment_user_id'] = consignment_user?.id;
             }
             let result = await insertQuery(`${table_name}`, obj);
-
+            if (!result?.result?.insertId) {
+                await db.rollback();
+                return response(req, res, -100, "상품 저장중 에러", false)
+            }
 
 
             const product_id = result?.result?.insertId;
