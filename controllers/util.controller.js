@@ -5,7 +5,6 @@ import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, s
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-import { grandPool } from '../config/grandparis-db.js'
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -304,5 +303,5 @@ const setProducts = async () => {
     }
 
 }
-setProducts();
+//setProducts();
 export default utilCtrl;
