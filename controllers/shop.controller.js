@@ -285,6 +285,7 @@ const shopCtrl = {
             let order_sql = `SELECT * FROM transactions WHERE user_id=${decode_user?.id} ORDER BY id DESC LIMIT 0, 5`;
             let product_view_sql = `SELECT product_views.*, products.product_name, products.product_img, products.product_comment, products.status FROM product_views `;
             product_view_sql += ` LEFT JOIN products ON product_views.product_id=products.id `;
+            product_view_sql += ` WHERE product_views.user_id=${decode_user?.id} AND product_views.brand_id=${decode_dns?.id} `;
 
             let sql_list = [
                 { table: 'point', sql: point_sql },

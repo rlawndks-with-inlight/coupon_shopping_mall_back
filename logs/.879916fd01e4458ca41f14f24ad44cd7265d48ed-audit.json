@@ -94,6 +94,16 @@
             "date": 1700898611027,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-11-25.exception.log",
             "hash": "b2d0349983ffa949a08c838703b95a98789d972bd6fb7e38ff6dcf80ac187e8a"
+        },
+        {
+            "date": 1701520998216,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-12-02.exception.log",
+            "hash": "6aafe5fba41d2273448546ab6a7e76aad5245f1a3f81b74e50b672ead0c82d39"
+        },
+        {
+            "date": 1701531264890,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-12-03.exception.log",
+            "hash": "80f48b8c76bb2f55b540061343822a1e931d9b5416093a12f2cad5de77bcc4b6"
         }
     ],
     "hashType": "sha256"
