@@ -69,6 +69,22 @@ const shopCtrl = {
             product_category_sql += ` WHERE product_categories.brand_id=${decode_dns?.id ?? 0} `;
             product_category_sql += ` AND product_categories.is_delete=0 ORDER BY sort_idx DESC`;
 
+            //상품특성그룹
+            let product_property_group_columns = [
+                `product_property_groups.*`,
+            ]
+            let product_property_group_sql = `SELECT ${product_property_group_columns.join()} FROM product_property_groups `;
+            product_property_group_sql += ` WHERE product_property_groups.brand_id=${decode_dns?.id ?? 0} `;
+            product_property_group_sql += ` AND product_property_groups.is_delete=0 ORDER BY sort_idx DESC`;
+
+            //상품특성 
+            let product_property_columns = [
+                `product_properties.*`,
+            ]
+            let product_property_sql = `SELECT ${product_property_columns.join()} FROM product_properties `;
+            product_property_sql += ` WHERE product_properties.brand_id=${decode_dns?.id ?? 0} `;
+            product_property_sql += ` AND product_properties.is_delete=0 ORDER BY sort_idx DESC`;
+
             //상품리뷰     
             let product_review_columns = [
                 `product_reviews.*`,
@@ -125,8 +141,10 @@ const shopCtrl = {
             let sql_list = [
                 { table: 'products', sql: product_sql },
                 { table: 'product_categories', sql: product_category_sql },
-                { table: 'post_categories', sql: post_category_sql },
                 { table: 'product_category_groups', sql: product_category_group_sql },
+                { table: 'product_properties', sql: product_property_sql },
+                { table: 'product_property_groups', sql: product_property_group_sql },
+                { table: 'post_categories', sql: post_category_sql },
                 { table: 'product_reviews', sql: product_review_sql },
                 { table: 'sellers', sql: seller_sql },
                 { table: 'payment_modules', sql: payment_module_sql },
@@ -172,6 +190,20 @@ const shopCtrl = {
                 category_list = await makeTree(category_list ?? []);
                 data.product_category_groups[i].product_categories = category_list;
             }
+            delete data.product_categories;
+            //상품그룹처리
+            for (var i = 0; i < data?.product_property_groups.length; i++) {
+                let property_list = data?.product_properties.filter((item) => item?.product_property_group_id == data?.product_property_groups[i]?.id);
+                if (data?.product_property_groups[i]?.sort_type == 1) {
+                    property_list = property_list.sort((a, b) => {
+                        if (a.property_name > b.property_name) return 1
+                        if (a.property_name < b.property_name) return -1
+                        return 0
+                    })
+                }
+                data.product_property_groups[i].product_properties = property_list;
+            }
+            delete data.product_properties;
             //게시물카테고리처리
             let post_category_ids = data.post_categories.map(item => {
                 return item?.id
@@ -193,7 +225,6 @@ const shopCtrl = {
             //메인obj처리
             brand_data['shop_obj'] = await finallySettingMainObj(brand_data['shop_obj'], data);
             brand_data['blog_obj'] = await finallySettingMainObj(brand_data['blog_obj'], data);
-            delete data.product_categories;
 
             return response(req, res, 100, "success", {
                 ...data,

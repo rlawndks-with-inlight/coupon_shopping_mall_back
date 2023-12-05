@@ -21,7 +21,6 @@ const productPropertyGroupCtrl = {
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
 
             let data = await getSelectQueryList(sql, columns, req.query);
-            console.log(data)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -42,7 +41,6 @@ const productPropertyGroupCtrl = {
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
-            console.log(data)
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)

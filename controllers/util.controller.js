@@ -292,7 +292,6 @@ const setProducts = async () => {
         await db.beginTransaction();
         for (var i = 0; i < sql_list.length / 10000; i++) {
             let list = sql_list.slice(i * 10000, (i + 1) * 10000);
-            console.log(`sql_list: ${i}`);
             let result = await getMultipleQueryByWhen(list);
         }
         console.log('success');
