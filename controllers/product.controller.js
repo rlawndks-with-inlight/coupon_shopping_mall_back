@@ -26,7 +26,7 @@ const productCtrl = {
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
             let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (seller_id > 0) {
-                let connect_data = await pool.query(`SELECT * FROM sellers_and_products WHERE seller_id=${seller_id}`);
+                let connect_data = await pool.query(`SELECT * FROM products_and_sellers WHERE seller_id=${seller_id}`);
                 connect_data = connect_data?.result.map(item => {
                     return item?.product_id
                 })
@@ -196,7 +196,7 @@ const productCtrl = {
             let user = await pool.query(`SELECT level FROM users WHERE id=?`, [user_id]);
             user = user?.result[0];
             if (user?.level == 10) {
-                let insert_and_table = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES (?, ?)`, [user_id, product_id]);
+                let insert_and_table = await pool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES (?, ?)`, [user_id, product_id]);
             }
 
             let sql_list = [];
@@ -452,7 +452,7 @@ const productCtrl = {
                     id
                 })
             } else {
-                let result = await pool.query(`DELETE FROM sellers_and_products WHERE seller_id=${decode_user?.id} AND product_id=${id}`);
+                let result = await pool.query(`DELETE FROM products_and_sellers WHERE seller_id=${decode_user?.id} AND product_id=${id}`);
             }
 
             return response(req, res, 100, "success", {})

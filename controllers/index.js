@@ -22,6 +22,8 @@ import userAddressCtrl from './user_address.controller.js';
 import payCtrl from './pay.controller.js';
 import userWishCtrl from './user_wish.controller.js';
 import pointCtrl from './point.controller.js';
+import productPropertyGroupCtrl from './product_property_group.controller.js';
+import productPropertyCtrl from './product_property.controller.js';
 
 export {
     brandCtrl,
@@ -46,4 +48,6 @@ export {
     payCtrl,
     userWishCtrl,
     pointCtrl,
+    productPropertyGroupCtrl,
+    productPropertyCtrl,
 };

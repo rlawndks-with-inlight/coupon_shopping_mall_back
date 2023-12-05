@@ -65,7 +65,7 @@ const sellerCtrl = {
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
-            let products = await pool.query(`SELECT * FROM products WHERE id IN (SELECT product_id FROM sellers_and_products WHERE seller_id=${id} ORDER BY id DESC)`);
+            let products = await pool.query(`SELECT * FROM products WHERE id IN (SELECT product_id FROM products_and_sellers WHERE seller_id=${id} ORDER BY id DESC)`);
             products = products?.result;
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
@@ -147,7 +147,7 @@ const sellerCtrl = {
                         product_ids[i],
                     ])
                 }
-                let result2 = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES ?`, [insert_products]);
+                let result2 = await pool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES ?`, [insert_products]);
             }
             await db.commit();
             return response(req, res, 100, "success", {
@@ -195,7 +195,7 @@ const sellerCtrl = {
             obj = { ...obj, ...files };
             await db.beginTransaction();
             let result = await updateQuery(`${table_name}`, obj, id);
-            let delete_connect = await pool.query(`DELETE FROM sellers_and_products WHERE seller_id=${id}`);
+            let delete_connect = await pool.query(`DELETE FROM products_and_sellers WHERE seller_id=${id}`);
 
             if (product_ids.length > 0) {
                 let insert_products = [];
@@ -205,7 +205,7 @@ const sellerCtrl = {
                         product_ids[i],
                     ])
                 }
-                let result2 = await pool.query(`INSERT INTO sellers_and_products (seller_id, product_id) VALUES ?`, [insert_products]);
+                let result2 = await pool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES ?`, [insert_products]);
             }
             await db.commit();
             return response(req, res, 100, "success", {})
