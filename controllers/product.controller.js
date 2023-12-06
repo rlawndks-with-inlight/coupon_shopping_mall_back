@@ -96,6 +96,11 @@ const productCtrl = {
             data = data?.result[0];
             id = data?.id;
 
+            let property_sql = `SELECT products_and_properties.*,product_properties.property_name,product_property_groups.property_group_name FROM products_and_properties `;
+            property_sql += ` LEFT JOIN product_properties ON products_and_properties.property_id=product_properties.id `;
+            property_sql += ` LEFT JOIN product_property_groups ON products_and_properties.property_group_id=product_property_groups.id `;
+            property_sql += ` WHERE products_and_properties.product_id=${id} ORDER BY product_properties.sort_idx DESC `;
+
             let sql_list = [
                 {
                     table: 'groups',
@@ -108,7 +113,11 @@ const productCtrl = {
                 {
                     table: 'scope',
                     sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=${id} `
-                }
+                },
+                {
+                    table: 'properties',
+                    sql: property_sql,
+                },
             ];
             let when_data = await getMultipleQueryByWhen(sql_list);
             let option_group_ids = [];
@@ -136,6 +145,7 @@ const productCtrl = {
                 ...data,
                 groups,
                 sub_images: when_data?.sub_images,
+                properties: when_data?.properties,
                 characters: when_data2?.characters,
                 product_average_scope: when_data?.scope[0]?.product_average_scope,
             }
@@ -161,7 +171,7 @@ const productCtrl = {
                 product_img,
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
-                sub_images = [], groups = [], characters = [],
+                sub_images = [], groups = [], characters = [], properties = {}
             } = req.body;
 
             let obj = {
@@ -200,6 +210,7 @@ const productCtrl = {
             }
 
             let sql_list = [];
+            //option
             for (var i = 0; i < groups.length; i++) {
                 let group = groups[i];
                 if (group?.is_delete != 1) {
@@ -232,6 +243,7 @@ const productCtrl = {
                     }
                 }
             }
+            //character
             let insert_character_list = [];
             for (var i = 0; i < characters.length; i++) {
                 if (characters[i]?.is_delete != 1) {
@@ -250,6 +262,7 @@ const productCtrl = {
                     data: [insert_character_list]
                 })
             }
+            //sub image
             let insert_sub_image_list = [];
             for (var i = 0; i < sub_images.length; i++) {
                 if (sub_images[i]?.is_delete != 1) {
@@ -259,7 +272,6 @@ const productCtrl = {
                     ])
                 }
             }
-
             if (insert_sub_image_list.length > 0) {
                 sql_list.push({
                     table: `sub_images`,
@@ -267,8 +279,28 @@ const productCtrl = {
                     data: [insert_sub_image_list]
                 })
             }
-            let when = await getMultipleQueryByWhen(sql_list);
+            //property
+            let insert_property_list = [];
+            properties = JSON.parse(properties);
+            let property_group_ids = Object.keys(properties);
+            for (var i = 0; i < property_group_ids.length; i++) {
+                for (var j = 0; j < properties[property_group_ids[i]]?.length; j++) {
+                    insert_property_list.push([
+                        product_id,
+                        property_group_ids[i],
+                        properties[property_group_ids[i]][j],
+                    ])
+                }
+            }
+            if (insert_property_list.length > 0) {
+                sql_list.push({
+                    table: `property`,
+                    sql: `INSERT INTO products_and_properties (product_id, property_group_id, property_id) VALUES ?`,
+                    data: [insert_property_list]
+                })
+            }
 
+            let when = await getMultipleQueryByWhen(sql_list);
             await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
@@ -294,7 +326,7 @@ const productCtrl = {
                 product_img,
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
-                sub_images = [], groups = [], characters = [],
+                sub_images = [], groups = [], characters = [], properties = {}
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -321,6 +353,7 @@ const productCtrl = {
             let result = await updateQuery(`${table_name}`, obj, id);
 
             const product_id = id;
+            //option
             let insert_option_list = [];
             let delete_option_list = [];
             let delete_group_list = [0];
@@ -379,6 +412,7 @@ const productCtrl = {
             if (delete_option_list.length > 0) {
                 let option_result = await pool.query(`UPDATE product_options SET is_delete=1 WHERE id IN (${delete_option_list.join()}) OR group_id IN (${delete_group_list.join()})`);
             }
+            //character
             let insert_character_list = [];
             let delete_character_list = [];
             for (var i = 0; i < characters.length; i++) {
@@ -406,7 +440,7 @@ const productCtrl = {
             if (delete_character_list.length > 0) {
                 let option_result = await pool.query(`DELETE FROM product_characters WHERE id IN (${delete_character_list.join()})`);
             }
-
+            //sub image
             let insert_sub_image_list = [];
             let delete_sub_image_list = [];
             for (var i = 0; i < sub_images.length; i++) {
@@ -429,7 +463,24 @@ const productCtrl = {
             if (delete_sub_image_list.length > 0) {
                 let sub_image_result = await pool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_sub_image_list.join()})`);
             }
+            //property
+            let delete_property_result = await pool.query(`DELETE FROM products_and_properties WHERE product_id=${product_id}`);
 
+            let insert_property_list = [];
+            properties = JSON.parse(properties);
+            let property_group_ids = Object.keys(properties);
+            for (var i = 0; i < property_group_ids.length; i++) {
+                for (var j = 0; j < properties[property_group_ids[i]]?.length; j++) {
+                    insert_property_list.push([
+                        product_id,
+                        property_group_ids[i],
+                        properties[property_group_ids[i]][j],
+                    ])
+                }
+            }
+            if (insert_property_list.length > 0) {
+                let property_result = await pool.query(`INSERT INTO products_and_properties (product_id, property_group_id, property_id) VALUES ?`, [insert_property_list]);
+            }
             await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {

@@ -62,6 +62,7 @@ const productCategoryGroupCtrl = {
                 max_depth = 10,
                 sort_type = 0,
                 is_show_header_menu = 1,
+                is_use_en_name = 0,
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -70,6 +71,7 @@ const productCategoryGroupCtrl = {
                 max_depth,
                 sort_type,
                 is_show_header_menu,
+                is_use_en_name,
             };
             obj = { ...obj, ...files };
 
@@ -94,6 +96,7 @@ const productCategoryGroupCtrl = {
                 max_depth = 10,
                 sort_type = 0,
                 is_show_header_menu = 1,
+                is_use_en_name = 0,
                 id
             } = req.body;
             let files = settingFiles(req.files);
@@ -101,7 +104,8 @@ const productCategoryGroupCtrl = {
                 category_group_name,
                 max_depth,
                 sort_type,
-                is_show_header_menu
+                is_show_header_menu,
+                is_use_en_name,
             };
             obj = { ...obj, ...files };
 

@@ -16,7 +16,7 @@ const shopCtrl = {
             // 상품 카테고리 그룹, 상품 리뷰, 상품 포스트카테고리
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { } = req.query;
+            const { is_manager = 0 } = req.query;
 
             let return_moment = returnMoment();
 
@@ -67,6 +67,9 @@ const shopCtrl = {
             ]
             let product_category_sql = `SELECT ${product_category_columns.join()} FROM product_categories `;
             product_category_sql += ` WHERE product_categories.brand_id=${decode_dns?.id ?? 0} `;
+            if (is_manager != 1) {
+                product_category_sql += ` AND product_categories.status=0 `
+            }
             product_category_sql += ` AND product_categories.is_delete=0 ORDER BY sort_idx DESC`;
 
             //상품특성그룹
@@ -83,6 +86,9 @@ const shopCtrl = {
             ]
             let product_property_sql = `SELECT ${product_property_columns.join()} FROM product_properties `;
             product_property_sql += ` WHERE product_properties.brand_id=${decode_dns?.id ?? 0} `;
+            if (is_manager != 1) {
+                product_property_sql += ` AND product_properties.status=0 `
+            }
             product_property_sql += ` AND product_properties.is_delete=0 ORDER BY sort_idx DESC`;
 
             //상품리뷰     

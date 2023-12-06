@@ -65,6 +65,7 @@ const productCategoryCtrl = {
                 parent_id = -1,
                 category_type = 0,
                 category_name,
+                category_en_name,
                 category_description,
                 product_category_group_id,
                 brand_id,
@@ -75,6 +76,7 @@ const productCategoryCtrl = {
                 parent_id,
                 category_type,
                 category_name,
+                category_en_name,
                 category_description,
                 product_category_group_id,
                 brand_id,
@@ -102,6 +104,7 @@ const productCategoryCtrl = {
                 parent_id = -1,
                 category_type = 0,
                 category_name,
+                category_en_name,
                 category_description,
                 product_category_group_id,
                 id
@@ -112,6 +115,7 @@ const productCategoryCtrl = {
                 parent_id,
                 category_type,
                 category_name,
+                category_en_name,
                 category_description,
                 product_category_group_id,
             };
