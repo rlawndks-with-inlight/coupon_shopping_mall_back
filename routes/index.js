@@ -23,6 +23,7 @@ import sellerRoutes from "./seller.route.js";
 import payRoutes from "./pay.route.js";
 import userWishRoutes from "./user_wish.route.js";
 import pointRoutes from "./point.route.js";
+import columnRoutes from "./column.route.js";
 
 const router = express.Router(); // eslint-disable-line new-cap
 
@@ -56,6 +57,7 @@ router.use("/upload", uploadRoutes);
 router.use("/util", utilRoutes);
 router.use("/sellers", sellerRoutes);
 router.use("/pays", payRoutes);
+router.use("/column", columnRoutes);
 
 //user
 router.use("/shop", shopRoutes);

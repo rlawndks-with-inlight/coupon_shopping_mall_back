@@ -24,6 +24,7 @@ const domainCtrl = {
         "og_description",
         "theme_css",
         "setting_obj",
+        "none_use_column_obj",
         "bonaeja_obj",
         "seo_obj",
         "is_main_dns",
@@ -45,6 +46,7 @@ const domainCtrl = {
       brand = brand?.result[0];
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
       brand["setting_obj"] = JSON.parse(brand?.setting_obj ?? "{}");
+      brand["none_use_column_obj"] = JSON.parse(brand?.none_use_column_obj ?? "{}");
       brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");
       brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
       const token = await makeUserToken(brand);

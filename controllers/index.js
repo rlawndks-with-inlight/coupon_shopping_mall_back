@@ -24,6 +24,8 @@ import userWishCtrl from './user_wish.controller.js';
 import pointCtrl from './point.controller.js';
 import productPropertyGroupCtrl from './product_property_group.controller.js';
 import productPropertyCtrl from './product_property.controller.js';
+import columnCtrl from './column.controller.js';
+
 
 export {
     brandCtrl,
@@ -50,4 +52,5 @@ export {
     pointCtrl,
     productPropertyGroupCtrl,
     productPropertyCtrl,
+    columnCtrl,
 };
