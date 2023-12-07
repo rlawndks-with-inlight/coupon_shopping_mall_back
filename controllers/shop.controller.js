@@ -17,7 +17,6 @@ const shopCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { is_manager = 0 } = req.query;
-
             let return_moment = returnMoment();
 
             let brand_column = [
@@ -472,7 +471,7 @@ const getMainObjIdList = (main_obj = [], type, id_list_ = [], is_children) => {/
     for (var i = 0; i < main_obj.length; i++) {
         if (main_obj[i]?.type == type) {
             if (is_children) {
-                for (var j = 0; j < main_obj[i]?.list.length; j++) {
+                for (var j = 0; j < main_obj[i]?.list?.length; j++) {
                     id_list = [...id_list, ...main_obj[i]?.list[j]?.list ?? []];
                 }
             } else {
