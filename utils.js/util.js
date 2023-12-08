@@ -191,6 +191,12 @@ export const getPayType = (num) => {
             description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
             type: 'certification',
         }
+    } else if (num == 10) {
+        return {
+            title: '가상계좌',
+            description: '무통장입금 이외의 결제 수단으로 결제하시는 경우 포인트를 적립해드리지 않습니다.',
+            type: 'virtual_account',
+        }
     }
     return {
         title: '',

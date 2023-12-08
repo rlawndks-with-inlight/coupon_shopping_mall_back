@@ -33,6 +33,7 @@ const shopCtrl = {
             let product_review_ids = [...(await settingMainObj(brand_data['shop_obj'])).product_review_ids, ...(await settingMainObj(brand_data['blog_obj'])).product_review_ids,];
             product_review_ids = new Set(product_review_ids);
             product_review_ids = [...product_review_ids];
+
             //products
             let product_columns = [
                 `products.id`,
@@ -124,7 +125,7 @@ const shopCtrl = {
             ]
             let payment_module_sql = `SELECT ${payment_module_columns.join()} FROM payment_modules `;
             payment_module_sql += ` WHERE payment_modules.brand_id=${decode_dns?.id ?? 0} `;
-            payment_module_sql += ` ORDER BY id DESC`;
+            payment_module_sql += ` ORDER BY sort_idx DESC`;
 
             //유저찜
             let user_wish_columns = [
@@ -134,6 +135,7 @@ const shopCtrl = {
             let user_wish_sql = `SELECT ${user_wish_columns.join()} FROM user_wishs `;
             user_wish_sql += ` WHERE user_wishs.brand_id=${decode_dns?.id ?? 0} AND user_wishs.user_id=${decode_user?.id ?? 0} `;
             user_wish_sql += ` ORDER BY id DESC`;
+
             //팝업
             let popup_columns = [
                 `popups.*`,
@@ -142,6 +144,7 @@ const shopCtrl = {
             let popup_sql = `SELECT ${popup_columns.join()} FROM popups `;
             popup_sql += ` WHERE popups.brand_id=${decode_dns?.id ?? 0} AND popups.is_delete=0 AND popups.open_s_dt <= '${return_moment.substring(0, 10)}' AND popups.open_e_dt >= '${return_moment.substring(0, 10)}' `;
             popup_sql += ` ORDER BY id DESC`;
+
             //when
             let sql_list = [
                 { table: 'products', sql: product_sql },
@@ -182,6 +185,7 @@ const shopCtrl = {
                     ...getPayType(item?.trx_type)
                 }
             })
+
             //상품카테고리처리
             for (var i = 0; i < data?.product_category_groups.length; i++) {
                 let category_list = data?.product_categories.filter((item) => item?.product_category_group_id == data?.product_category_groups[i]?.id);
@@ -196,6 +200,7 @@ const shopCtrl = {
                 data.product_category_groups[i].product_categories = category_list;
             }
             delete data.product_categories;
+
             //상품그룹처리
             for (var i = 0; i < data?.product_property_groups.length; i++) {
                 let property_list = data?.product_properties.filter((item) => item?.product_property_group_id == data?.product_property_groups[i]?.id);
@@ -209,6 +214,7 @@ const shopCtrl = {
                 data.product_property_groups[i].product_properties = property_list;
             }
             delete data.product_properties;
+
             //게시물카테고리처리
             let post_category_ids = data.post_categories.map(item => {
                 return item?.id

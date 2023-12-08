@@ -45,9 +45,22 @@ const payCtrl = {
         tid,
         pay_key,
         trx_method,
+        virtual_bank_code = "",
+        virtual_acct_num = "",
+        virtual_acct_issued_seq = "",
+        bank_code = "",
+        acct_num = "",
         use_point = 0,
       } = req.body;
-      trx_method = trx_type == "auth" ? 2 : 1;
+      if (trx_type == 'auth') {
+        trx_method = 2;
+      } else if (trx_type == 'hand') {
+        trx_method = 1;
+      } else if (trx_type == 'virtual') {
+        trx_method = 10;
+      } else {
+        return response(req, res, -100, "잘못된 결제타입 입니다.", false)
+      }
       let files = settingFiles(req.files);
       let obj = {
         brand_id,
@@ -64,6 +77,11 @@ const payCtrl = {
         tid,
         pay_key,
         trx_method,
+        virtual_bank_code,
+        virtual_acct_num,
+        virtual_acct_issued_seq,
+        bank_code,
+        acct_num,
         use_point,
       };
       obj = { ...obj, ...files };
