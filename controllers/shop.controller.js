@@ -77,7 +77,7 @@ const shopCtrl = {
             product_and_property_sql += ` WHERE products_and_properties.property_id IN (${product_property_ids.join()})`;
             product_and_property_sql += ` AND products.brand_id=${decode_dns?.id} `;
             product_and_property_sql += ` AND products.is_delete=0 `;
-            product_and_property_sql += ` GROUP BY products_and_properties.property_id, products_and_properties.id HAVING COUNT(*) <= 100 `;
+            product_and_property_sql += ` GROUP BY products_and_properties.property_id, products_and_properties.id HAVING COUNT(*) <= 100 ORDER BY products.sort_idx DESC `;
 
             //상품카테고리그룹
             let product_category_group_columns = [
@@ -600,8 +600,8 @@ const finallySettingMainObj = async (main_obj_ = [], data = {}) => {
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
 
     for (var i = 0; i < main_obj.length; i++) {
-        if (getMainObjType(main_obj[i]?.type) == `items-property-group-:num`) {
-            main_obj[i].list = (data[`product_and_properties`] ?? []).filter(itm => itm?.property_id == parseInt(main_obj[i]?.type.split('items-property-group-')[1]))
+        if (getMain(main_obj[i]?.type) == `items-property-group-:num`) {
+            main_obj[i].list = data[main_obj[i]?.type]
         }
     }
     for (var i = 0; i < main_obj.length; i++) {
