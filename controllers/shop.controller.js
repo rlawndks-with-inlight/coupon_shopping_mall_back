@@ -601,7 +601,7 @@ const finallySettingMainObj = async (main_obj_ = [], data = {}) => {
 
     for (var i = 0; i < main_obj.length; i++) {
         if (getMainObjType(main_obj[i]?.type) == `items-property-group-:num`) {
-            main_obj[i].list = data[main_obj[i]?.type]
+            main_obj[i].list = data[main_obj[i]?.type] ?? []
         }
     }
     for (var i = 0; i < main_obj.length; i++) {
