@@ -14,7 +14,8 @@ const productCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { seller_id } = req.query;
+            const { seller_id, property_id } = req.query;
+
             let columns = [
                 `${table_name}.*`,
                 `sellers.user_name`,
@@ -24,6 +25,8 @@ const productCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
+
+
             let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (seller_id > 0) {
                 let connect_data = await pool.query(`SELECT * FROM products_and_sellers WHERE seller_id=${seller_id}`);
@@ -55,6 +58,10 @@ const productCtrl = {
                     category_ids.unshift(parseInt(req.query[key]));
                     where_sql += ` AND ${key} IN (${category_ids.join()}) `;
                 }
+            }
+            if (property_id) {
+                sql += ` LEFT JOIN products_and_properties ON products.id=products_and_properties.product_id `;
+                where_sql += ` AND products_and_properties.property_id=${property_id} `;
             }
             sql += where_sql;
             let data = await getSelectQueryList(sql, columns, req.query);

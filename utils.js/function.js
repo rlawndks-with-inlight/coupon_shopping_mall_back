@@ -47,3 +47,14 @@ export function generateRandomCode(n) {
     }
     return str
 }
+export const getMainObjType = (type_ = "") => {
+    let type = type_;
+    let type_split_list = type.split('-');
+    for (var i = 0; i < type_split_list.length; i++) {
+        if (!isNaN(parseInt(type_split_list[i]))) {
+            type_split_list[i] = ':num';
+        }
+    }
+    type = type_split_list.join('-');
+    return type;
+}

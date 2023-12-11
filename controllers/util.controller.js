@@ -274,14 +274,12 @@ const setProducts = async () => {
         for (var i = 0; i < grand_products.length; i++) {
             grand_product_obj[grand_products[i]?.SEQ] = grand_products[i];
         }
-        console.log(1)
         let products = await pool.query(`SELECT * FROM products WHERE brand_id=5 ORDER BY id ASC`);
         products = products?.result;
         let product_obj = {};
         for (var i = 0; i < products.length; i++) {
             product_obj[products[i]?.id] = products[i];
         }
-        console.log(2)
         let sql_list = [];
 
         for (var i = 0; i < products.length; i++) {

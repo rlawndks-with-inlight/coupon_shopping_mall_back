@@ -1,6 +1,6 @@
 'use strict';
 import { pool } from "../config/db.js";
-import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
+import { checkIsManagerUrl, getMainObjType, returnMoment } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
 import 'dotenv/config';
@@ -30,9 +30,15 @@ const shopCtrl = {
             let product_ids = [...(await settingMainObj(brand_data['shop_obj'])).product_ids, ...(await settingMainObj(brand_data['blog_obj'])).product_ids,];
             product_ids = new Set(product_ids);
             product_ids = [0, ...product_ids];
+
             let product_review_ids = [...(await settingMainObj(brand_data['shop_obj'])).product_review_ids, ...(await settingMainObj(brand_data['blog_obj'])).product_review_ids,];
             product_review_ids = new Set(product_review_ids);
             product_review_ids = [...product_review_ids];
+
+            let product_property_ids = [...(await settingMainObj(brand_data['shop_obj'])).product_property_ids, ...(await settingMainObj(brand_data['blog_obj'])).product_property_ids,];
+            product_property_ids = new Set(product_property_ids);
+            product_property_ids = [0, ...product_property_ids];
+
 
             //products
             let product_columns = [
@@ -52,6 +58,26 @@ const shopCtrl = {
             product_sql += ` WHERE products.id IN(${product_ids.join()}) `;
             product_sql += ` AND products.is_delete=0 `
             product_sql = product_sql.replaceAll(process.env.SELECT_COLUMN_SECRET, product_columns.join());
+
+            //메인obj 에서 items-property-groups가 존재할시
+
+            let product_and_property_columns = [
+                `products.id`,
+                `products.sort_idx`,
+                `products.product_name`,
+                `products.product_price`,
+                `products.product_sale_price`,
+                `products.product_img`,
+                `products.product_comment`,
+                `products_and_properties.property_id`,
+            ]
+
+            let product_and_property_sql = ` SELECT ${product_and_property_columns.join()} FROM products_and_properties `;
+            product_and_property_sql += ` LEFT JOIN products ON products_and_properties.product_id=products.id `;
+            product_and_property_sql += ` WHERE products_and_properties.property_id IN (${product_property_ids.join()})`;
+            product_and_property_sql += ` AND products.brand_id=${decode_dns?.id} `;
+            product_and_property_sql += ` AND products.is_delete=0 `;
+            product_and_property_sql += ` GROUP BY products_and_properties.property_id, products_and_properties.id HAVING COUNT(*) <= 100 `;
 
             //상품카테고리그룹
             let product_category_group_columns = [
@@ -150,6 +176,7 @@ const shopCtrl = {
                 { table: 'products', sql: product_sql },
                 { table: 'product_categories', sql: product_category_sql },
                 { table: 'product_category_groups', sql: product_category_group_sql },
+                { table: 'product_and_properties', sql: product_and_property_sql },
                 { table: 'product_properties', sql: product_property_sql },
                 { table: 'product_property_groups', sql: product_property_group_sql },
                 { table: 'post_categories', sql: post_category_sql },
@@ -552,9 +579,16 @@ const settingMainObj = async (main_obj_ = []) => {
     product_ids = getMainObjIdList(main_obj, 'items', product_ids);
     product_ids = getMainObjIdList(main_obj, 'items-ids', product_ids);
     product_ids = getMainObjIdList(main_obj, 'items-with-categories', product_ids, true);
+    let product_property_ids = [];
+    for (var i = 0; i < main_obj.length; i++) {
+        if (getMainObjType(main_obj[i]?.type) == `items-property-group-:num`) {
+            product_property_ids.push(parseInt(main_obj[i]?.type.split('items-property-group-')[1]))
+        }
+    }
     return {
         product_ids,
         product_review_ids,
+        product_property_ids,
     }
 }
 const finallySettingMainObj = async (main_obj_ = [], data = {}) => {
@@ -564,6 +598,12 @@ const finallySettingMainObj = async (main_obj_ = [], data = {}) => {
     main_obj = getMainObjContentByIdList(main_obj, 'items', data?.products);
     main_obj = getMainObjContentByIdList(main_obj, 'items-ids', data?.products);
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
+
+    for (var i = 0; i < main_obj.length; i++) {
+        if (getMainObjType(main_obj[i]?.type) == `items-property-group-:num`) {
+            main_obj[i].list = (data[`product_and_properties`] ?? []).filter(itm => itm?.property_id == parseInt(main_obj[i]?.type.split('items-property-group-')[1]))
+        }
+    }
     for (var i = 0; i < main_obj.length; i++) {
         if (main_obj[i]?.type == 'post') {
             main_obj[i].list = (main_obj[i]?.list ?? []).map(id => {
