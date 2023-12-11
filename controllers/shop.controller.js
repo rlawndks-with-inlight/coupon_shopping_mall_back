@@ -17,8 +17,8 @@ const shopCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { is_manager = 0 } = req.query;
-            let return_moment = returnMoment();
 
+            let return_moment = returnMoment();
             let brand_column = [
                 'shop_obj',
                 'blog_obj',
@@ -77,7 +77,7 @@ const shopCtrl = {
             product_and_property_sql += ` WHERE products_and_properties.property_id IN (${product_property_ids.join()})`;
             product_and_property_sql += ` AND products.brand_id=${decode_dns?.id} `;
             product_and_property_sql += ` AND products.is_delete=0 `;
-            product_and_property_sql += ` GROUP BY products_and_properties.property_id, products_and_properties.id HAVING COUNT(*) <= 100 ORDER BY products.sort_idx DESC `;
+            product_and_property_sql += ` GROUP BY products_and_properties.property_id, products_and_properties.id HAVING COUNT(*) <= 50 ORDER BY products.sort_idx DESC `;
             //상품카테고리그룹
             let product_category_group_columns = [
                 `product_category_groups.*`,
@@ -187,7 +187,7 @@ const shopCtrl = {
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
-
+            console.log(data)
             //상품이미지처리
             let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
             sub_images = sub_images?.result;
