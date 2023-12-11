@@ -600,7 +600,7 @@ const finallySettingMainObj = async (main_obj_ = [], data = {}) => {
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
 
     for (var i = 0; i < main_obj.length; i++) {
-        if (getMain(main_obj[i]?.type) == `items-property-group-:num`) {
+        if (getMainObjType(main_obj[i]?.type) == `items-property-group-:num`) {
             main_obj[i].list = data[main_obj[i]?.type]
         }
     }
