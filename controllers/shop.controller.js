@@ -17,6 +17,7 @@ const shopCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { is_manager = 0 } = req.query;
+
             let return_moment = returnMoment();
             let brand_column = [
                 'shop_obj',
@@ -66,15 +67,31 @@ const shopCtrl = {
                 `products.product_sale_price`,
                 `products.product_img`,
                 `products.product_comment`,
-                `products_and_properties.property_id`,
+                `RankedProperties.property_id`,
             ]
+            let product_and_property_sql = `
+            WITH RankedProperties AS (
+                SELECT
+                    id,
+                    product_id,
+                    property_id,
+                    property_group_id,
+                    ROW_NUMBER() OVER (PARTITION BY property_id ORDER BY id DESC) AS row_num
+                FROM
+                    products_and_properties
+            )
+            SELECT
+                ${product_and_property_columns.join()}
+            FROM
+                RankedProperties
+                LEFT JOIN products ON RankedProperties.product_id=products.id
+            WHERE
+                row_num <= 50
+                AND RankedProperties.property_id IN (${product_property_ids.join()})
+                AND products.brand_id=${decode_dns?.id}
+                ORDER BY products.sort_idx
+            `;
 
-            let product_and_property_sql = ` SELECT ${product_and_property_columns.join()} FROM products_and_properties `;
-            product_and_property_sql += ` LEFT JOIN products ON products_and_properties.product_id=products.id `;
-            product_and_property_sql += ` WHERE products_and_properties.property_id IN (${product_property_ids.join()})`;
-            product_and_property_sql += ` AND products.brand_id=${decode_dns?.id} `;
-            product_and_property_sql += ` AND products.is_delete=0 `;
-            product_and_property_sql += ` GROUP BY products_and_properties.property_id, products_and_properties.id HAVING COUNT(*) <= 50 ORDER BY products.sort_idx DESC `;
             //상품카테고리그룹
             let product_category_group_columns = [
                 `product_category_groups.*`,
