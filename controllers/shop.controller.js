@@ -89,7 +89,7 @@ const shopCtrl = {
                 row_num <= 50
                 AND RankedProperties.property_id IN (${product_property_ids.join()})
                 AND products.brand_id=${decode_dns?.id}
-                ORDER BY products.sort_idx
+                ORDER BY products.sort_idx DESC
             `;
 
             //상품카테고리그룹
