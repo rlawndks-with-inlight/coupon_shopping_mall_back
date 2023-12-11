@@ -17,7 +17,6 @@ const shopCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { is_manager = 0 } = req.query;
-
             let return_moment = returnMoment();
             let brand_column = [
                 'shop_obj',
@@ -38,8 +37,6 @@ const shopCtrl = {
             let product_property_ids = [...(await settingMainObj(brand_data['shop_obj'])).product_property_ids, ...(await settingMainObj(brand_data['blog_obj'])).product_property_ids,];
             product_property_ids = new Set(product_property_ids);
             product_property_ids = [0, ...product_property_ids];
-
-
             //products
             let product_columns = [
                 `products.id`,
@@ -187,7 +184,6 @@ const shopCtrl = {
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
-            console.log(data)
             //상품이미지처리
             let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
             sub_images = sub_images?.result;
@@ -262,7 +258,6 @@ const shopCtrl = {
             //메인obj처리
             brand_data['shop_obj'] = await finallySettingMainObj(brand_data['shop_obj'], data);
             brand_data['blog_obj'] = await finallySettingMainObj(brand_data['blog_obj'], data);
-
             return response(req, res, 100, "success", {
                 ...data,
                 ...brand_data,
