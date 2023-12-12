@@ -25,7 +25,7 @@ import pointCtrl from './point.controller.js';
 import productPropertyGroupCtrl from './product_property_group.controller.js';
 import productPropertyCtrl from './product_property.controller.js';
 import columnCtrl from './column.controller.js';
-
+import consignmentCtrl from './consignment.controller.js';
 
 export {
     brandCtrl,
@@ -53,4 +53,5 @@ export {
     productPropertyGroupCtrl,
     productPropertyCtrl,
     columnCtrl,
+    consignmentCtrl,
 };

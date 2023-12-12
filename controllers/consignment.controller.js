@@ -1,39 +1,41 @@
 'use strict';
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles } from "../utils.js/util.js";
+import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-const table_name = 'product_categories';
 
-const productCategoryCtrl = {
+const table_name = 'consignments';
+
+const consignmentCtrl = {
     list: async (req, res, next) => {
         try {
-
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { product_category_group_id, page, page_size } = req.query;
-
-            let category_groups = await pool.query(`SELECT sort_type FROM product_category_groups WHERE id=${product_category_group_id}`);
-            category_groups = category_groups?.result[0];
+            const { type } = req.query;
 
             let columns = [
                 `${table_name}.*`,
+                `products.product_code`,
+                `products.product_img`,
+                `products.product_name`,
+                `products.product_price`,
+                `products.product_sale_price`,
+                `products.consignment_none_user_name`,
+                `products.consignment_none_user_phone_num`,
+                `users.user_name`,
+                `users.name`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+            sql += ` LEFT JOIN products ON ${table_name}.product_id=products.id `;
+            sql += ` LEFT JOIN users ON products.consignment_user_id=users.id `;
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
-            sql += ` AND product_category_group_id=${product_category_group_id} `;
-
-            let req_query = req.query;
-            if (category_groups?.sort_type == 1) {
-                req_query.order = 'category_name';
-                req_query.is_asc = 1;
+            if (type >= 0) {
+                sql += ` AND ${table_name}.type=${type}`
             }
-            let data = await getSelectQueryList(sql, columns, req_query);
-            data.content = await makeTree(data?.content ?? []);
-            data.total = data?.content.length ?? 0;
-            data.content = (data?.content ?? []).slice((page - 1) * (page_size), page * page_size);
+
+            let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -46,7 +48,6 @@ const productCategoryCtrl = {
     },
     get: async (req, res, next) => {
         try {
-
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
@@ -66,30 +67,31 @@ const productCategoryCtrl = {
     },
     create: async (req, res, next) => {
         try {
-
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+
             const {
-                category_img,
-                parent_id = -1,
-                category_type = 0,
-                category_name,
-                category_en_name,
-                category_description,
-                product_category_group_id,
-                brand_id,
+                product_id,
+                request_price,
+                type,
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                category_img,
-                parent_id,
-                category_type,
-                category_name,
-                category_en_name,
-                category_description,
-                product_category_group_id,
-                brand_id,
+                brand_id: decode_dns?.id,
+                product_id,
+                request_price,
+                type,
             };
+            let product = await pool.query(`SELECT * FROM products WHERE id=${product_id}`);
+            product = product?.result[0];
+            if (product?.consignment_user_id != decode_user?.id && decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
+            let is_exist_consignment = await pool.query(`SELECT * FROM ${table_name} WHERE product_id=${product_id} AND type=${type} AND is_confirm=0 `);
+            is_exist_consignment = is_exist_consignment?.result;
+            if (is_exist_consignment.length > 0) {
+                return response(req, res, -100, "아직 처리중인 요청입니다.", false)
+            }
             obj = { ...obj, ...files };
 
             let result = await insertQuery(`${table_name}`, obj);
@@ -105,31 +107,18 @@ const productCategoryCtrl = {
     },
     update: async (req, res, next) => {
         try {
-
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                category_img,
-                parent_id = -1,
-                category_type = 0,
-                category_name,
-                category_en_name,
-                category_description,
-                product_category_group_id,
                 id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                category_img,
-                parent_id,
-                category_type,
-                category_name,
-                category_en_name,
-                category_description,
-                product_category_group_id,
             };
             obj = { ...obj, ...files };
+
             let result = await updateQuery(`${table_name}`, obj, id);
+
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -141,15 +130,12 @@ const productCategoryCtrl = {
     },
     remove: async (req, res, next) => {
         try {
-
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-
             let result = await deleteQuery(`${table_name}`, {
                 id
             })
-
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -161,4 +147,4 @@ const productCategoryCtrl = {
     },
 };
 
-export default productCategoryCtrl;
+export default consignmentCtrl;

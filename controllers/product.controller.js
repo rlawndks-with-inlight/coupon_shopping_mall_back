@@ -14,7 +14,7 @@ const productCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { seller_id, property_id } = req.query;
+            const { seller_id, property_id, is_consignment } = req.query;
 
             let columns = [
                 `${table_name}.*`,
@@ -63,6 +63,9 @@ const productCtrl = {
                 sql += ` LEFT JOIN products_and_properties ON products.id=products_and_properties.product_id `;
                 where_sql += ` AND products_and_properties.property_id=${property_id} `;
             }
+            if (is_consignment) {
+                where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
+            }
             sql += where_sql;
             let data = await getSelectQueryList(sql, columns, req.query);
             let product_ids = data?.content.map(item => { return item?.id });
@@ -73,6 +76,7 @@ const productCtrl = {
                 let images = sub_images.filter(item => item?.product_id == data?.content[i]?.id);
                 data.content[i].sub_images = images ?? [];
             }
+
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)

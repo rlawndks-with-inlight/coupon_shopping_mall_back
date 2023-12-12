@@ -362,7 +362,7 @@ const shopCtrl = {
                 user: decode_user,
             }
             let point_sql = `SELECT SUM(point) FROM points WHERE user_id=${decode_user?.id}`;
-            let order_sql = `SELECT * FROM transactions WHERE user_id=${decode_user?.id} ORDER BY id DESC LIMIT 0, 5`;
+            let order_sql = `SELECT * FROM transactions WHERE user_id=${decode_user?.id} AND trx_status>=5 ORDER BY id DESC LIMIT 0, 5`;
             let product_view_sql = `SELECT product_views.*, products.product_name, products.product_img, products.product_comment, products.status, products.product_price, products.product_sale_price FROM product_views `;
             product_view_sql += ` LEFT JOIN products ON product_views.product_id=products.id `;
             product_view_sql += ` WHERE product_views.user_id=${decode_user?.id} AND product_views.brand_id=${decode_dns?.id} ORDER BY id DESC `;
@@ -372,7 +372,40 @@ const shopCtrl = {
                 { table: 'orders', sql: order_sql },
                 { table: 'product_views', sql: product_view_sql },
             ]
+            if (decode_dns?.setting_obj?.is_use_consignment == 1) {
+                sql_list.push({
+                    table: `consignment_products`,
+                    sql: `SELECT * FROM products WHERE consignment_user_id=${decode_user?.id} ORDER BY id DESC LIMIT 0, 5`
+                })
+            }
+
             let sql_result = await getMultipleQueryByWhen(sql_list);
+
+            let trx_ids = sql_result['orders'].map(trx => {
+                return trx?.id
+            })
+            if (trx_ids?.length > 0) {
+                let transaction_orders_column = [
+                    `transaction_orders.*`,
+                    `products.product_img`,
+                    `sellers.user_name AS seller_user_name`,
+                ]
+                let order_sql = `SELECT ${transaction_orders_column.join()} FROM transaction_orders `
+                order_sql += ` LEFT JOIN products ON transaction_orders.product_id=products.id `
+                order_sql += ` LEFT JOIN users AS sellers ON transaction_orders.seller_id=sellers.id `
+                order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.join()}) `
+                order_sql += ` ORDER BY transaction_orders.id DESC `
+                let order_data = await pool.query(order_sql);
+                order_data = order_data?.result;
+                for (var i = 0; i < order_data.length; i++) {
+                    order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
+                    delete order_data[i].order_groups
+                }
+                for (var i = 0; i < sql_result['orders'].length; i++) {
+                    sql_result['orders'][i].orders = order_data.filter((order) => order?.trans_id == sql_result['orders'][i]?.id);
+                }
+            }
+
             data = {
                 ...data,
                 ...sql_result,
