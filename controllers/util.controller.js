@@ -5,6 +5,7 @@ import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, s
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -258,6 +259,23 @@ const utilCtrl = {
             await db.rollback();
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    translate: async (req, res, next) => {
+        try {
+
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            let { list, ja } = req.body;
+            console.log(list)
+            return response(req, res, 100, "success", {});
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 

@@ -25,6 +25,7 @@
     "webpack-node-externals": "^3.0.0"
   },
   "dependencies": {
+    "@google-cloud/translate": "^8.0.2",
     "axios": "^0.27.2",
     "babel-cli": "^6.26.0",
     "babel-register": "^6.26.0",

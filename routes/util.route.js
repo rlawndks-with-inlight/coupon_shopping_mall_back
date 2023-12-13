@@ -8,6 +8,10 @@ router
     .route('/copy')
     .post(utilCtrl.copy);
 router
+    .route('/translate')
+    .post(utilCtrl.translate);
+
+router
     .route('/:table/sort')
     .post(utilCtrl.sort);
 router
