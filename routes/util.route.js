@@ -7,9 +7,6 @@ const router = express.Router(); // eslint-disable-line new-cap
 router
     .route('/copy')
     .post(utilCtrl.copy);
-router
-    .route('/translate')
-    .post(utilCtrl.translate);
 
 router
     .route('/:table/sort')

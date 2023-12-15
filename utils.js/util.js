@@ -103,7 +103,7 @@ const logRequestResponse = async (req, res, decode_user, decode_dns) => {//로�
     )
 }
 export const response = async (req, res, code, message, data) => { //응답 포맷
-    var resDict = {
+    let resDict = {
         'result': code,
         'message': message,
         'data': data,

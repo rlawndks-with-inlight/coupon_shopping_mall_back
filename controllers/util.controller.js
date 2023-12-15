@@ -264,23 +264,6 @@ const utilCtrl = {
 
         }
     },
-    translate: async (req, res, next) => {
-        try {
-
-            const decode_user = checkLevel(req.cookies.token, 0, res);
-            const decode_dns = checkDns(req.cookies.dns);
-            let { list, ja } = req.body;
-            console.log(list)
-            return response(req, res, 100, "success", {});
-        } catch (err) {
-            console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
-            await db.rollback();
-            return response(req, res, -200, "서버 에러 발생", false)
-        } finally {
-
-        }
-    },
 };
 
 const setProducts = async () => {
