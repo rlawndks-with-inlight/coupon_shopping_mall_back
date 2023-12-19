@@ -237,14 +237,14 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
                     if (detect_lang_code != 'ko' && detect_lang_code != 'en') {
                         let detect_lang = await axios.post(`https://naveropenapi.apigw.ntruss.com/nmt/v1/translation`, {
                             'source': detect_lang_code,
-                            'target': 'en',
+                            'target': 'ko',
                             'text': obj[columns[i]],
                         }, {
                             headers
                         })
-                        detect_lang_code = 'en';
+                        detect_lang_code = 'ko';
                         result.lang_obj[columns[i]] = {
-                            en: detect_lang?.data?.message?.result?.translatedText
+                            ko: detect_lang?.data?.message?.result?.translatedText
                         };
                     }
 
@@ -260,7 +260,7 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
                                         func: await axios.post(`https://naveropenapi.apigw.ntruss.com/nmt/v1/translation`, {
                                             'source': detect_lang_code,
                                             'target': lang_list[j].use_value,
-                                            'text': obj[columns[i]],
+                                            'text': result.lang_obj[columns[i]][detect_lang_code],
                                         }, {
                                             headers
                                         })
