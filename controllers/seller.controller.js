@@ -7,10 +7,6 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 const table_name = 'users';
 
-const lang_obj_columns = [
-
-]
-
 const sellerCtrl = {
     list: async (req, res, next) => {
         try {

@@ -75,6 +75,7 @@ export const updateQuery = async (table, obj, id) => {
         return obj[key]
     });
     let result = await pool.query(`UPDATE ${table} SET ${question_list.join()} WHERE id=${id}`, values);
+
     return result;
 }
 export const selectQuerySimple = async (table, id) => {
