@@ -80,6 +80,9 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
     let ago_brand = await pool.query(`SELECT * FROM brands WHERE id=${new_brand_data?.id}`);
     ago_brand = ago_brand?.result[0];
     ago_brand.setting_obj = JSON.parse(ago_brand?.setting_obj ?? '{}');
+    if (new_brand_data?.setting_obj?.is_use_lang == 1) {
+
+    }
 
     if (ago_brand?.setting_obj?.is_use_lang != 1 && new_brand_data?.setting_obj?.is_use_lang == 1) {
         let insert_lang_process_list = [];

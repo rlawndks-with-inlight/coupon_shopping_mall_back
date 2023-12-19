@@ -17,7 +17,6 @@ const shopCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { is_manager = 0 } = req.query;
-
             let return_moment = returnMoment();
             let brand_column = [
                 'shop_obj',
@@ -47,6 +46,7 @@ const shopCtrl = {
                 `products.product_sale_price`,
                 `products.product_img`,
                 `products.product_comment`,
+                `products.lang_obj`,
             ]
             let product_sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM products `;
             for (var i = 0; i < categoryDepth; i++) {
