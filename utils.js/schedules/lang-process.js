@@ -81,9 +81,47 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
     ago_brand = ago_brand?.result[0];
     ago_brand.setting_obj = JSON.parse(ago_brand?.setting_obj ?? '{}');
     if (new_brand_data?.setting_obj?.is_use_lang == 1) {
+        new_brand_data.shop_obj = JSON.parse(new_brand_data?.shop_obj ?? '[]');
+        for (var i = 0; i < new_brand_data.shop_obj.length; i++) {
+            if (!new_brand_data.shop_obj[i]?.lang_obj) {
+                new_brand_data.shop_obj[i].lang_obj = {};
+            }
+            if (new_brand_data.shop_obj[i]?.title) {
+                let title_lang_obj = await settingLangs(
+                    ['title'],
+                    { title: new_brand_data.shop_obj[i]?.title },
+                    new_brand_data,
+                    'brands',
+                    new_brand_data?.id,
+                    true,
+                )
 
+                title_lang_obj.lang_obj = JSON.parse(title_lang_obj?.lang_obj ?? '{}');
+                new_brand_data.shop_obj[i].lang_obj = {
+                    ...new_brand_data.shop_obj[i].lang_obj,
+                    ...title_lang_obj.lang_obj,
+                }
+            }
+            for (var j = 0; j < (new_brand_data.shop_obj[i]?.list ?? []).length; j++) {
+                if (new_brand_data.shop_obj[i]?.list[j]?.category_name) {
+                    let category_name_obj = await settingLangs(
+                        ['category_name'],
+                        { category_name: new_brand_data.shop_obj[i]?.list[j]?.category_name },
+                        new_brand_data,
+                        'brands',
+                        new_brand_data?.id,
+                        true,
+                    )
+                    category_name_obj.lang_obj = JSON.parse(category_name_obj?.lang_obj ?? '{}');
+
+                    new_brand_data.shop_obj[i].list[j].lang_obj = {
+                        ...category_name_obj.lang_obj,
+                    }
+                }
+            }
+        }
+        new_brand_data.shop_obj = JSON.stringify(new_brand_data.shop_obj);
     }
-
     if (ago_brand?.setting_obj?.is_use_lang != 1 && new_brand_data?.setting_obj?.is_use_lang == 1) {
         let insert_lang_process_list = [];
         for (var i = 0; i < Object.keys(lang_obj_columns).length; i++) {
@@ -117,4 +155,7 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
             let result = await pool.query(`INSERT INTO ${table_name} (table_name, item_id, brand_id, obj) VALUES ?`, [insert_lang_process_list.slice((i * 1000), (i + 1) * 1000)]);
         }
     }
+
+    delete new_brand_data.id;
+    return new_brand_data;
 }

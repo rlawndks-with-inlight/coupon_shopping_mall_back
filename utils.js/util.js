@@ -234,8 +234,9 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
                         headers
                     })
                     let detect_lang_code = detect?.langCode;
-                    if (detect_lang_code != 'ko' && detect_lang_code != 'en') {
-                        let detect_lang = await axios.post(`https://naveropenapi.apigw.ntruss.com/nmt/v1/translation`, {
+                    let detect_lang = undefined;
+                    if (detect_lang_code != 'ko') {
+                        detect_lang = await axios.post(`https://naveropenapi.apigw.ntruss.com/nmt/v1/translation`, {
                             'source': detect_lang_code,
                             'target': 'ko',
                             'text': obj[columns[i]],
@@ -243,11 +244,10 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
                             headers
                         })
                         detect_lang_code = 'ko';
-                        result.lang_obj[columns[i]] = {
-                            ko: detect_lang?.data?.message?.result?.translatedText
-                        };
                     }
-
+                    result.lang_obj[columns[i]] = {
+                        ko: detect_lang?.data?.message?.result?.translatedText || obj[columns[i]]
+                    };
                     for (var j = 0; j < lang_list.length; j++) {
 
                         if (decode_dns?.setting_obj?.lang_list && decode_dns?.setting_obj?.lang_list?.includes(lang_list[j].value) && obj[columns[i]]) {
@@ -266,7 +266,7 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
                                         })
                                     })
                                 } catch (err) {
-                                    console.log(err?.response?.data)
+                                    console.log(err)
                                 }
 
                             }
@@ -290,7 +290,7 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
             result.lang_obj = JSON.stringify(result.lang_obj);
             return result;
         } catch (err) {
-            console.log(err?.response?.data)
+            console.log(err)
             result.lang_obj = JSON.stringify(result.lang_obj);
             return result;
         }

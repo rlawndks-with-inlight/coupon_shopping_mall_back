@@ -247,7 +247,11 @@ const brandCtrl = {
       obj["seo_obj"] = JSON.stringify(obj.seo_obj);
       obj = { ...obj, ...files };
       let lang_setting = await brandSettingLang({ ...obj, id });
-      let result = await updateQuery(`${table_name}`, obj, id);
+
+      let result = await updateQuery(`${table_name}`, {
+        ...obj,
+        shop_obj: lang_setting?.shop_obj,
+      }, id);
       return response(req, res, 100, "success", {});
     } catch (err) {
       console.log(err);
