@@ -3,10 +3,13 @@ import _ from "lodash";
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 const table_name = 'post_categories';
+
+
 
 const postCategoryCtrl = {
     list: async (req, res, next) => {
@@ -72,10 +75,9 @@ const postCategoryCtrl = {
             let obj = {
                 post_category_title, parent_id, is_able_user_add, post_category_type, post_category_read_type, brand_id: decode_dns?.id,
             };
-
             obj = { ...obj, ...files };
-            console.log(obj);
             let result = await insertQuery(`${table_name}`, obj);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.result?.insertId);
 
             return response(req, res, 100, "success", {})
         } catch (err) {
@@ -99,8 +101,8 @@ const postCategoryCtrl = {
                 post_category_title, parent_id, is_able_user_add, post_category_type, post_category_read_type
             };
             obj = { ...obj, ...files };
-
             let result = await updateQuery(`${table_name}`, obj, id);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, id);
 
             return response(req, res, 100, "success", {})
         } catch (err) {

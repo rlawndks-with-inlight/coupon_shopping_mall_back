@@ -10,7 +10,6 @@ export const insertQuery = async (table, obj) => {
         find_column = find_column.map((column) => {
             return column?.COLUMN_NAME
         })
-
         let keys = Object.keys(obj);
         if (keys.length == 0) {
             return false;

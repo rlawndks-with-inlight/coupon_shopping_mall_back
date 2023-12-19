@@ -7,6 +7,8 @@ import { readSync } from 'fs';
 import when from 'when';
 import _ from 'lodash';
 import logger from './winston/index.js';
+import axios from 'axios';
+import { deleteQuery, insertQuery, updateQuery } from './query-util.js';
 
 const randomBytesPromise = util.promisify(crypto.randomBytes);
 const pbkdf2Promise = util.promisify(crypto.pbkdf2);
@@ -154,6 +156,7 @@ export const settingFiles = (obj = {}) => {
     }
     return result;
 }
+
 export const imageFieldList = [
     'logo_file',
     'dark_logo_file',
@@ -178,6 +181,140 @@ export const imageFieldList = [
         name: field
     }
 })
+
+export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, table_name = "", item_id, is_process) => {
+    if (decode_dns?.setting_obj?.is_use_lang != 1) {
+        return;
+    }
+    if (is_process) {
+        let result = {
+            lang_obj: {}
+        };
+        try {
+            let lang_list = [
+                {
+                    value: 'en',
+                    use_value: 'en'
+                },
+                {
+                    value: 'ja',
+                    use_value: 'ja'
+                },
+                {
+                    value: 'vi',
+                    use_value: 'vi'
+                },
+                {
+                    value: 'cn',
+                    use_value: 'zh-CN'
+                },
+                {
+                    value: 'fr',
+                    use_value: 'fr'
+                },
+                {
+                    value: 'ko',
+                    use_value: 'ko'
+                },
+            ]
+            let headers = {
+                'X-NCP-APIGW-API-KEY-ID': 'thsalld8dc',
+                'X-NCP-APIGW-API-KEY': 'aNKVtzTITy7NlbLWqORg3Zt0dI3yMHXTQN22Kx7w',
+                'Content-Type': 'application/json; charset=UTF-8',
+            }
+            let lang_when_list = [];
+            if (columns.length > 0 && decode_dns?.setting_obj?.is_use_lang == 1) {
+                for (var i = 0; i < columns.length; i++) {
+                    if (!obj[columns[i]]) {
+                        continue;
+                    }
+                    let { data: detect } = await axios.post(`https://naveropenapi.apigw.ntruss.com/langs/v1/dect`, {
+                        'query': obj[columns[i]],
+                    }, {
+                        headers
+                    })
+                    let detect_lang_code = detect?.langCode;
+                    if (detect_lang_code != 'ko' && detect_lang_code != 'en') {
+                        let detect_lang = await axios.post(`https://naveropenapi.apigw.ntruss.com/nmt/v1/translation`, {
+                            'source': detect_lang_code,
+                            'target': 'ko',
+                            'text': obj[columns[i]],
+                        }, {
+                            headers
+                        })
+                        detect_lang_code = 'ko';
+                        result.lang_obj[columns[i]] = {
+                            ko: detect_lang?.data?.message?.result?.translatedText
+                        };
+                    }
+
+                    for (var j = 0; j < lang_list.length; j++) {
+
+                        if (decode_dns?.setting_obj?.lang_list && decode_dns?.setting_obj?.lang_list?.includes(lang_list[j].value) && obj[columns[i]]) {
+
+                            if (detect_lang_code != lang_list[j].use_value && detect?.langCode != lang_list[j].use_value) {
+                                try {
+                                    lang_when_list.push({
+                                        column: columns[i],
+                                        lang: lang_list[j].value,
+                                        func: await axios.post(`https://naveropenapi.apigw.ntruss.com/nmt/v1/translation`, {
+                                            'source': detect_lang_code,
+                                            'target': lang_list[j].use_value,
+                                            'text': obj[columns[i]],
+                                        }, {
+                                            headers
+                                        })
+                                    })
+                                } catch (err) {
+                                    console.log(err?.response?.data)
+                                }
+
+                            }
+                        }
+                    }
+                }
+                for (var i = 0; i < lang_when_list.length; i++) {
+                    await lang_when_list[i];
+                }
+                let when_result = (await when(lang_when_list));
+                for (var i = 0; i < when_result.length; i++) {
+                    if (!result.lang_obj[when_result[i].column]) {
+                        result.lang_obj[when_result[i].column] = {};
+                    }
+                    result.lang_obj[when_result[i].column] = {
+                        ...result.lang_obj[when_result[i].column],
+                        [`${when_result[i].lang}`]: when_result[i].func?.data?.message?.result?.translatedText
+                    }
+                }
+            }
+            result.lang_obj = JSON.stringify(result.lang_obj);
+            return result;
+        } catch (err) {
+            console.log(err?.response?.data)
+            result.lang_obj = JSON.stringify(result.lang_obj);
+            return result;
+        }
+    } else {
+        try {
+            let delete_result = await deleteQuery('lang_processes', {
+                table_name: `'${table_name}'`,
+                item_id,
+            }, true)
+            let result = await insertQuery('lang_processes', {
+                table_name,
+                item_id,
+                brand_id: decode_dns?.id,
+                obj: JSON.stringify(obj),
+            })
+            return true;
+        } catch (err) {
+            console.log(err);
+            return false;
+        }
+    }
+
+}
+
 export const getPayType = (num) => {
     if (num == 1) {
         return {

@@ -2,10 +2,13 @@
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 const table_name = 'product_categories';
+
+
 
 const productCategoryCtrl = {
     list: async (req, res, next) => {
@@ -90,9 +93,10 @@ const productCategoryCtrl = {
                 product_category_group_id,
                 brand_id,
             };
-            obj = { ...obj, ...files };
+            obj = { ...obj, ...files, };
 
             let result = await insertQuery(`${table_name}`, obj);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.result?.insertId);
 
             return response(req, res, 100, "success", {})
         } catch (err) {
@@ -128,8 +132,10 @@ const productCategoryCtrl = {
                 category_description,
                 product_category_group_id,
             };
-            obj = { ...obj, ...files };
+            obj = { ...obj, ...files, };
+
             let result = await updateQuery(`${table_name}`, obj, id);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, id);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)

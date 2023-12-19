@@ -18,13 +18,13 @@ import {
 } from "../utils.js/util.js";
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
+import { brandSettingLang } from "../utils.js/schedules/lang-process.js";
 
 const table_name = "brands";
 
 const brandCtrl = {
   list: async (req, res, next) => {
     try {
-
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { } = req.query;
@@ -49,6 +49,7 @@ const brandCtrl = {
       logger.error(JSON.stringify(err?.response?.data || err));
       return response(req, res, -200, "서버 에러 발생", false);
     } finally {
+
     }
   },
   get: async (req, res, next) => {
@@ -245,7 +246,7 @@ const brandCtrl = {
       obj["blog_obj"] = JSON.stringify(obj.blog_obj);
       obj["seo_obj"] = JSON.stringify(obj.seo_obj);
       obj = { ...obj, ...files };
-
+      let lang_setting = await brandSettingLang({ ...obj, id });
       let result = await updateQuery(`${table_name}`, obj, id);
       return response(req, res, 100, "success", {});
     } catch (err) {

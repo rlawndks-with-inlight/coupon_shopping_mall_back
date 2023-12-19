@@ -3,10 +3,12 @@ import _ from "lodash";
 import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, findChildIds, findParent, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, findChildIds, findParent, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 const table_name = 'posts';
+
 
 const postCtrl = {
     list: async (req, res, next) => {
@@ -59,6 +61,7 @@ const postCtrl = {
                 return {
                     ...item,
                     replies: child_posts.filter(itm => itm.parent_id == item.id),
+                    lang_obj: JSON.parse(item?.lang_obj ?? `{}`),
                 }
             })
             return response(req, res, 100, "success", data);
@@ -85,6 +88,7 @@ const postCtrl = {
             sql += ` WHERE ${table_name}.id=${id} `
             let data = await pool.query(sql);
             data = data?.result[0];
+            data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
             let child_posts = await pool.query(`SELECT * FROM posts WHERE parent_id=${id} ORDER BY id DESC`);
             child_posts = child_posts?.result;
             data.replies = child_posts;
@@ -114,8 +118,10 @@ const postCtrl = {
                 user_id: decode_user?.id,
             };
             obj = { ...obj, ...files };
-
             let result = await insertQuery(`${table_name}`, obj);
+
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.result?.insertId);
+
 
             return response(req, res, 100, "success", {})
         } catch (err) {
@@ -140,6 +146,7 @@ const postCtrl = {
                 post_title_img,
                 category_id, parent_id, post_title, post_content, is_reply,
             };
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, id);
             obj = { ...obj, ...files };
 
             let result = await updateQuery(`${table_name}`, obj, id);

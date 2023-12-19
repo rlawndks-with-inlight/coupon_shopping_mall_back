@@ -3,10 +3,12 @@ import axios from "axios";
 import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles } from "../utils.js/util.js";
+import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 const table_name = 'products';
+
 
 const productCtrl = {
     list: async (req, res, next) => {
@@ -22,10 +24,12 @@ const productCtrl = {
                 `sellers.seller_name`,
                 `(SELECT COUNT(*) FROM transaction_orders LEFT JOIN transactions ON transactions.id=transaction_orders.trans_id WHERE transaction_orders.product_id=${table_name}.id AND transactions.is_cancel=0 AND transactions.trx_status >=5 AND transactions.is_delete=0) AS order_count`,
                 `(SELECT COUNT(*) FROM product_reviews WHERE product_id=${table_name}.id AND is_delete=0) AS review_count`,
+                `consignment_users.user_name AS consignment_user_name`,
+                `consignment_users.phone_num AS consignment_phone_num`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
-
+            sql += ` LEFT JOIN users AS consignment_users ON ${table_name}.consignment_user_id=consignment_users.id `
 
             let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (seller_id > 0) {
@@ -75,6 +79,7 @@ const productCtrl = {
             for (var i = 0; i < data?.content.length; i++) {
                 let images = sub_images.filter(item => item?.product_id == data?.content[i]?.id);
                 data.content[i].sub_images = images ?? [];
+                data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
             }
 
             return response(req, res, 100, "success", data);
@@ -105,6 +110,8 @@ const productCtrl = {
 
             let data = await pool.query(product_sql);
             data = data?.result[0];
+            data.lang_obj = JSON.parse(data?.lang_obj ?? '{}');
+
             id = data?.id;
 
             let property_sql = `SELECT products_and_properties.*,product_properties.property_name,product_property_groups.property_group_name FROM products_and_properties `;
@@ -205,7 +212,11 @@ const productCtrl = {
                 }
                 obj['consignment_user_id'] = consignment_user?.id;
             }
+            obj = { ...obj, };
+
             let result = await insertQuery(`${table_name}`, obj);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.result?.insertId);
+
             if (!result?.result?.insertId) {
                 await db.rollback();
                 return response(req, res, -100, "상품 저장중 에러", false)
@@ -350,7 +361,6 @@ const productCtrl = {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
                 }
             }
-            obj = { ...obj, ...files };
             await db.beginTransaction();
 
             if (consignment_user_name) {
@@ -361,7 +371,9 @@ const productCtrl = {
                 }
                 obj['consignment_user_id'] = consignment_user?.id;
             }
+            obj = { ...obj, ...files, };
             let result = await updateQuery(`${table_name}`, obj, id);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, id);
 
             const product_id = id;
             //option

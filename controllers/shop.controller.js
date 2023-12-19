@@ -169,7 +169,6 @@ const shopCtrl = {
             //유저찜
             let user_wish_columns = [
                 `user_wishs.*`,
-
             ]
             let user_wish_sql = `SELECT ${user_wish_columns.join()} FROM user_wishs `;
             user_wish_sql += ` WHERE user_wishs.brand_id=${decode_dns?.id ?? 0} AND user_wishs.user_id=${decode_user?.id ?? 0} `;
@@ -201,6 +200,13 @@ const shopCtrl = {
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
+
+            for (var i = 0; i < Object.keys(data).length; i++) {
+                let table = Object.keys(data)[i];
+                for (var j = 0; j < data[table].length; j++) {
+                    data[table][j].lang_obj = JSON.parse(data[table][j]?.lang_obj ?? '{}');
+                }
+            }
             //상품이미지처리
             let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
             sub_images = sub_images?.result;
