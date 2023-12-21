@@ -27,6 +27,7 @@ import productPropertyCtrl from './product_property.controller.js';
 import columnCtrl from './column.controller.js';
 import consignmentCtrl from './consignment.controller.js';
 import thirdPartyCtrl from './third_party.controller.js';
+import dashboardCtrl from './dashboard.controller.js';
 
 export {
     brandCtrl,
@@ -56,4 +57,5 @@ export {
     columnCtrl,
     consignmentCtrl,
     thirdPartyCtrl,
+    dashboardCtrl,
 };
