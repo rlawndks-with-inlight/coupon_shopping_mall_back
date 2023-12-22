@@ -136,6 +136,9 @@ const sellerCtrl = {
             obj = { ...obj, ...files };
             await db.beginTransaction();
             let result = await insertQuery(`${table_name}`, obj);
+            if (!result) {
+                return response(req, res, -100, "셀러추가중 에러", false)
+            }
             let user_id = result?.result?.insertId;
 
 
@@ -154,6 +157,7 @@ const sellerCtrl = {
                 id: user_id
             })
         } catch (err) {
+            console.log(123)
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
             await db.rollback();

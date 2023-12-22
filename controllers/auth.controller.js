@@ -87,7 +87,8 @@ const authCtrl = {
                 level = 0,
                 phone_num,
                 profile_img,
-                brand_id
+                brand_id,
+                acct_num = "", acct_name = "", acct_bank_name = "", acct_bank_code = "",
             } = req.body;
             if (!user_pw) {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
@@ -99,7 +100,7 @@ const authCtrl = {
             }
 
             if (!is_manager) {
-                if (level > 0) {
+                if (level > 10) {
                     return lowLevelException(req, res);
                 }
             }
@@ -115,7 +116,8 @@ const authCtrl = {
                 phone_num,
                 profile_img,
                 brand_id,
-                user_salt
+                user_salt,
+                acct_num, acct_name, acct_bank_name, acct_bank_code,
             }
             let result = await insertQuery('users', obj);
             return response(req, res, 100, "success", {})
