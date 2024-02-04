@@ -5,7 +5,6 @@ import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, s
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -273,8 +272,6 @@ const setProducts = async () => {
         grand_products = grand_products?.result;
         console.log(1)
 
-        let sql_list = [];
-
         let property_obj = {
             'N': 17,
             'N-S': 16,
@@ -286,71 +283,12 @@ const setProducts = async () => {
         }
         let insert_property_list = [];
 
-        let insert_property_list_2 = [];
-
-        for (var i = 0; i < grand_products.length; i++) {
-            let grand_product = grand_products[i];
-            if (property_obj[grand_product.PRODUCT_USED_FLAG]) {
-                insert_property_list.push([
-                    grand_product?.SEQ,//product_id
-                    property_obj[grand_product.PRODUCT_USED_FLAG],//property_id
-                    4//property_group_id
-                ])
-            }
-            if (grand_product.BEST_FLAG == 'Y') {
-                insert_property_list_2.push([
-                    grand_product?.SEQ,
-                    22,
-                    3,
-                ])
-            }
-            if (grand_product.NEW_ARRIVAL_FLAG == 'Y') {
-                insert_property_list_2.push([
-                    grand_product?.SEQ,
-                    21,
-                    3,
-                ])
-            }
-            if (grand_product.PRICE_DOWN_FLAG == 'Y') {
-                insert_property_list_2.push([
-                    grand_product?.SEQ,
-                    20,
-                    3,
-                ])
-            }
-            if (grand_product.CLOTHES_FLAG == 'Y') {
-                insert_property_list_2.push([
-                    grand_product?.SEQ,
-                    19,
-                    3,
-                ])
-            }
-            if (grand_product.WATCH_JEWELRY_FLAG == 'Y') {
-                insert_property_list_2.push([
-                    grand_product?.SEQ,
-                    18,
-                    3,
-                ])
-            }
-        }
-
         await db.beginTransaction();
-        for (var i = 0; i < insert_property_list.length / 1000; i++) {
-            let result = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES ? `, [
-                insert_property_list.splice(i * 1000, (i + 1) * 1000),
-            ]);
-        }
-        console.log(2)
 
-        for (var i = 0; i < insert_property_list_2.length / 1000; i++) {
-            let result = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES ? `, [
-                insert_property_list_2.splice(i * 1000, (i + 1) * 1000),
-            ]);
-        }
-        console.log(3)
 
         console.log('success');
         await db.commit();
+
     } catch (err) {
         await db.rollback();
         console.log(err)

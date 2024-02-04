@@ -181,7 +181,7 @@ const settingSelectQueryObj = (obj_) => {
     }
     return obj;
 }
-export const getMultipleQueryByWhen = async (sql_list, is_list) => {
+export const getMultipleQueryByWhen = async (sql_list = [], is_list) => {
     let result_list = [];
     for (var i = 0; i < sql_list.length; i++) {
         result_list.push({
