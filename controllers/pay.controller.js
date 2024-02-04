@@ -309,6 +309,7 @@ const payCtrl = {
         virtual_acct_name,
         tid,
         dns,
+        created_at,
       } = req.body;
       let brand = await pool.query(`SELECT * FROM brands WHERE dns=?`, [dns]);
       brand = brand?.result[0];
@@ -342,8 +343,8 @@ const payCtrl = {
         virtual_acct_num,
         bank_code,
         acct_num,
-        trx_dt: returnMoment().split(' ')[0],
-        trx_tm: returnMoment().split(' ')[1],
+        trx_dt: created_at.split(' ')[0],
+        trx_tm: created_at.split(' ')[1],
         trx_status: 5,
       }
       if (pay_type == 'deposit') {
