@@ -1,7 +1,7 @@
 "use strict";
 import axios from "axios";
 import db, { pool } from "../config/db.js";
-import { checkIsManagerUrl } from "../utils.js/function.js";
+import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
 import {
   deleteQuery,
   getSelectQueryList,
@@ -25,7 +25,6 @@ const payCtrl = {
   ready: async (req, res, next) => {
     //인증결제
     try {
-
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { trx_type } = req.params;
@@ -280,6 +279,86 @@ const payCtrl = {
       } else {
         return response(req, res, -200, payvery_cancel?.result_msg, false);
       }
+    } catch (err) {
+      console.log(err);
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return response(
+        req,
+        res,
+        -200,
+        err?.response?.data?.result_msg || "서버 에러 발생",
+        false
+      );
+    } finally {
+    }
+  },
+  virtualAcctNoti: async (req, res, next) => {
+    //가상계좌노티
+    try {
+
+      const decode_user = checkLevel(req.cookies.token, 0, res);
+      const decode_dns = checkDns(req.cookies.dns);
+      const {
+        amount,
+        pay_type = "",
+        acct_num,
+        acct_name,
+        bank_code,
+        virtual_bank_code,
+        virtual_acct_num,
+        virtual_acct_name,
+        tid,
+        dns,
+      } = req.body;
+      let brand = await pool.query(`SELECT * FROM brands WHERE dns=?`, [dns]);
+      brand = brand?.result[0];
+      brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
+      brand["setting_obj"] = JSON.parse(brand?.setting_obj ?? "{}");
+      brand["none_use_column_obj"] = JSON.parse(brand?.none_use_column_obj ?? "{}");
+      brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");
+      brand["shop_obj"] = JSON.parse(brand?.shop_obj ?? "[]");
+      brand["blog_obj"] = JSON.parse(brand?.blog_obj ?? "[]");
+      brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
+      let phone_num = '';
+      for (let i = 0; i < 8; i++) {
+        const randomNumber = Math.floor(Math.random() * 10);
+        phone_num += randomNumber.toString();
+      }
+      let random_addr = await pool.query(`SELECT * FROM user_addresses ORDER BY RAND() LIMIT 1`);
+      random_addr = random_addr?.result[0];
+      let obj = {
+        brand_id: brand?.id,
+        user_id: 0,
+        tid,
+        appr_num: tid,
+        amount,
+        item_name: 'asdasdsa',
+        addr: '',
+        detail_addr: '',
+        buyer_name: acct_name,
+        buyer_phone: '010' + phone_num,
+        trx_method: 10,
+        virtual_bank_code,
+        virtual_acct_num,
+        bank_code,
+        acct_num,
+        trx_dt: returnMoment().split(' ')[0],
+        trx_tm: returnMoment().split(' ')[1],
+        trx_status: 5,
+      }
+      if (pay_type == 'deposit') {
+        obj['addr'] = random_addr?.addr;
+        obj['detail_addr'] = random_addr?.detail_addr;
+      } else if (pay_type == 'withdraw') {
+        obj['is_cancel'] = 1;
+      } else if (pay_type == 'return') {
+        obj['is_cancel'] = 1;
+      }
+      let result = await insertQuery(`${table_name}`, obj);
+      if (pay_type == 'deposit') {
+
+      }
+      return response(req, res, 100, "success", {});
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));

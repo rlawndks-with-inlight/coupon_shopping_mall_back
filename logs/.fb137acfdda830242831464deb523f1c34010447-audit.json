@@ -6,11 +6,6 @@
     "auditLog": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\.fb137acfdda830242831464deb523f1c34010447-audit.json",
     "files": [
         {
-            "date": 1699890138524,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-11-14.log",
-            "hash": "df9e817ff6dfa6d663f48d3a6496abbc3ff7620323a75482d4ede21cb0935742"
-        },
-        {
             "date": 1699980490678,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-11-15.log",
             "hash": "fb0e7336ed8853fd4081b9d2a78caaf929e297d48b17552475908c0676ad0243"
@@ -154,6 +149,11 @@
             "date": 1706972652087,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-02-04.log",
             "hash": "9aac3d16b25ab22b18dc757678707e4035b306df255cba4ab78af966b01088ba"
+        },
+        {
+            "date": 1707060876771,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-02-05.log",
+            "hash": "bbf1961e7aaf511c69de3058eff919037cd4fb3fb9647659f1147874416909fa"
         }
     ],
     "hashType": "sha256"
