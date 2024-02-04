@@ -6,6 +6,7 @@ import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 const domainCtrl = {
   get: async (req, res, next) => {
+    
     try {
       const {
         dns,
@@ -36,8 +37,8 @@ const domainCtrl = {
         "addr",
         "phone_num",
         "fax_num",
+        "mail_order_num",
       ];
-      console.log(dns)
       let brand = await pool.query(
         `SELECT ${columns.join()} FROM brands WHERE dns='${dns}'`
       );
