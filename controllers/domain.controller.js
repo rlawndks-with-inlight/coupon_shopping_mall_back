@@ -37,7 +37,6 @@ const domainCtrl = {
         "phone_num",
         "fax_num",
       ];
-      console.log(dns)
       let brand = await pool.query(
         `SELECT ${columns.join()} FROM brands WHERE dns='${dns}'`
       );
