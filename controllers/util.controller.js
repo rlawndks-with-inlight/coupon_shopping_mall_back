@@ -5,6 +5,7 @@ import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, s
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -71,6 +72,7 @@ const utilCtrl = {
                 is_copy_brand_setting = 0,
                 is_copy_product = 0,
                 is_copy_post = 0,
+                is_use_tikitaka = 0,
             } = req.body;
             if (!decode_user) {
                 return lowLevelException(req, res);
@@ -161,13 +163,19 @@ const utilCtrl = {
                     let insert_data = [];
                     let product_list = products.slice(i * 1000, (i + 1) * 1000);
                     for (var j = 0; j < product_list.length; j++) {
+                        let product_price = product_list[j]?.product_price;
+                        let product_sale_price = product_list[j]?.product_sale_price;
+                        if (is_use_tikitaka == 1) {
+                            product_price = ((parseInt(product_price) + 10000) / 10000).toFixed(0) * 10000;
+                            product_sale_price = ((parseInt(product_sale_price) + 10000) / 10000).toFixed(0) * 10000;
+                        }
                         insert_data.push([
                             product_category_connect_ids[product_list[j]?.category_id0],
                             product_category_connect_ids[product_list[j]?.category_id1],
                             product_category_connect_ids[product_list[j]?.category_id2],
                             product_list[j]?.product_name,
-                            product_list[j]?.product_price,
-                            product_list[j]?.product_sale_price,
+                            product_price,
+                            product_sale_price,
                             product_list[j]?.product_img,
                             product_list[j]?.product_comment,
                             product_list[j]?.product_description,

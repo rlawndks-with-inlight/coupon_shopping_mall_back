@@ -13,7 +13,7 @@ const transactionCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { trx_status, cancel_status, is_confirm } = req.query;
+            const { trx_status, cancel_status, is_confirm, cancel_type } = req.query;
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
@@ -41,7 +41,12 @@ const transactionCtrl = {
                     sql += ` AND trx_status=1 `;
                 } else if (cancel_status == 5) {
                     sql += ` AND is_cancel=1 `;
+                } else if (cancel_status == 0) {
+                    sql += ` AND is_cancel=0 `;
                 }
+            }
+            if (cancel_type) {
+                sql += ` AND cancel_type=${cancel_type} `;
             }
             let data = await getSelectQueryList(sql, columns, req.query);
             let trx_ids = data?.content.map(trx => {
