@@ -17,7 +17,6 @@ const productCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { seller_id, property_id, is_consignment } = req.query;
-
             let columns = [
                 `${table_name}.*`,
                 `sellers.user_name`,
@@ -63,10 +62,12 @@ const productCtrl = {
                     where_sql += ` AND ${key} IN (${category_ids.join()}) `;
                 }
             }
-            if (property_id) {
-                sql += ` LEFT JOIN products_and_properties ON products.id=products_and_properties.product_id `;
-                where_sql += ` AND products_and_properties.property_id=${property_id} `;
+            for (var i = 0; i < 20; i++) {
+                if (req.query[`property_ids${i}`]) {
+                    where_sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (${req.query[`property_ids${i}`]}) ) `
+                }
             }
+
             if (is_consignment) {
                 where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
             }
