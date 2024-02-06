@@ -314,6 +314,7 @@ const payCtrl = {
       let brand = await pool.query(`SELECT * FROM brands WHERE dns=?`, [dns]);
       brand = brand?.result[0];
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
+      brand["slider_css"] = JSON.parse(brand?.slider_css ?? "{}");
       brand["setting_obj"] = JSON.parse(brand?.setting_obj ?? "{}");
       brand["none_use_column_obj"] = JSON.parse(brand?.none_use_column_obj ?? "{}");
       brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");
