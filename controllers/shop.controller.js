@@ -15,7 +15,8 @@ const shopCtrl = {
 
             // 상품 카테고리 그룹, 상품 리뷰, 상품 포스트카테고리
             const decode_user = checkLevel(req.cookies.token, 0, res);
-            const decode_dns = checkDns(req.cookies.dns);
+            let decode_dns = checkDns(req.cookies.dns);
+            decode_dns.id = 5;
             const { is_manager = 0 } = req.query;
             let return_moment = returnMoment();
             let brand_column = [
@@ -58,7 +59,6 @@ const shopCtrl = {
             product_sql = product_sql.replaceAll(process.env.SELECT_COLUMN_SECRET, product_columns.join());
 
             //메인obj 에서 items-property-groups가 존재할시
-
             let product_and_property_columns = [
                 `products.id`,
                 `products.sort_idx`,
@@ -72,13 +72,15 @@ const shopCtrl = {
             let product_and_property_sql = `
             WITH RankedProperties AS (
                 SELECT
-                    id,
-                    product_id,
-                    property_id,
-                    property_group_id,
-                    ROW_NUMBER() OVER (PARTITION BY property_id ORDER BY id DESC) AS row_num
+                products_and_properties.id,
+                products_and_properties.product_id,
+                products_and_properties.property_id,
+                products_and_properties.property_group_id,
+                    ROW_NUMBER() OVER (PARTITION BY products_and_properties.property_id ORDER BY id DESC) AS row_num
                 FROM
                     products_and_properties
+                    LEFT JOIN products ON products_and_properties.product_id=products.id
+                    WHERE products.is_delete=0
             )
             SELECT
                 ${product_and_property_columns.join()}
@@ -91,7 +93,6 @@ const shopCtrl = {
                 AND products.brand_id=${decode_dns?.id}
                 ORDER BY products.sort_idx DESC
             `;
-
             //상품카테고리그룹
             let product_category_group_columns = [
                 `product_category_groups.*`,
