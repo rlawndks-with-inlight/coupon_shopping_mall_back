@@ -15,8 +15,7 @@ const shopCtrl = {
 
             // 상품 카테고리 그룹, 상품 리뷰, 상품 포스트카테고리
             const decode_user = checkLevel(req.cookies.token, 0, res);
-            let decode_dns = checkDns(req.cookies.dns);
-            decode_dns.id = 5;
+            const decode_dns = checkDns(req.cookies.dns);
             const { is_manager = 0 } = req.query;
             let return_moment = returnMoment();
             let brand_column = [
