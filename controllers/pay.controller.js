@@ -371,13 +371,13 @@ const payCtrl = {
             result_products[i]?.product_name,
             parseFloat(result_products[i]?.order_amount),
             parseInt(result_products[i]?.order_count),
-            [],
+            '[]',
             result_products[i]?.delivery_fee,
             0,
             0,
           ]);
         }
-        if (insert_item_data > 0) {
+        if (insert_item_data.length > 0) {
           let insert_item_result = await pool.query(
             `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
             [insert_item_data]
@@ -444,7 +444,7 @@ function generateArrayWithSum(products_ = [], targetSum = 0) {
   let remain = targetSum - currentSum;
   let result = [];
   for (var i = 0; i < resultArray.length; i++) {
-    let find_index = _.find(resultArray, { id: resultArray[i]?.id });
+    let find_index = _.findIndex(resultArray, { id: parseInt(resultArray[i]?.id) });
 
     if (find_index >= 0) {
       result[find_index].order_count++;
@@ -456,5 +456,42 @@ function generateArrayWithSum(products_ = [], targetSum = 0) {
   // 합계가 원하는 값에 도달하면 배열 반환
   return result;
 }
-
+const asdsadsad = async () => {
+  try {
+    let trxs = await pool.query(`SELECT * FROM transactions WHERE brand_id IN (23, 24, 21) AND id <= 186863`);
+    trxs = trxs?.result;
+    let products = await pool.query(`SELECT * FROM products WHERE brand_id IN (23, 24, 21)`);
+    products = products?.result;
+    for (var i = 0; i < trxs.length; i++) {
+      let brand_products = products.filter(el => el?.brand_id == trxs[i]?.brand_id);
+      let result_products = generateArrayWithSum(brand_products, trxs[i]?.amount)
+      let insert_item_data = [];
+      for (var j = 0; j < result_products.length; j++) {
+        insert_item_data.push([
+          trxs[i]?.id,
+          parseInt(result_products[j]?.id),
+          result_products[j]?.product_name,
+          parseFloat(result_products[j]?.order_amount),
+          parseInt(result_products[j]?.order_count),
+          '[]',
+          result_products[j]?.delivery_fee,
+          0,
+          0,
+        ]);
+      }
+      console.log(insert_item_data.length)
+      if (insert_item_data.length > 0) {
+        let insert_item_result = await pool.query(
+          `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
+          [insert_item_data]
+        );
+        console.log(insert_item_result)
+      }
+    }
+    console.log('sucess');
+  } catch (err) {
+    console.log(err)
+  }
+}
+//asdsadsad();
 export default payCtrl;
