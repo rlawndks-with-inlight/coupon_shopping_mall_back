@@ -311,7 +311,6 @@ const payCtrl = {
         dns,
         created_at,
       } = req.body;
-      console.log(req.body)
       let brand = await pool.query(`SELECT * FROM brands WHERE dns=?`, [dns]);
       brand = brand?.result[0];
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
@@ -359,7 +358,6 @@ const payCtrl = {
       await db.beginTransaction();
       let result = await insertQuery(`${table_name}`, obj);
       let trans_id = result?.result?.insertId;
-      console.log(brand)
       if (pay_type == 'deposit') {
         let products = await pool.query(`SELECT * FROM products WHERE brand_id=${brand?.id}`);
         products = products?.result;
@@ -435,7 +433,6 @@ function generateArrayWithSum(products_ = [], targetSum = 0) {
     currentSum += randomNumber;
     if ((targetSum - currentSum) <= 10000) {
       let last_find_items = products.filter(el => el?.product_sale_price <= (targetSum - currentSum))
-      console.log(last_find_items)
       if (last_find_items.length > 0) {
         resultArray.push(last_find_items[0]);
         currentSum += last_find_items[0]?.product_sale_price;
