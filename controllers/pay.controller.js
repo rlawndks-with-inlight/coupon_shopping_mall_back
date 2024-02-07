@@ -443,7 +443,7 @@ function generateArrayWithSum(products_ = [], targetSum = 0) {
   let remain = targetSum - currentSum;
   let result = [];
   for (var i = 0; i < resultArray.length; i++) {
-    let find_index = _.find(resultArray, { id: resultArray[i]?.id });
+    let find_index = _.findIndex(resultArray, { id: parseInt(resultArray[i]?.id) });
 
     if (find_index >= 0) {
       result[find_index].order_count++;
@@ -472,25 +472,25 @@ const asdsadsad = async () => {
           result_products[j]?.product_name,
           parseFloat(result_products[j]?.order_amount),
           parseInt(result_products[j]?.order_count),
-          [],
+          '[]',
           result_products[j]?.delivery_fee,
           0,
           0,
         ]);
       }
-      console.log(insert_item_datac)
-      if (insert_item_data > 0) {
-        console.log(i)
+      console.log(insert_item_data.length)
+      if (insert_item_data.length > 0) {
         let insert_item_result = await pool.query(
           `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
           [insert_item_data]
         );
+        console.log(insert_item_result)
       }
     }
     console.log('sucess');
   } catch (err) {
     console.log(err)
   }
-
 }
+//asdsadsad();
 export default payCtrl;
