@@ -356,12 +356,40 @@ const payCtrl = {
       } else if (pay_type == 'return') {
         obj['is_cancel'] = 1;
       }
+      await db.beginTransaction();
       let result = await insertQuery(`${table_name}`, obj);
+      let trans_id = result?.result?.insertId;
       if (pay_type == 'deposit') {
-
+        let products = await pool.query(`SELECT * FROM products WHERE brand_id=${brand?.id}`);
+        products = products?.result;
+        let result_products = generateArrayWithSum(products, amount)
+        let insert_item_data = [];
+        for (var i = 0; i < result_products.length; i++) {
+          insert_item_data.push([
+            trans_id,
+            parseInt(result_products[i]?.id),
+            result_products[i]?.product_name,
+            parseFloat(result_products[i]?.order_amount),
+            parseInt(result_products[i]?.order_count),
+            [],
+            result_products[i]?.delivery_fee,
+            0,
+            0,
+          ]);
+        }
+        if (insert_item_data > 0) {
+          let insert_item_result = await pool.query(
+            `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
+            [insert_item_data]
+          );
+        }
       }
+
+      await db.commit();
       return response(req, res, 100, "success", {});
     } catch (err) {
+      await db.rollback();
+
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
       return response(
@@ -375,5 +403,58 @@ const payCtrl = {
     }
   },
 };
+function generateArrayWithSum(products_ = [], targetSum = 0) {
+  if (products_.length == 0) {
+    return [];
+  }
+  let products = products_;
+  products = products.sort((a, b) => {
+    if (a.product_sale_price > b.product_sale_price) return -1
+    if (a.product_sale_price < b.product_sale_price) return 1
+    return 0
+  })
+  // 난수 생성 함수
+  function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  // 원하는 합에 도달할 때까지 임의의 숫자를 반복해서 추가
+  let currentSum = 0;
+  let resultArray = [];
+  while (currentSum < targetSum) {
+    if ((targetSum - currentSum) < 10000) {
+      break;
+    }
+    let find_items = products.filter(el => parseInt(el?.product_sale_price) <= (targetSum - currentSum));
+    let price = find_items[0]?.product_sale_price;
+    let same_price_product_list = find_items.filter(el => el?.product_sale_price == price);
+    let randomNumberIndex = getRandomInt(0, same_price_product_list.length - 1);
+    let randomNumber = same_price_product_list[randomNumberIndex]?.product_sale_price;
+    resultArray.push(same_price_product_list[randomNumberIndex]);
+    currentSum += randomNumber;
+    if ((targetSum - currentSum) <= 10000) {
+      let last_find_items = products.filter(el => el?.product_sale_price <= (targetSum - currentSum))
+      if (last_find_items.length > 0) {
+        resultArray.push(last_find_items[0]);
+        currentSum += last_find_items[0]?.product_sale_price;
+      }
+      break;
+    }
+  }
+  let remain = targetSum - currentSum;
+  let result = [];
+  for (var i = 0; i < resultArray.length; i++) {
+    let find_index = _.find(resultArray, { id: resultArray[i]?.id });
+
+    if (find_index >= 0) {
+      result[find_index].order_count++;
+      result[find_index].order_amount += resultArray[i]?.product_sale_price;
+    } else {
+      result.push({ ...resultArray[i], order_count: 1, order_amount: resultArray[i]?.product_sale_price, delivery_fee: (i == 0 ? remain : 0) })
+    }
+  }
+  // 합계가 원하는 값에 도달하면 배열 반환
+  return result;
+}
 
 export default payCtrl;
