@@ -444,7 +444,6 @@ function generateArrayWithSum(products_ = [], targetSum = 0) {
   let result = [];
   for (var i = 0; i < resultArray.length; i++) {
     let find_index = _.findIndex(resultArray, { id: parseInt(resultArray[i]?.id) });
-
     if (find_index >= 0) {
       result[find_index].order_count++;
       result[find_index].order_amount += resultArray[i]?.product_sale_price;
