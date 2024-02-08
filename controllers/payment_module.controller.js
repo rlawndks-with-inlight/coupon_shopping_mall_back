@@ -58,11 +58,11 @@ const paymentModuleCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id
+                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, pay_key, mid, tid, trx_type, is_old_auth
+                brand_id, pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url
             };
             let columns = [
                 `${table_name}.*`,
@@ -97,12 +97,12 @@ const paymentModuleCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id,
+                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url,
                 id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                pay_key, mid, tid, trx_type, is_old_auth
+                pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url,
             };
             obj = { ...obj, ...files };
             await db.beginTransaction();

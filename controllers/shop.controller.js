@@ -80,6 +80,7 @@ const shopCtrl = {
                     products_and_properties
                     LEFT JOIN products ON products_and_properties.product_id=products.id
                     WHERE products.is_delete=0
+                    AND products.brand_id=${decode_dns?.id}
             )
             SELECT
                 ${product_and_property_columns.join()}
