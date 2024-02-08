@@ -51,6 +51,7 @@ const dashboardCtrl = {
                 data['trx_sum'] = 1;
             }
 
+            //문의관리
             let post_category_columns = [
                 `post_categories.*`,
             ]
@@ -68,6 +69,8 @@ const dashboardCtrl = {
                 let request_counts_sql = ` SELECT COUNT(*) AS cnt FROM posts `;
                 request_counts_sql += ` LEFT JOIN post_categories ON posts.category_id=post_categories.id `;
                 request_counts_sql += ` WHERE category_id IN (${ids.join()}) `;
+                request_counts_sql += ` AND posts.is_reply=0`   //문의의 is_reply==0, 답변의 is_reply==1
+                request_counts_sql += ` AND posts.is_delete=0` //이미 지워진 문의는 포함x
                 if (s_dt) {
                     request_counts_sql += ` AND posts.created_at >= '${s_dt} 00:00:00' `;
                 }
