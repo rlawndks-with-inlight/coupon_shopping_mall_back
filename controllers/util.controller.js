@@ -5,7 +5,8 @@ import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, s
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-
+import { grandPool } from '../config/grandparis-db.js'
+import _ from "lodash";
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -274,12 +275,43 @@ const utilCtrl = {
     },
 };
 
-const setProducts = async () => {
+export const setGrandParisProducts = async () => {
     try {
-
+        //상품 메인이미지o
+        //상품 서브이미지o
+        //상품명o
+        //상품코드o
+        //상품가격o
+        //상품카테고리
+        //상품브랜드
+        //상품등급o
+        //상품코너o
+        //상품설명o
+        //
         let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
         grand_products = grand_products?.result;
-        console.log(1)
+
+        let grand_product_imgs = await grandPool.query(`SELECT * FROM PRODUCT_IMG WHERE IMG_FOLDER='/product' AND IMG_TYPE IN ('main','detail') AND DELETE_FLAG='N' ORDER BY SEQ ASC`);
+        grand_product_imgs = grand_product_imgs?.result;
+
+        let grand_product_categories = await grandPool.query(`SELECT * FROM PRODUCT_CATEGORY ORDER BY SEQ ASC`);
+        grand_product_categories = grand_product_categories?.result;
+
+        let grand_product_brands = await grandPool.query(`SELECT * FROM PRODUCT_BRAND ORDER BY SEQ ASC`);
+        grand_product_brands = grand_product_brands?.result;
+
+        await db.beginTransaction();
+
+        let products = await pool.query(`SELECT * FROM products WHERE brand_id=5 ORDER BY id ASC`);
+        products = products?.result;
+
+        let product_obj = {};
+
+        for (var i = 0; i < products.length; i++) {
+            product_obj[products[i]?.product_code] = products[i];
+        }
+
+        let insert_property_list = [];
 
         let property_obj = {
             'N': 17,
@@ -290,20 +322,108 @@ const setProducts = async () => {
             'A-': 12,
             '특B': 24,
         }
-        let insert_property_list = [];
+        for (var i = 0; i < grand_products.length; i++) {
+            if (!product_obj[grand_products[i]?.PRODUCT_CODE]) {
+                let insert_product = await pool.query(`INSERT INTO products (brand_id, product_name, product_code, product_price, product_sale_price, product_description) VALUES (?, ?, ?, ?, ?, ?)`, [
+                    5,
+                    grand_products[i]?.PRODUCT_NAME,
+                    grand_products[i]?.PRODUCT_CODE,
+                    grand_products[i]?.ORGIN_PRICE,
+                    grand_products[i]?.PRICE,
+                    grand_products[i]?.PRODUCT_DETAIL_INFO,
+                ]);
+                let insert_id = insert_product?.result?.insertId;
+                let product_imgs = grand_product_imgs.filter(el => el?.PRODUCT_SEQ == grand_products[i]?.SEQ);
+                let main_img = product_imgs.filter(el => el?.IMG_TYPE == 'main')[0]?.IMG_URL;
+                let category_id = _.find(grand_product_categories, { CATEGORY_CODE: grand_products[i]?.CATEGORY_CODE })?.SEQ ? (_.find(grand_product_categories, { CATEGORY_CODE: grand_products[i]?.CATEGORY_CODE })?.SEQ + 1000) : 0;
+                let bnd_id = _.find(grand_product_brands, { SEQ: parseInt(grand_products[i]?.BRAND_SEQ) })?.SEQ + 500;
+                let sex_id = grand_products[i]?.PRODUCT_SEX == 'U' ? 2511 : (grand_products[i]?.PRODUCT_SEX == 'M' ? 2510 : 2509);
+                let sql = `UPDATE products SET product_img=?, consignment_none_user_name=?, consignment_none_user_phone_num=?, consignment_user_id=?, sort_idx=? `;
+                let value = [`https://kr.object.ncloudstorage.com/grandparis${main_img}`, grand_products[i]?.SELLER_NAME ?? "", grand_products[i]?.SELLER_MOBILE ?? "", grand_products[i]?.SELLER_MEMBER_SEQ + 1000, insert_id];
+                if (category_id > 0) {
+                    sql += `, category_id0=? `
+                    value.push(category_id)
+                }
+                if (bnd_id > 0) {
+                    sql += `, category_id1=? `
+                    value.push(bnd_id)
 
-        await db.beginTransaction();
-
-
-        console.log('success');
+                }
+                if (sex_id > 0) {
+                    sql += `, category_id2=? `
+                    value.push(sex_id)
+                }
+                sql += ` WHERE id=? `
+                value.push(insert_id)
+                let update_item = await pool.query(sql, value);
+                let sub_imgs = [];
+                for (var j = 0; j < product_imgs.length; j++) {
+                    if (product_imgs[j]?.IMG_TYPE == 'detail') {
+                        sub_imgs.push([
+                            insert_id,
+                            `https://kr.object.ncloudstorage.com/grandparis${product_imgs[j]?.IMG_URL}`,
+                        ])
+                    }
+                }
+                let insert_sub_imgs = await pool.query(`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`, [sub_imgs]);
+                if (property_obj[grand_products[i].PRODUCT_USED_FLAG]) {
+                    insert_property_list.push([
+                        insert_id,//product_id
+                        property_obj[grand_products[i].PRODUCT_USED_FLAG],//property_id
+                        4//property_group_id
+                    ])
+                }
+                if (grand_products[i].BEST_FLAG == 'Y') {
+                    insert_property_list.push([
+                        insert_id,
+                        22,
+                        3,
+                    ])
+                }
+                if (grand_products[i].NEW_ARRIVAL_FLAG == 'Y') {
+                    insert_property_list.push([
+                        insert_id,
+                        21,
+                        3,
+                    ])
+                }
+                if (grand_products[i].PRICE_DOWN_FLAG == 'Y') {
+                    insert_property_list.push([
+                        insert_id,
+                        20,
+                        3,
+                    ])
+                }
+                if (grand_products[i].CLOTHES_FLAG == 'Y') {
+                    insert_property_list.push([
+                        insert_id,
+                        19,
+                        3,
+                    ])
+                }
+                if (grand_products[i].WATCH_JEWELRY_FLAG == 'Y') {
+                    insert_property_list.push([
+                        insert_id,
+                        18,
+                        3,
+                    ])
+                }
+            }
+            if (i % 1000 == 0) {
+                console.log(i);
+            }
+        }
+        for (var i = 0; i < insert_property_list.length / 1000; i++) {
+            let insert_property_list_z = insert_property_list.splice(i * 1000, (i + 1) * 1000);
+            let result2 = await pool.query(`INSERT INTO products_and_properties (product_id,property_id,property_group_id) VALUES ?`, [insert_property_list])
+        }
         await db.commit();
-
+        console.log('success')
     } catch (err) {
         await db.rollback();
         console.log(err)
     }
 
 }
-//setProducts();
 
 export default utilCtrl;
