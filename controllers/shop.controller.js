@@ -47,6 +47,7 @@ const shopCtrl = {
                 `products.product_img`,
                 `products.product_comment`,
                 `products.lang_obj`,
+                `products.status`,
             ]
             let product_sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM products `;
             for (var i = 0; i < categoryDepth; i++) {
@@ -66,6 +67,7 @@ const shopCtrl = {
                 `products.product_sale_price`,
                 `products.product_img`,
                 `products.product_comment`,
+                `products.status`,
                 `RankedProperties.property_id`,
             ]
             let product_and_property_sql = `
@@ -80,6 +82,7 @@ const shopCtrl = {
                     products_and_properties
                     LEFT JOIN products ON products_and_properties.product_id=products.id
                     WHERE products.is_delete=0
+                    AND products.status=0
                     AND products.brand_id=${decode_dns?.id}
             )
             SELECT
