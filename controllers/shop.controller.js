@@ -67,6 +67,7 @@ const shopCtrl = {
                 `products.product_sale_price`,
                 `products.product_img`,
                 `products.product_comment`,
+                `products.status`,
                 `RankedProperties.property_id`,
             ]
             let product_and_property_sql = `
