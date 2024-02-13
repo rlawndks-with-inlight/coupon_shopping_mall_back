@@ -68,6 +68,7 @@ const brandCtrl = {
       data["shop_obj"] = JSON.parse(data?.shop_obj ?? "[]");
       data["blog_obj"] = JSON.parse(data?.blog_obj ?? "[]");
       data["seo_obj"] = JSON.parse(data?.seo_obj ?? "{}");
+      data["basic_info"] = JSON.parse(data?.basic_info ?? "{}")
 
       return response(req, res, 100, "success", data);
     } catch (err) {
@@ -103,6 +104,7 @@ const brandCtrl = {
         phone_num,
         fax_num,
         note,
+        basic_info,
         theme_css = {},
         slider_css = {},
         setting_obj = {},
@@ -133,6 +135,7 @@ const brandCtrl = {
         phone_num,
         fax_num,
         note,
+        basic_info,
         theme_css,
         slider_css,
         setting_obj,
@@ -150,6 +153,7 @@ const brandCtrl = {
       obj["shop_obj"] = JSON.stringify(obj.shop_obj);
       obj["blog_obj"] = JSON.stringify(obj.blog_obj);
       obj["seo_obj"] = JSON.stringify(obj.seo_obj);
+      obj["basic_info"] = JSON.stringify(obj.basic_info);
       obj = { ...obj, ...files };
       await db.beginTransaction();
 
@@ -200,6 +204,7 @@ const brandCtrl = {
         phone_num,
         fax_num,
         note,
+        basic_info,
         theme_css = {},
         slider_css = {},
         setting_obj = {},
@@ -235,6 +240,7 @@ const brandCtrl = {
         phone_num,
         fax_num,
         note,
+        basic_info,
         theme_css,
         slider_css,
         setting_obj,
@@ -252,6 +258,7 @@ const brandCtrl = {
       obj["shop_obj"] = JSON.stringify(obj.shop_obj);
       obj["blog_obj"] = JSON.stringify(obj.blog_obj);
       obj["seo_obj"] = JSON.stringify(obj.seo_obj);
+      obj["basic_info"] = JSON.stringify(obj.basic_info);
       obj = { ...obj, ...files };
       let lang_setting = await brandSettingLang({ ...obj, id });
 
