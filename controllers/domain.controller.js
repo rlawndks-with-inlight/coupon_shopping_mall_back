@@ -39,7 +39,8 @@ const domainCtrl = {
         "phone_num",
         "fax_num",
         "mail_order_num",
-        "basic_info"
+        "show_basic_info",
+        "basic_info",
       ];
       let brand = await pool.query(
         `SELECT ${columns.join()} FROM brands WHERE dns='${dns}'`
@@ -55,7 +56,7 @@ const domainCtrl = {
       brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");
       brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
       brand["basic_info"] = brand?.basic_info ?? [];
-      
+
       const token = await makeUserToken(brand);
       await res.cookie("dns", token, {
         httpOnly: true,
