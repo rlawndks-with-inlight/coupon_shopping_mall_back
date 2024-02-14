@@ -51,6 +51,14 @@ const dashboardCtrl = {
                 data['trx_sum'] = 1;
             }
 
+            //s_dt와 e_dt 사이 매출 합
+            /*let trx_amount_sum = 0;
+            trx_counts = await pool.query(trx_counts_sql);
+            trx_counts = trx_counts?.result;          
+            for (var i = 0; i < trx_counts.length; i++) {
+                trx_amount_sum += trx_counts[i]?.
+            }*/
+
             //문의관리
             let post_category_columns = [
                 `post_categories.*`,
