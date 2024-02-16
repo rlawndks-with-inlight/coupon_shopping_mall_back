@@ -24,13 +24,18 @@ const dashboardCtrl = {
             trx_counts_sql += ` WHERE is_cancel=0 AND brand_id=${decode_dns?.id} `;
             let trx_cancel_counts_sql = `SELECT COUNT(*) AS cnt FROM ${table_name} `;
             trx_cancel_counts_sql += ` WHERE is_cancel=1 AND brand_id=${decode_dns?.id} `;
+            let trx_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(amount) AS total_amount FROM ${table_name} `;
+            trx_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND brand_id=${decode_dns?.id} `;
+
             if (s_dt) {
                 trx_counts_sql += ` AND ${table_name}.created_at >= '${s_dt} 00:00:00' `;
                 trx_cancel_counts_sql += ` AND ${table_name}.created_at >= '${s_dt} 00:00:00' `;
+                trx_amounts_sql += ` AND ${table_name}.created_at >= '${s_dt} 00:00:00' `
             }
             if (e_dt) {
                 trx_counts_sql += ` AND ${table_name}.created_at <= '${e_dt} 23:59:59' `;
                 trx_cancel_counts_sql += ` AND ${table_name}.created_at <= '${e_dt} 23:59:59' `;
+                trx_amounts_sql += ` AND ${table_name}.created_at <= '${e_dt} 23:59:59' `
             }
             trx_counts_sql += ` GROUP BY trx_status `;
             let trx_counts = await pool.query(trx_counts_sql);
@@ -52,12 +57,10 @@ const dashboardCtrl = {
             }
 
             //s_dt와 e_dt 사이 매출 합
-            /*let trx_amount_sum = 0;
-            trx_counts = await pool.query(trx_counts_sql);
-            trx_counts = trx_counts?.result;          
-            for (var i = 0; i < trx_counts.length; i++) {
-                trx_amount_sum += trx_counts[i]?.
-            }*/
+            trx_amounts_sql += ` GROUP BY DATE(created_at) `;
+            let trx_amounts = await pool.query(trx_amounts_sql);
+            trx_amounts = trx_amounts?.result;
+            data['trx_amounts_sum'] = trx_amounts;
 
             //문의관리
             let post_category_columns = [
