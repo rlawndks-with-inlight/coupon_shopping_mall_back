@@ -27,6 +27,7 @@ import columnRoutes from "./column.route.js";
 import consignmentRoutes from "./consignment.route.js";
 import thirdPartyRoutes from "./third_party.route.js";
 import dashboardRoutes from "./dashboard.route.js";
+import productFaqRoutes from "./product_faq.route.js"
 
 const router = express.Router(); // eslint-disable-line new-cap
 
@@ -51,6 +52,8 @@ router.use("/transactions", transactionRoutes);
 router.use("/user-wishs", userWishRoutes);
 router.use("/points", pointRoutes);
 router.use("/consignments", consignmentRoutes);
+router.use("/product-faq", productFaqRoutes);
+
 
 //auth
 router.use("/auth", authRoutes);

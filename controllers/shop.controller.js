@@ -144,6 +144,15 @@ const shopCtrl = {
             product_review_sql += ` WHERE product_reviews.brand_id=${decode_dns?.id ?? 0} `;
             product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY id DESC LIMIT 0, 10`;
 
+            //상품문의
+            let product_faq_columns = [
+                `product_faq.*`,
+            ]
+            let product_faq_sql = ` SELECT ${product_faq_columns.join()} FROM product_faq `;
+            product_faq_sql += ` LEFT JOIN products ON product_faq.product_id=products.id `;
+            product_faq_sql += ` WHERE product_faq.brand_id=${decode_dns?.id ?? 0} `;
+            product_faq_sql += ` AND product_faq.is_delete=0 ORDER BY id DESC LIMIT 0, 10`;
+
             //게시물카테고리
             let post_category_columns = [
                 `post_categories.*`,
@@ -197,6 +206,7 @@ const shopCtrl = {
                 { table: 'product_property_groups', sql: product_property_group_sql },
                 { table: 'post_categories', sql: post_category_sql },
                 { table: 'product_reviews', sql: product_review_sql },
+                { table: 'product_faq', sql: product_faq_sql },
                 { table: 'sellers', sql: seller_sql },
                 { table: 'payment_modules', sql: payment_module_sql },
                 { table: 'user_wishs', sql: user_wish_sql },
@@ -652,6 +662,7 @@ const finallySettingMainObj = async (main_obj_ = [], data = {}) => {
     main_obj = getMainObjContentByIdList(main_obj, 'items', data?.products);
     main_obj = getMainObjContentByIdList(main_obj, 'items-ids', data?.products);
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
+    main_obj = getMainObjContentByIdList(main_obj, 'item-faq', data?.product_faq)
 
     for (var i = 0; i < main_obj.length; i++) {
         if (getMainObjType(main_obj[i]?.type) == `items-property-group-:num`) {
