@@ -30,4 +30,14 @@ router
     .route('/user-info')
     .get(shopCtrl.userInfo)
 
+router
+    .route('/product-faq/:id')
+    .get(shopCtrl.productFaq.get)
+    .put(shopCtrl.productFaq.update)
+    .delete(shopCtrl.productFaq.remove)
+router
+    .route('/product-faq')
+    .get(shopCtrl.productFaq.list)
+    .post(shopCtrl.productFaq.create)
+    
 export default router;

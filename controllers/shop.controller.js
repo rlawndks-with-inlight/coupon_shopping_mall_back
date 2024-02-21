@@ -6,6 +6,7 @@ import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItem
 import 'dotenv/config';
 import productCtrl from "./product.controller.js";
 import postCtrl from "./post.controller.js";
+import productFaqCtrl from "./product_faq.controller.js";
 import _ from "lodash";
 import logger from "../utils.js/winston/index.js";
 
@@ -21,7 +22,9 @@ const shopCtrl = {
             let brand_column = [
                 'shop_obj',
                 'blog_obj',
+                'basic_info',
             ]
+
             let brand_data = await pool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=${decode_dns?.id ?? 0}`);
             brand_data = brand_data?.result[0];
             brand_data['shop_obj'] = JSON.parse(brand_data?.shop_obj ?? '[]');
@@ -482,6 +485,123 @@ const shopCtrl = {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { category_id } = req.body;
+
+                let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
+                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
+                let category_list = await pool.query(category_sql);
+                category_list = category_list?.result;
+
+                let category = _.find(category_list, { id: parseInt(category_id) });
+                let top_parent = findParent(category_list, category);
+                top_parent = _.find(category_list, { id: parseInt(top_parent?.id) });
+                if (top_parent?.is_able_user_add != 1) {
+                    return lowLevelException(req, res);
+                }
+                let result = await postCtrl.create({ ...req, IS_RETURN: true }, res, next);
+
+                return response(req, res, 100, "success", {})
+            } catch (err) {
+                console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
+                return response(req, res, -200, "서버 에러 발생", false)
+            } finally {
+
+            }
+        },
+        update: async (req, res, next) => { //게시물 수정
+            try {
+                const decode_user = checkLevel(req.cookies.token, 0, res);
+                const decode_dns = checkDns(req.cookies.dns);
+                const { category_id, id } = req.body;
+
+                let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
+                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
+                let category_list = await pool.query(category_sql);
+                category_list = category_list?.result;
+
+                let category = _.find(category_list, { id: parseInt(category_id) });
+                let top_parent = findParent(category_list, category);
+                top_parent = _.find(category_list, { id: parseInt(top_parent?.id) });
+                if (top_parent?.is_able_user_add != 1) {
+                    return lowLevelException(req, res);
+                }
+                let post = await pool.query(`SELECT * FROM posts WHERE id=${id}`);
+                post = post?.result[0];
+                if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
+                    return lowLevelException(req, res);
+                }
+                let result = await postCtrl.update({ ...req, IS_RETURN: true }, res, next);
+
+                return response(req, res, 100, "success", {})
+            } catch (err) {
+                console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
+                return response(req, res, -200, "서버 에러 발생", false)
+            } finally {
+
+            }
+        },
+        remove: async (req, res, next) => {
+            try {
+
+                const decode_user = checkLevel(req.cookies.token, 0, res);
+                const decode_dns = checkDns(req.cookies.dns);
+                const { id } = req.params;
+                let post = await pool.query(`SELECT * FROM posts WHERE id=${id}`);
+                post = post?.result[0];
+                if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
+                    return lowLevelException(req, res);
+                }
+                let result = await deleteQuery(`posts`, {
+                    id
+                })
+                return response(req, res, 100, "success", {})
+            } catch (err) {
+                console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
+                return response(req, res, -200, "서버 에러 발생", false)
+            } finally {
+
+            }
+        },
+    },
+    productFaq: {
+        list: async (req, res, next) => { //게시물 리스트출력
+            try {
+
+                const decode_user = checkLevel(req.cookies.token, 0, res);
+                const decode_dns = checkDns(req.cookies.dns);
+                let data = await productFaqCtrl.list({ ...req, IS_RETURN: true }, res, next);
+                data = data?.data;
+                return response(req, res, 100, "success", data);
+            } catch (err) {
+                console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
+                return response(req, res, -200, "서버 에러 발생", false)
+            } finally {
+
+            }
+        },
+        get: async (req, res, next) => { //게시물 단일 출력
+            try {
+                const decode_user = checkLevel(req.cookies.token, 0, res);
+                const decode_dns = checkDns(req.cookies.dns);
+                const { id } = req.params;
+                let data = await productFaqCtrl.get({ ...req, IS_RETURN: true }, res, next);
+                data = data?.data;
+                return response(req, res, 100, "success", data);
+            } catch (err) {
+                console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
+                return response(req, res, -200, "서버 에러 발생", false)
+            } finally {
+
+            }
+        },
+        create: async (req, res, next) => { //게시물 추가
+            try {
+                const decode_user = checkLevel(req.cookies.token, 0, res);
+                const decode_dns = checkDns(req.cookies.dns);
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
                 category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;

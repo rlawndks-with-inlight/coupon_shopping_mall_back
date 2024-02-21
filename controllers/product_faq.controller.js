@@ -8,7 +8,7 @@ import logger from "../utils.js/winston/index.js";
 
 const table_name = 'product_faq';
 
-const productFaq = {
+const productFaqCtrl = {
     list: async (req, res, next) => {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
@@ -127,4 +127,4 @@ const productFaq = {
     },
 };
 
-export default productFaq;
+export default productFaqCtrl;
