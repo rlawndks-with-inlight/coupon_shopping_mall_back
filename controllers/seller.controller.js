@@ -69,7 +69,7 @@ const sellerCtrl = {
             products = products?.result;
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
-            data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
+            //data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
             return response(req, res, 100, "success", { ...data, products })
         } catch (err) {
             console.log(err)

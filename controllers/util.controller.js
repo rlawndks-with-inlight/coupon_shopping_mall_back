@@ -106,7 +106,7 @@ const utilCtrl = {
                     og_img: sender_brand?.og_img,
                     og_description: sender_brand?.og_description,
                     theme_css: sender_brand?.theme_css,
-                    slider_css: sender_brand?.slider_css,
+                    //slider_css: sender_brand?.slider_css,
                     blog_obj: sender_brand?.blog_obj,
                     shop_obj: sender_brand?.shop_obj,
                     brand_type: sender_brand?.brand_type,

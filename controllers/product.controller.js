@@ -147,6 +147,10 @@ const productCtrl = {
                 {
                     table: 'characters',
                     sql: `SELECT * FROM product_characters WHERE product_id=${id}`
+                },
+                {
+                    table: 'brand_name',
+                    sql: `SELECT category_en_name FROM product_categories WHERE id=${data.category_id1}` //상품의 브랜드 이름 불러오기
                 }
             ]
             if (option_group_ids.length > 0) {
@@ -167,7 +171,9 @@ const productCtrl = {
                 properties: when_data?.properties,
                 characters: when_data2?.characters,
                 product_average_scope: when_data?.scope[0]?.product_average_scope,
+                brand_name: when_data2?.brand_name,
             }
+
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)

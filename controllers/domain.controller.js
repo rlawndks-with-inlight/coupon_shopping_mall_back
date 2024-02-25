@@ -24,7 +24,7 @@ const domainCtrl = {
         "og_img",
         "og_description",
         "theme_css",
-        "slider_css",
+        //"slider_css",
         "setting_obj",
         "none_use_column_obj",
         "bonaeja_obj",
@@ -49,7 +49,7 @@ const domainCtrl = {
       }
       brand = brand?.result[0];
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
-      brand["slider_css"] = JSON.parse(brand?.slider_css ?? "{}");
+      //brand["slider_css"] = JSON.parse(brand?.slider_css ?? "{}");
       brand["setting_obj"] = JSON.parse(brand?.setting_obj ?? "{}");
       brand["none_use_column_obj"] = JSON.parse(brand?.none_use_column_obj ?? "{}");
       brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");

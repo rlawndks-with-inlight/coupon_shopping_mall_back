@@ -61,7 +61,7 @@ const brandCtrl = {
       let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
       data = data?.result[0];
       data["theme_css"] = JSON.parse(data?.theme_css ?? "{}");
-      data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
+      //data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
       data["setting_obj"] = JSON.parse(data?.setting_obj ?? "{}");
       data["none_use_column_obj"] = JSON.parse(data?.none_use_column_obj ?? "{}");
       data["bonaeja_obj"] = JSON.parse(data?.bonaeja_obj ?? "{}");
@@ -107,7 +107,7 @@ const brandCtrl = {
         basic_info,
         show_basic_info,
         theme_css = {},
-        slider_css = {},
+        //slider_css = {},
         setting_obj = {},
         none_use_column_obj = {},
         bonaeja_obj = {},
@@ -140,7 +140,7 @@ const brandCtrl = {
         basic_info,
         show_basic_info,
         theme_css,
-        slider_css,
+        //slider_css,
         setting_obj,
         none_use_column_obj,
         bonaeja_obj,
@@ -149,7 +149,7 @@ const brandCtrl = {
         seo_obj,
       };
       obj["theme_css"] = JSON.stringify(obj.theme_css);
-      obj["slider_css"] = JSON.stringify(obj.slider_css);
+      //obj["slider_css"] = JSON.stringify(obj.slider_css);
       obj["setting_obj"] = JSON.stringify(obj.setting_obj);
       obj["none_use_column_obj"] = JSON.stringify(obj.none_use_column_obj);
       obj["bonaeja_obj"] = JSON.stringify(obj.bonaeja_obj);
@@ -210,7 +210,7 @@ const brandCtrl = {
         basic_info,
         show_basic_info,
         theme_css = {},
-        slider_css = {},
+        //slider_css = {},
         setting_obj = {},
         none_use_column_obj = {},
         bonaeja_obj = {},
@@ -248,7 +248,7 @@ const brandCtrl = {
         basic_info,
         show_basic_info,
         theme_css,
-        slider_css,
+        //slider_css,
         setting_obj,
         none_use_column_obj,
         bonaeja_obj,
@@ -257,7 +257,7 @@ const brandCtrl = {
         seo_obj,
       };
       obj["theme_css"] = JSON.stringify(obj.theme_css);
-      obj["slider_css"] = JSON.stringify(obj.slider_css);
+      //obj["slider_css"] = JSON.stringify(obj.slider_css);
       obj["setting_obj"] = JSON.stringify(obj.setting_obj);
       obj["none_use_column_obj"] = JSON.stringify(obj.none_use_column_obj);
       obj["bonaeja_obj"] = JSON.stringify(obj.bonaeja_obj);
