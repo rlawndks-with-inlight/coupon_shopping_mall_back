@@ -28,7 +28,7 @@ const productCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
-            sql += ` LEFT JOIN users AS consignment_users ON ${table_name}.consignment_user_id=consignment_users.id `
+            sql += ` LEFT JOIN users AS consignment_users ON ${table_name}.consignment_user_id=consignment_users.id `;
 
             let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (seller_id > 0) {
@@ -45,6 +45,7 @@ const productCtrl = {
 
             let category_sql_list = [];
             for (var i = 0; i < categoryDepth; i++) {
+                sql += ` LEFT JOIN product_categories AS product_categories_${i} ON product_categories_${i}.id=${table_name}.category_id${i}`
                 if (req.query[`category_id${i}`]) {
                     category_sql_list.push({
                         table: `category_id${i}`,
