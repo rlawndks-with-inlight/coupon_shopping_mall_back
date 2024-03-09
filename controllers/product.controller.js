@@ -186,6 +186,7 @@ const productCtrl = {
     },
     create: async (req, res, next) => {
         try {
+            logger.info('test-11');
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
@@ -210,6 +211,7 @@ const productCtrl = {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
                 }
             }
+            logger.info('test-0');
 
             await db.beginTransaction();
             if (consignment_user_name) {
@@ -239,6 +241,7 @@ const productCtrl = {
                 let insert_and_table = await pool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES (?, ?)`, [user_id, product_id]);
             }
 
+            logger.info('test-1');
             let sql_list = [];
             //option
             for (var i = 0; i < groups.length; i++) {
