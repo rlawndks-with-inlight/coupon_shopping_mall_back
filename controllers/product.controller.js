@@ -186,8 +186,6 @@ const productCtrl = {
     },
     create: async (req, res, next) => {
         try {
-            logger.info('test-11');
-
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             if (decode_user?.level < 10) {
@@ -211,8 +209,6 @@ const productCtrl = {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
                 }
             }
-            logger.info('test-0');
-
             await db.beginTransaction();
             if (consignment_user_name) {
                 let consignment_user = await pool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
@@ -241,7 +237,6 @@ const productCtrl = {
                 let insert_and_table = await pool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES (?, ?)`, [user_id, product_id]);
             }
 
-            logger.info('test-1');
             let sql_list = [];
             //option
             for (var i = 0; i < groups.length; i++) {
@@ -313,6 +308,7 @@ const productCtrl = {
                 })
             }
             //property
+            logger.info('test-1');
             let insert_property_list = [];
             properties = JSON.parse(properties);
             let property_group_ids = Object.keys(properties);
@@ -333,8 +329,10 @@ const productCtrl = {
                 })
             }
 
+            logger.info('test-2');
             let when = await getMultipleQueryByWhen(sql_list);
             await db.commit();
+            logger.info('test-3');
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
