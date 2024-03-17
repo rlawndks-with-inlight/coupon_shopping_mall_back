@@ -344,7 +344,7 @@ const productCtrl = {
                 properties = JSON.parse(properties);
             }
             else {
-                properties = JSON.parse(properties);
+                properties = JSON.parse(JSON.stringify(properties));
             }
             let property_group_ids = Object.keys(properties);
             for (var i = 0; i < property_group_ids.length; i++) {
