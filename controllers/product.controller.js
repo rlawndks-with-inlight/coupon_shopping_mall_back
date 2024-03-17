@@ -340,7 +340,7 @@ const productCtrl = {
             //property         
             let insert_property_list = [];
             property_type = typeof(properties)
-            if (property_type == 'string') {
+            if (property_type == 'object') {
                 properties = JSON.parse(JSON.stringify(properties));
             }
             else {
