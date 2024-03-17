@@ -341,10 +341,10 @@ const productCtrl = {
             let insert_property_list = [];
             property_type = typeof(properties)
             if (property_type == 'string') {
-                properties = JSON.parse(properties);
+                properties = JSON.parse(JSON.stringify(properties));
             }
             else {
-                properties = JSON.parse(JSON.stringify(properties));
+                properties = JSON.parse(properties);
             }
             let property_group_ids = Object.keys(properties);
             for (var i = 0; i < property_group_ids.length; i++) {
