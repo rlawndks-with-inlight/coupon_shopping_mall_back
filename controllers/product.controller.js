@@ -138,7 +138,7 @@ const productCtrl = {
             ]
             let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
             product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
-            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 AND ${table_name}.brand_id=${brand_id} `;
+            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 AND ${table_name}.status!=5 AND ${table_name}.brand_id=${brand_id} `;
 
             let data = await pool.query(product_sql);
             data = data?.result[0];
@@ -187,7 +187,7 @@ const productCtrl = {
             if (option_group_ids.length > 0) {
                 sql_list2.push({
                     table: 'options',
-                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 ORDER BY id ASC`
+                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 AND status!=5 ORDER BY id ASC`
                 })
             }
             let when_data2 = await getMultipleQueryByWhen(sql_list2);
