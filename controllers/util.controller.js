@@ -290,21 +290,21 @@ export const setGrandParisProducts = async () => {
         //
         let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
         grand_products = grand_products?.result;
-
+        console.log('grand_products')
         let grand_product_imgs = await grandPool.query(`SELECT * FROM PRODUCT_IMG WHERE IMG_FOLDER='/product' AND IMG_TYPE IN ('main','detail') AND DELETE_FLAG='N' ORDER BY SEQ ASC`);
         grand_product_imgs = grand_product_imgs?.result;
-
+        console.log('grand_product_imgs')
         let grand_product_categories = await grandPool.query(`SELECT * FROM PRODUCT_CATEGORY ORDER BY SEQ ASC`);
         grand_product_categories = grand_product_categories?.result;
-
+        console.log('grand_product_categories')
         let grand_product_brands = await grandPool.query(`SELECT * FROM PRODUCT_BRAND ORDER BY SEQ ASC`);
         grand_product_brands = grand_product_brands?.result;
-
+        console.log('grand_product_brands')
         await db.beginTransaction();
 
         let products = await pool.query(`SELECT * FROM products WHERE brand_id=5 ORDER BY id ASC`);
         products = products?.result;
-
+        console.log('products')
         let product_obj = {};
 
         for (var i = 0; i < products.length; i++) {
@@ -322,15 +322,18 @@ export const setGrandParisProducts = async () => {
             'A-': 12,
             '특B': 24,
         }
+        console.log(`grand_products_length` + grand_products.length)
         for (var i = 0; i < grand_products.length; i++) {
             if (!product_obj[grand_products[i]?.PRODUCT_CODE]) {
-                let insert_product = await pool.query(`INSERT INTO products (brand_id, product_name, product_code, product_price, product_sale_price, product_description) VALUES (?, ?, ?, ?, ?, ?)`, [
+                let insert_product = await pool.query(`INSERT INTO products (brand_id, product_name, product_code, product_price, product_sale_price, product_description, status, is_delete) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
                     5,
                     grand_products[i]?.PRODUCT_NAME,
                     grand_products[i]?.PRODUCT_CODE,
                     grand_products[i]?.ORGIN_PRICE,
                     grand_products[i]?.PRICE,
                     grand_products[i]?.PRODUCT_DETAIL_INFO,
+                    (grand_products[i]?.OPEN_FLAG == 'N' ? 5 : 0),
+                    (grand_products[i]?.DELETE_FLAG == 'Y' ? 1 : 0),
                 ]);
                 let insert_id = insert_product?.result?.insertId;
                 let product_imgs = grand_product_imgs.filter(el => el?.PRODUCT_SEQ == grand_products[i]?.SEQ);
@@ -365,7 +368,9 @@ export const setGrandParisProducts = async () => {
                         ])
                     }
                 }
-                let insert_sub_imgs = await pool.query(`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`, [sub_imgs]);
+                if (sub_imgs.length > 0) {
+                    let insert_sub_imgs = await pool.query(`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`, [sub_imgs]);
+                }
                 if (property_obj[grand_products[i].PRODUCT_USED_FLAG]) {
                     insert_property_list.push([
                         insert_id,//product_id
@@ -413,9 +418,10 @@ export const setGrandParisProducts = async () => {
                 console.log(i);
             }
         }
+        console.log(`insert_property_list_length` + insert_property_list.length)
         for (var i = 0; i < insert_property_list.length / 1000; i++) {
             let insert_property_list_z = insert_property_list.splice(i * 1000, (i + 1) * 1000);
-            let result2 = await pool.query(`INSERT INTO products_and_properties (product_id,property_id,property_group_id) VALUES ?`, [insert_property_list])
+            let result2 = await pool.query(`INSERT INTO products_and_properties (product_id,property_id,property_group_id) VALUES ?`, [insert_property_list_z]);
         }
         await db.commit();
         console.log('success')
@@ -425,5 +431,4 @@ export const setGrandParisProducts = async () => {
     }
 
 }
-
 export default utilCtrl;
