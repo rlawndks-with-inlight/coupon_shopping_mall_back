@@ -41,11 +41,11 @@ const domainCtrl = {
         "mail_order_num",
         "show_basic_info",
       ];
-      console.log(req.query);
+      //console.log(req.query);
       let brand = await pool.query(
         `SELECT ${columns.join()} FROM brands WHERE dns='${dns}'`
       );
-      console.log(brand);
+      //console.log(brand);
 
       if (brand?.result.length == 0) {
         return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
