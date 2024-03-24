@@ -7,7 +7,6 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { grandPool } from '../config/grandparis-db.js'
 import _ from "lodash";
-import getArfighterItems from "../utils.js/corps/arfighter.js";
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
