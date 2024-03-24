@@ -1,7 +1,8 @@
 import axios from 'axios';
 import FormData from 'form-data';
+import { pool } from '../../config/db.js';
 
-export default async function handler(req, res) {
+export default async function getArfighterItems(req, res) {
     const brand_id = 34; // brand_id 설정
 
     // API URL
@@ -18,7 +19,7 @@ export default async function handler(req, res) {
         const response = await axios.get(goodsListUrl, { params });
         if (response.status === 200) {
             const goodsList = response.data.data || [];
-            const prods = [];
+            let prods = [];
 
             // Process goods list
             for (const item of goodsList) {
@@ -42,7 +43,6 @@ export default async function handler(req, res) {
                     console.error(`Error: ${detailResponse.status}`);
                 }
             }
-
             // Login credentials
             const account = {
                 user_name: 'masterpurple',
@@ -55,24 +55,31 @@ export default async function handler(req, res) {
                 baseURL: 'https://theplusmall.co.kr/api/',
                 withCredentials: true
             });
-
+            console.log('@@@')
             // Sign in
-            await session.post('auth/sign-in/', account);
-
+            let sign_in_result = await session.post('auth/sign-in/', account);
+            console.log(sign_in_result)
             // Add products
             for (const prod of prods) {
                 const formData = new FormData();
                 for (const key in prod) {
                     formData.append(key, prod[key]);
                 }
-
+                let is_exist_product = await pool.query(`SELECT * FORM products WHERE product_name=? AND brand_id=?`, [
+                    prod['product_name'],
+                    brand_id,
+                ])
+                is_exist_product = is_exist_product?.result[0];
+                console.log(is_exist_product)
+                if (!is_exist_product) {
+                    const response = await session.post('products/', formData, {
+                        headers: formData.getHeaders()
+                    });
+                }
                 // Add product
-                const response = await session.post('products/', formData, {
-                    headers: formData.getHeaders()
-                });
                 console.log(response.data);
             }
-
+            console.log('success')
             res.status(200).json({ message: 'Products imported successfully.' });
         } else {
             console.error(`Error: ${response.status}`);
