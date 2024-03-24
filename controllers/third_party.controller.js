@@ -30,7 +30,7 @@ const thirdPartyCtrl = {
                 headers: { 'X-Naver-Client-Id': client_id, 'X-Naver-Client-Secret': client_secret }
             }
             )
-            console.log(result);
+            //console.log(result);
             request.post(options, function (error, response, body) {
                 if (!error && response.statusCode == 200) {
                     res.writeHead(200, { 'Content-Type': 'text/json;charset=utf-8' });

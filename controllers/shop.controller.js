@@ -58,7 +58,8 @@ const shopCtrl = {
                 product_columns.push(`product_categories${i}.category_name AS category_name${i}`);
             }
             product_sql += ` WHERE products.id IN(${product_ids.join()}) `;
-            product_sql += ` AND products.is_delete=0 `
+            product_sql += ` AND products.is_delete=0 `;
+            product_sql += ` AND products.status!=5 `
             product_sql = product_sql.replaceAll(process.env.SELECT_COLUMN_SECRET, product_columns.join());
 
             //메인obj 에서 items-property-groups가 존재할시

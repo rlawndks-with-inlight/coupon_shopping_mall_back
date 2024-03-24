@@ -9,6 +9,36 @@ import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 const table_name = 'products';
 
+/*const productInserter = () => {
+    obj = {}
+    const initalize = (req) => {
+        let {
+            brand_id,
+            product_img,
+            product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
+            consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
+            sub_images = [], groups = [], characters = [], properties = "{}"
+        } = req.body;
+
+        obj = {
+            product_img,
+            brand_id, product_name, product_code, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
+            consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type,
+        };
+        for (var i = 0; i < categoryDepth; i++) {
+            if (req.body[`category_id${i}`]) {
+                obj[`category_id${i}`] = req.body[`category_id${i}`];
+            }
+        }
+    }
+    const getProuct = () => {
+
+    }
+    const getProperty = () => {
+
+    }
+}*/
+
 
 const productCtrl = {
     list: async (req, res, next) => {
@@ -73,6 +103,9 @@ const productCtrl = {
                 where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
             }
             sql += where_sql;
+            if (!decode_user || decode_user?.level < 10) {
+                sql += ` AND products.status!=5 `
+            }
             let data = await getSelectQueryList(sql, columns, req.query);
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
@@ -108,7 +141,7 @@ const productCtrl = {
             ]
             let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
             product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
-            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 AND ${table_name}.brand_id=${brand_id} `;
+            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 AND ${table_name}.status!=5 AND ${table_name}.brand_id=${brand_id} `;
 
             let data = await pool.query(product_sql);
             data = data?.result[0];
@@ -157,7 +190,7 @@ const productCtrl = {
             if (option_group_ids.length > 0) {
                 sql_list2.push({
                     table: 'options',
-                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 ORDER BY id ASC`
+                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 AND status!=5 ORDER BY id ASC`
                 })
             }
             let when_data2 = await getMultipleQueryByWhen(sql_list2);
@@ -196,7 +229,7 @@ const productCtrl = {
                 product_img,
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
-                sub_images = [], groups = [], characters = [], properties = {}
+                sub_images = [], groups = [], characters = [], properties = "{}"
             } = req.body;
 
             let obj = {
@@ -307,10 +340,11 @@ const productCtrl = {
                     data: [insert_sub_image_list]
                 })
             }
-            //property
-            logger.info('test-1');            
+            //property         
             let insert_property_list = [];
-            properties = JSON.parse(JSON.stringify(properties));
+            
+            properties = JSON.parse(properties);
+            
             let property_group_ids = Object.keys(properties);
             for (var i = 0; i < property_group_ids.length; i++) {
                 for (var j = 0; j < properties[property_group_ids[i]]?.length; j++) {
@@ -329,10 +363,8 @@ const productCtrl = {
                 })
             }
 
-            logger.info('test-2');
             let when = await getMultipleQueryByWhen(sql_list);
             await db.commit();
-            logger.info('test-3');
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
