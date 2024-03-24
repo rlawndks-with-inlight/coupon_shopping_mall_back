@@ -65,7 +65,7 @@ export default async function getArfighterItems(req, res) {
                 for (const key in prod) {
                     formData.append(key, prod[key]);
                 }
-                let is_exist_product = await pool.query(`SELECT * FORM products WHERE product_name=? AND brand_id=?`, [
+                let is_exist_product = await pool.query(`SELECT * FROM products WHERE product_name=? AND brand_id=?`, [
                     prod['product_name'],
                     brand_id,
                 ])
