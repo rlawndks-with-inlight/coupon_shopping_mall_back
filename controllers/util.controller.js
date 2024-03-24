@@ -432,5 +432,4 @@ export const setGrandParisProducts = async () => {
     }
 
 }
-getArfighterItems();
 export default utilCtrl;
