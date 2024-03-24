@@ -1,50 +1,47 @@
-const axios = require('axios');
-const FormData = require('form-data');
-const fs = require('fs');
+import axios from 'axios';
+import FormData from 'form-data';
 
-brand_id = 34 //brand_id 설정
+export default async function handler(req, res) {
+    const brand_id = 34; // brand_id 설정
 
-// API URL
-const goodsListUrl = "http://fast.arfighter.com/api/shop.goods/index";
+    // API URL
+    const goodsListUrl = "http://fast.arfighter.com/api/shop.goods/index";
 
-// Parameters for goods list API
-const params = new URLSearchParams({
-    page: 1,
-    limit: 100
-});
+    // Parameters for goods list API
+    const params = new URLSearchParams({
+        page: 1,
+        limit: 100
+    });
 
-// Get goods list
-axios.get(goodsListUrl, { params })
-    .then(response => {
+    try {
+        // Get goods list
+        const response = await axios.get(goodsListUrl, { params });
         if (response.status === 200) {
             const goodsList = response.data.data || [];
             const prods = [];
 
             // Process goods list
-            goodsList.forEach(item => {
+            for (const item of goodsList) {
                 const goodsId = item.id;
                 const goodsDetailUrl = "http://fast.arfighter.com/api/shop.goods/detail";
                 const params = new URLSearchParams({ id: goodsId });
 
                 // Get goods detail
-                axios.get(goodsDetailUrl, { params })
-                    .then(detailResponse => {
-                        if (detailResponse.status === 200) {
-                            const detailData = detailResponse.data.data.goods || {};
-                            prods.push({
-                                'product_name': detailData.title,
-                                'product_price': detailData.marketprice,
-                                'product_sale_price': detailData.price,
-                                'brand_id': parseInt(brand_id),
-                                'product_img': detailData.image,
-                                'product_description': detailData.content
-                            });
-                        } else {
-                            console.error(`Error: ${detailResponse.status}`);
-                        }
-                    })
-                    .catch(error => console.error(error));
-            });
+                const detailResponse = await axios.get(goodsDetailUrl, { params });
+                if (detailResponse.status === 200) {
+                    const detailData = detailResponse.data.data.goods || {};
+                    prods.push({
+                        'product_name': detailData.title,
+                        'product_price': detailData.marketprice,
+                        'product_sale_price': detailData.price,
+                        'brand_id': parseInt(brand_id),
+                        'product_img': detailData.image,
+                        'product_description': detailData.content
+                    });
+                } else {
+                    console.error(`Error: ${detailResponse.status}`);
+                }
+            }
 
             // Login credentials
             const account = {
@@ -60,25 +57,29 @@ axios.get(goodsListUrl, { params })
             });
 
             // Sign in
-            session.post('auth/sign-in/', account)
-                .then(() => {
-                    prods.forEach(prod => {
-                        const formData = new FormData();
-                        for (const key in prod) {
-                            formData.append(key, prod[key]);
-                        }
+            await session.post('auth/sign-in/', account);
 
-                        // Add product
-                        session.post('products/', formData, {
-                            headers: formData.getHeaders()
-                        })
-                            .then(response => console.log(response.data))
-                            .catch(error => console.error(error));
-                    });
-                })
-                .catch(error => console.error(error));
+            // Add products
+            for (const prod of prods) {
+                const formData = new FormData();
+                for (const key in prod) {
+                    formData.append(key, prod[key]);
+                }
+
+                // Add product
+                const response = await session.post('products/', formData, {
+                    headers: formData.getHeaders()
+                });
+                console.log(response.data);
+            }
+
+            res.status(200).json({ message: 'Products imported successfully.' });
         } else {
             console.error(`Error: ${response.status}`);
+            res.status(response.status).json({ error: `Error: ${response.status}` });
         }
-    })
-    .catch(error => console.error(error));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+}
