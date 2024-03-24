@@ -61,7 +61,7 @@ export default async function getArfighterItems(req, res) {
             console.log(sign_in_result)
             // Add products
             for (const prod of prods) {
-                const formData = new FormData();
+                let formData = new FormData();
                 for (const key in prod) {
                     formData.append(key, prod[key]);
                 }
