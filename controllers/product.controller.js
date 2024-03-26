@@ -342,9 +342,9 @@ const productCtrl = {
             }
             //property         
             let insert_property_list = [];
-            
+
             properties = JSON.parse(properties);
-            
+
             let property_group_ids = Object.keys(properties);
             for (var i = 0; i < property_group_ids.length; i++) {
                 for (var j = 0; j < properties[property_group_ids[i]]?.length; j++) {

@@ -37,7 +37,8 @@ export default async function getArfighterItems(req, res) {
                         'product_sale_price': detailData.price,
                         'brand_id': parseInt(brand_id),
                         'product_img': detailData.image,
-                        'product_description': detailData.content
+                        'product_description': detailData.content,
+                        'another_id': detailData.id,
                     });
                 } else {
                     console.error(`Error: ${detailResponse.status}`);
@@ -65,13 +66,17 @@ export default async function getArfighterItems(req, res) {
                 for (const key in prod) {
                     formData.append(key, prod[key]);
                 }
-                let is_exist_product = await pool.query(`SELECT * FROM products WHERE product_name=? AND brand_id=?`, [
-                    prod['product_name'],
+                let is_exist_product = await pool.query(`SELECT * FROM products WHERE another_id=? AND brand_id=?`, [
+                    prod['another_id'],
                     brand_id,
                 ])
                 is_exist_product = is_exist_product?.result[0];
                 console.log(is_exist_product)
-                if (!is_exist_product) {
+                if (is_exist_product) {
+                    const response = await session.put(`products/${is_exist_product?.id}`, formData, {
+                        headers: formData.getHeaders()
+                    });
+                } else {
                     const response = await session.post('products/', formData, {
                         headers: formData.getHeaders()
                     });
