@@ -109,6 +109,17 @@ const productCtrl = {
             let data = await getSelectQueryList(sql, columns, req.query);
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
+            /*sql_list = [
+                {
+                    table: 'brand_name',
+                    sql: `SELECT category_name FROM product_categories WHERE id=${data.category_id1}` //상품의 브랜드 이름 불러오기
+                }
+            ]
+            let brand_data = await getMultipleQueryByWhen(sql_list);
+            data = {
+                ...data,
+                brand_name: brand_data?.brand_name,
+            }*/
             let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
             sub_images = sub_images?.result;
             for (var i = 0; i < data?.content.length; i++) {
@@ -116,7 +127,7 @@ const productCtrl = {
                 data.content[i].sub_images = images ?? [];
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
             }
-
+            //console.log(data)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
