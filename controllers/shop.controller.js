@@ -52,6 +52,7 @@ const shopCtrl = {
                 `products.lang_obj`,
                 `products.status`,
                 `products.price_lang`,
+                `products.show_status`
             ]
             let product_sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM products `;
             for (var i = 0; i < categoryDepth; i++) {
@@ -74,6 +75,7 @@ const shopCtrl = {
                 `products.product_comment`,
                 `products.status`,
                 `products.price_lang`,
+                `products.show_status`,
                 `RankedProperties.property_id`,
             ]
             let product_and_property_sql = `

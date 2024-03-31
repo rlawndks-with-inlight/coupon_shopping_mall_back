@@ -55,7 +55,7 @@ export const getArfighterItems = async () => {
 
             // Session
             const session = axios.create({
-                baseURL: 'https://theplusmall.co.kr/api/',
+                baseURL: 'https://theplusmail.co.kr/api/',
                 withCredentials: true
             });
             console.log('@@@')
