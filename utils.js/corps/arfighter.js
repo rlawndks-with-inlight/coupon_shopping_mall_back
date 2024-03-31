@@ -155,4 +155,3 @@ export const getArfighterItems = async () => {
     }
 
 }
-getArfighterItems();
