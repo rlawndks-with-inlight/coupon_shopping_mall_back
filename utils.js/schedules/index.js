@@ -9,7 +9,7 @@ const scheduleIndex = () => {
     let return_moment = returnMoment();
     langProcess();
     if (return_moment.includes(':00:')) {
-      getArfighterItems();
+      // getArfighterItems();
     }
     if (return_moment.includes('00:00:')) {
       setGrandParisProducts();
