@@ -2,7 +2,8 @@ import axios from 'axios';
 import FormData from 'form-data';
 import { pool } from '../../config/db.js';
 
-export default async function getArfighterItems(req, res) {
+/*
+export const getArfighterItems = async () => {
     const brand_id = 34; // brand_id 설정
 
     // API URL
@@ -11,16 +12,17 @@ export default async function getArfighterItems(req, res) {
     // Parameters for goods list API
     const params = new URLSearchParams({
         page: 1,
-        limit: 100
+        limit: 1000
     });
 
     try {
         // Get goods list
         const response = await axios.get(goodsListUrl, { params });
+
         if (response.status === 200) {
             const goodsList = response.data.data || [];
             let prods = [];
-
+            console.log(goodsList.length)
             // Process goods list
             for (const item of goodsList) {
                 const goodsId = item.id;
@@ -85,13 +87,30 @@ export default async function getArfighterItems(req, res) {
                 console.log(response.data);
             }
             console.log('success')
-            res.status(200).json({ message: 'Products imported successfully.' });
         } else {
             console.error(`Error: ${response.status}`);
-            res.status(response.status).json({ error: `Error: ${response.status}` });
         }
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: 'Internal server error' });
     }
+}
+*/
+export const getArfighterItems = async () => {
+    const brand_id = 34; // brand_id 설정
+
+    try {
+        const API_URL = 'http://fast.arfighter.com';
+
+        let { data: category_list } = await axios.get(`${API_URL}/api/shop.category/index`);
+        category_list = category_list?.data?.list ?? [];
+        console.log(category_list)
+        return;
+        for (var i = 0; i < 100; i++) {
+            let goods_list = await axios.get(`${API_URL}/api/shop.goods/index?page=${i + 1}&limit=100`);
+
+        }
+    } catch (err) {
+        console.log(err);
+    }
+
 }

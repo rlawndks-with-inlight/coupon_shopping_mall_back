@@ -43,7 +43,7 @@ const domainCtrl = {
       ];
       //console.log(req.query);
       let brand = await pool.query(
-        `SELECT ${columns.join()} FROM brands WHERE id=5`
+        `SELECT ${columns.join()} FROM brands WHERE id='${dns}'`
       );
       //console.log(brand);
 
