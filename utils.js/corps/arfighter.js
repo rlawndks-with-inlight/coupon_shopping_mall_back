@@ -1,6 +1,8 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import { pool } from '../../config/db.js';
+import _ from 'lodash';
+import { deleteQuery, updateQuery } from '../query-util.js';
 
 /*
 export const getArfighterItems = async () => {
@@ -97,14 +99,36 @@ export const getArfighterItems = async () => {
 */
 export const getArfighterItems = async () => {
     const brand_id = 34; // brand_id 설정
-
+    const category_group_id = 86;
+    return;
     try {
         const API_URL = 'http://fast.arfighter.com';
 
-        let { data: category_list } = await axios.get(`${API_URL}/api/shop.category/index`);
-        category_list = category_list?.data?.list ?? [];
-        console.log(category_list)
-        return;
+        let { data: z_category_list } = await axios.get(`${API_URL}/api/shop.category/index`);
+        z_category_list = z_category_list?.data?.list ?? [];
+        console.log(z_category_list)
+        let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
+        category_list = category_list?.result;
+        for (var i = 0; i < category_list.length; i++) {
+            let category = category_list[i];
+            let z_category = _.find(category_list, { id: parseInt(category?.another_id) });
+            if (!z_category) {
+                let delete_result = await deleteQuery(`product_categories`, {
+                    id: category?.id
+                })
+            } else {
+                let update_result = await updateQuery(`product_categories`, {
+
+                }, category?.id)
+            }
+        }
+        category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
+        category_list = category_list?.result;
+
+        for (var i = 0; i < z_category_list.length; i++) {
+
+        }
+        // 카테고리 불러옴
         for (var i = 0; i < 100; i++) {
             let goods_list = await axios.get(`${API_URL}/api/shop.goods/index?page=${i + 1}&limit=100`);
 
