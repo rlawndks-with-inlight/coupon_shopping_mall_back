@@ -110,20 +110,40 @@ export const getArfighterItems = async () => {
         category_list = category_list?.result;
         for (var i = 0; i < category_list.length; i++) {
             let category = category_list[i];
-            let z_category = _.find(category_list, { id: parseInt(category?.another_id) });
+            let z_category = _.find(z_category_list, { id: parseInt(category?.another_id) });
             if (!z_category) {
                 let delete_result = await deleteQuery(`product_categories`, {
                     id: category?.id
                 })
             } else {
-
+                let update_result = await axios.put(`/api/product-categories/${category?.id}`, {
+                    category_img: z_category?.image,
+                    parent_id: category?.parent_id,
+                    category_type: 0,
+                    category_name: z_category?.name,
+                    category_description: '',
+                    product_category_group_id: 86,
+                    another_id: z_category?.id,
+                    id: category?.id
+                });
             }
         }
         category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
         category_list = category_list?.result;
 
         for (var i = 0; i < z_category_list.length; i++) {
-
+            let z_category = z_category_list[i];
+            let category = _.find(category_list, { another_id: parseInt(z_category?.id) });
+            if (!category) {
+                let insert_result = await axios.post(`/api/product-categories`, {
+                    category_img: z_category?.image,
+                    category_type: 0,
+                    category_name: z_category?.name,
+                    category_description: '',
+                    product_category_group_id: 86,
+                    another_id: z_category?.id,
+                });
+            }
         }
         // 카테고리 불러옴
         for (var i = 0; i < 100; i++) {
@@ -135,3 +155,4 @@ export const getArfighterItems = async () => {
     }
 
 }
+getArfighterItems();
