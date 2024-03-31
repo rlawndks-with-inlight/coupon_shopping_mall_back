@@ -81,6 +81,7 @@ const productCategoryCtrl = {
                 category_description,
                 product_category_group_id,
                 brand_id,
+                another_id = 0,
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -92,6 +93,7 @@ const productCategoryCtrl = {
                 category_description,
                 product_category_group_id,
                 brand_id,
+                another_id,
             };
             obj = { ...obj, ...files, };
 
@@ -120,6 +122,7 @@ const productCategoryCtrl = {
                 category_en_name,
                 category_description,
                 product_category_group_id,
+                another_id = 0,
                 id
             } = req.body;
             let files = settingFiles(req.files);
@@ -131,6 +134,7 @@ const productCategoryCtrl = {
                 category_en_name,
                 category_description,
                 product_category_group_id,
+                another_id,
             };
             obj = { ...obj, ...files, };
 

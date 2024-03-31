@@ -239,13 +239,15 @@ const productCtrl = {
                 product_img,
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
-                sub_images = [], groups = [], characters = [], properties = "{}"
+                sub_images = [], groups = [], characters = [], properties = "{}",
+                another_id = 0,
             } = req.body;
 
             let obj = {
                 product_img,
                 brand_id, product_name, product_code, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type,
+                another_id,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -399,13 +401,15 @@ const productCtrl = {
                 product_img,
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
-                sub_images = [], groups = [], characters = [], properties = {}
+                sub_images = [], groups = [], characters = [], properties = {},
+                another_id = 0,
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 product_img,
                 product_name, product_code, product_comment, product_description, product_price, product_sale_price, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type,
+                another_id,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
