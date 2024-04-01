@@ -3,8 +3,7 @@ import FormData from 'form-data';
 import { pool } from '../../config/db.js';
 import _ from 'lodash';
 import { deleteQuery, updateQuery } from '../query-util.js';
-import productCategoryCtrl from '../../controllers/product_category.controller.js';
-
+import 'dotenv/config';
 /*
 export const getArfighterItems = async () => {
     const brand_id = 34; // brand_id 설정
@@ -101,9 +100,30 @@ export const getArfighterItems = async () => {
 export const getArfighterItems = async () => {
     const brand_id = 34; // brand_id 설정
     const category_group_id = 86;
-    try {
-        const Z_API_URL = 'http://fast.arfighter.com';
 
+    try {
+
+        let dns_data = await pool.query(`SELECT * FROM brands WHERE id=${brand_id}`);
+        dns_data = dns_data?.result[0];
+
+        const Z_API_URL = 'http://fast.arfighter.com';
+        const API_URL = process.env.BACK_URL;
+        const account = {
+            user_name: 'masterpurple',
+            user_pw: 'qjfwk100djr!',
+            is_manager: true
+        };
+
+        // Session
+        const session = axios.create({
+            baseURL: 'https://theplusmail.co.kr/api/',
+            withCredentials: true
+        });
+        // Sign in
+        let sign_in_result = await session.post('auth/sign-in/', account);
+
+        /*
+    
         let { data: z_category_list } = await axios.get(`${Z_API_URL}/api/shop.category/index`);
         z_category_list = z_category_list?.data?.list ?? [];
         let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
@@ -116,7 +136,7 @@ export const getArfighterItems = async () => {
                     id: category?.id
                 })
             } else {
-                let update_result = await axios.put(`/api/product-categories/${category?.id}`, {
+                let update_result = await session.put(`product-categories/${category?.id}`, {
                     category_img: z_category?.image,
                     parent_id: category?.parent_id,
                     category_type: 0,
@@ -135,7 +155,7 @@ export const getArfighterItems = async () => {
             let z_category = z_category_list[i];
             let category = _.find(category_list, { another_id: parseInt(z_category?.id) });
             if (!category) {
-                let insert_result = await axios.post(`/api/product-categories`, {
+                let insert_result = await session.post(`product-categories`, {
                     category_img: z_category?.image,
                     category_type: 0,
                     category_name: z_category?.name,
@@ -143,15 +163,22 @@ export const getArfighterItems = async () => {
                     product_category_group_id: 86,
                     another_id: z_category?.id,
                 });
+                console.log(insert_result)
             }
         }
+    */
         // 카테고리 불러옴
-        for (var i = 0; i < 100; i++) {
-            let goods_list = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i + 1}&limit=100`);
+        let insert_list = [];
+        let update_list = [];
 
+        for (var i = 0; i < 100; i++) {
+            let { data: goods_list } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i + 1}&limit=50`);
+            goods_list = goods_list?.data ?? [];
+            console.log(goods_list.length);
         }
     } catch (err) {
         console.log(err);
     }
 
 }
+//getArfighterItems();
