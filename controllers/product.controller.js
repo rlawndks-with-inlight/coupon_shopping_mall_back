@@ -102,9 +102,10 @@ const productCtrl = {
                 where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
             }
             sql += where_sql;
-            if (!decode_user || decode_user?.level < 10) {
+            sql += ` AND products.status!=5 `
+            /*if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND products.status!=5 `
-            }
+            }*/
             let data = await getSelectQueryList(sql, columns, req.query);
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
