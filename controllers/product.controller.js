@@ -98,11 +98,16 @@ const productCtrl = {
                 }
             }
 
+            /*if (req.query[`status`] != []) {
+                where_sql += ` AND `
+            }*/
+
             if (is_consignment) {
                 where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
             }
             sql += where_sql;
             sql += ` AND products.status!=5 `
+            //sql += `ORDER BY products.status ASC, products.sort_idx DESC `
             /*if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND products.status!=5 `
             }*/
