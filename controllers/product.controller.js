@@ -92,6 +92,7 @@ const productCtrl = {
                     where_sql += ` AND ${key} IN (${category_ids.join()}) `;
                 }
             }
+            console.log(req.query[`property_ids0`])
             for (var i = 0; i < 20; i++) {
                 if (req.query[`property_ids${i}`]) {
                     where_sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (${req.query[`property_ids${i}`]}) ) `
