@@ -41,11 +41,12 @@ const table_name = 'products';
 
 
 const productCtrl = {
-    list: async (req, res, next, type) => {
+    list: async (req, res, next) => {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { seller_id, property_id, is_consignment, status } = req.query;
+            const { type } = req;
             let columns = [
                 `${table_name}.*`,
                 `sellers.user_name`,
@@ -115,9 +116,7 @@ const productCtrl = {
                 sql += ` AND products.status!=5 `
             }*/
             let data = await getSelectQueryList(sql, columns, req.query);
-            if (type == 'user') {
-
-            }
+            
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
             /*sql_list = [
