@@ -4,7 +4,7 @@ import { pool } from '../../config/db.js';
 import _ from 'lodash';
 import { deleteQuery, updateQuery } from '../query-util.js';
 import 'dotenv/config';
-
+import when from 'when';
 const brand_id = 34;
 
 export const getArfighterItems = async () => {
@@ -31,6 +31,8 @@ export const getArfighterItems = async () => {
         });
         // Sign in
         let sign_in_result = await session.post('auth/sign-in/', account);
+        let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
+        category_list = category_list?.result;
 
         /*
         let { data: z_category_list } = await axios.get(`${Z_API_URL}/api/shop.category/index`);
@@ -97,17 +99,23 @@ export const getArfighterItems = async () => {
                     break;
                 }
             }
+            let when_list = [];
+
             for (var j = 0; j < data.length; j++) {
-                let result = await processProduct(data[j], session);
+                when_list.push(processProduct(data[j], session, category_list));
             }
+            for (var j = 0; j < when_list.length; j++) {
+                await when_list[j];
+            }
+            let when_result = (await when(when_list));
             console.log(i);
         }
+        console.log('success');
     } catch (err) {
         console.log(err);
     }
 }
-const processProduct = async (item, session) => {
-    console.log('@@@@@@@@@@@@@')
+const processProduct = async (item, session, category_list = []) => {
     try {
         let is_exist_product = await pool.query(`SELECT id FROM products WHERE another_id=? AND brand_id=?`, [
             item.id,
@@ -119,10 +127,12 @@ const processProduct = async (item, session) => {
             'product_price': item.marketprice,
             'product_sale_price': item.price,
             'brand_id': parseInt(brand_id),
-            'product_img': item.image,
+            'product_img': item.image.replace('http://fast.arfighter.com', 'http://www.tao-hai.com'),
             'product_description': item.content,
             'another_id': item.id,
             'price_lang': 'cn',
+            'category_id0': _.find(category_list, { another_id: item.category_id }).id,
+
         }
         let formData = new FormData();
         for (const key in process_item) {
@@ -130,12 +140,12 @@ const processProduct = async (item, session) => {
         }
         if (is_exist_product) {
             formData.append('id', is_exist_product?.id);
-            const response = await session.put(`products/${is_exist_product?.id}`, formData, {
+            const { data: response } = await session.put(`products/${is_exist_product?.id}`, formData, {
                 headers: formData.getHeaders()
             });
             console.log(response)
         } else {
-            const response = await session.post('products/', formData, {
+            const { data: response } = await session.post('products/', formData, {
                 headers: formData.getHeaders()
             });
             console.log(response)
