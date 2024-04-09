@@ -186,6 +186,7 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
     if (decode_dns?.setting_obj?.is_use_lang != 1) {
         return;
     }
+    console.log(123123)
     if (is_process) {
         let result = {
             lang_obj: {}
