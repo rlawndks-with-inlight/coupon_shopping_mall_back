@@ -41,11 +41,11 @@ const table_name = 'products';
 
 
 const productCtrl = {
-    list: async (req, res, next) => {
+    list: async (req, res, next, type) => {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { seller_id, property_id, is_consignment } = req.query;
+            const { seller_id, property_id, is_consignment, status } = req.query;
             let columns = [
                 `${table_name}.*`,
                 `sellers.user_name`,
@@ -92,27 +92,32 @@ const productCtrl = {
                     where_sql += ` AND ${key} IN (${category_ids.join()}) `;
                 }
             }
-            console.log(req.query[`property_ids0`])
+
             for (var i = 0; i < 20; i++) {
                 if (req.query[`property_ids${i}`]) {
                     where_sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (${req.query[`property_ids${i}`]}) ) `
                 }
             }
 
-            /*if (req.query[`status`] != []) {
-                where_sql += ` AND `
-            }*/
+            if (status) {
+                where_sql += ` AND ${table_name}.id IN (SELECT products.id FROM products WHERE status IN (${status}) ) `
+            }
 
             if (is_consignment) {
                 where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
             }
             sql += where_sql;
-            sql += ` AND products.status!=5 `
+            if (type == 'user') {
+                sql += ` AND products.status!=5 `
+            }
             //sql += `ORDER BY products.status ASC, products.sort_idx DESC `
             /*if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND products.status!=5 `
             }*/
             let data = await getSelectQueryList(sql, columns, req.query);
+            if (type == 'user') {
+                
+            }
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
             /*sql_list = [
@@ -133,7 +138,7 @@ const productCtrl = {
                 data.content[i].sub_images = images ?? [];
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
             }
-            //console.log(data)
+
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
