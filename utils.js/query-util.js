@@ -118,7 +118,11 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
             order = 'id';
         }
     }
-    content_sql += ` ORDER BY ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
+    if (table == 'products') {
+        content_sql += ` ORDER BY CASE WHEN products.status = 0 THEN 0 ELSE 1 END ASC, ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
+    } else {
+        content_sql += ` ORDER BY ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
+    }
     content_sql += ` LIMIT ${(page - 1) * page_size}, ${page_size} `;
     let total_sql = sql.replaceAll(process.env.SELECT_COLUMN_SECRET, 'COUNT(*) as total');
     let result_list = [];
