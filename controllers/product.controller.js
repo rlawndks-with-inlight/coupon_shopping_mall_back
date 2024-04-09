@@ -279,7 +279,13 @@ const productCtrl = {
             obj = { ...obj, };
 
             let result = await insertQuery(`${table_name}`, obj);
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.result?.insertId);
+
+            let dns_data = await pool.query(`SELECT id, setting_obj FROM brands WHERE id=${brand_id}`);
+            dns_data = dns_data?.result[0];
+            dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
+
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, result?.result?.insertId);
+
 
             if (!result?.result?.insertId) {
                 await db.rollback();
@@ -442,8 +448,12 @@ const productCtrl = {
             }
             obj = { ...obj, ...files, };
             let result = await updateQuery(`${table_name}`, obj, id);
-            console.log(decode_dns)
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, id);
+
+            let dns_data = await pool.query(`SELECT id, setting_obj FROM brands WHERE id=${brand_id}`);
+            dns_data = dns_data?.result[0];
+            dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
+
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, id);
 
             const product_id = id;
             //option

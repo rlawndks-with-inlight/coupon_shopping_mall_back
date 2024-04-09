@@ -156,3 +156,4 @@ const processProduct = async (item, session, category_list = []) => {
         console.log(err)
     }
 }
+getArfighterItems();
