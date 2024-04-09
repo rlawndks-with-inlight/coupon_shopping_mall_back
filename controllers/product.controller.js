@@ -116,7 +116,7 @@ const productCtrl = {
             }*/
             let data = await getSelectQueryList(sql, columns, req.query);
             if (type == 'user') {
-                
+
             }
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
@@ -253,13 +253,14 @@ const productCtrl = {
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}",
                 another_id = 0,
+                price_lang = 'ko',
             } = req.body;
 
             let obj = {
                 product_img,
                 brand_id, product_name, product_code, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type,
-                another_id,
+                another_id, price_lang
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -414,7 +415,7 @@ const productCtrl = {
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = {},
-                another_id = 0,
+                another_id = 0, price_lang = 'ko',
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -422,6 +423,7 @@ const productCtrl = {
                 product_name, product_code, product_comment, product_description, product_price, product_sale_price, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type,
                 another_id,
+                price_lang,
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {

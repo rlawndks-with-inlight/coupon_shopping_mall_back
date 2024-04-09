@@ -4,101 +4,11 @@ import { pool } from '../../config/db.js';
 import _ from 'lodash';
 import { deleteQuery, updateQuery } from '../query-util.js';
 import 'dotenv/config';
-/*
+
+const brand_id = 34;
+
 export const getArfighterItems = async () => {
-    const brand_id = 34; // brand_id 설정
-
-    // API URL
-    const goodsListUrl = "http://fast.arfighter.com/api/shop.goods/index";
-
-    // Parameters for goods list API
-    const params = new URLSearchParams({
-        page: 1,
-        limit: 1000
-    });
-
-    try {
-        // Get goods list
-        const response = await axios.get(goodsListUrl, { params });
-
-        if (response.status === 200) {
-            const goodsList = response.data.data || [];
-            let prods = [];
-            console.log(goodsList.length)
-            // Process goods list
-            for (const item of goodsList) {
-                const goodsId = item.id;
-                const goodsDetailUrl = "http://fast.arfighter.com/api/shop.goods/detail";
-                const params = new URLSearchParams({ id: goodsId });
-
-                // Get goods detail
-                const detailResponse = await axios.get(goodsDetailUrl, { params });
-                if (detailResponse.status === 200) {
-                    const detailData = detailResponse.data.data.goods || {};
-                    prods.push({
-                        'product_name': detailData.title,
-                        'product_price': detailData.marketprice,
-                        'product_sale_price': detailData.price,
-                        'brand_id': parseInt(brand_id),
-                        'product_img': detailData.image,
-                        'product_description': detailData.content,
-                        'another_id': detailData.id,
-                    });
-                } else {
-                    console.error(`Error: ${detailResponse.status}`);
-                }
-            }
-            // Login credentials
-            const account = {
-                user_name: 'masterpurple',
-                user_pw: 'qjfwk100djr!',
-                is_manager: true
-            };
-
-            // Session
-            const session = axios.create({
-                baseURL: 'https://theplusmail.co.kr/api/',
-                withCredentials: true
-            });
-            console.log('@@@')
-            // Sign in
-            let sign_in_result = await session.post('auth/sign-in/', account);
-            console.log(sign_in_result)
-            // Add products
-            for (const prod of prods) {
-                let formData = new FormData();
-                for (const key in prod) {
-                    formData.append(key, prod[key]);
-                }
-                let is_exist_product = await pool.query(`SELECT * FROM products WHERE another_id=? AND brand_id=?`, [
-                    prod['another_id'],
-                    brand_id,
-                ])
-                is_exist_product = is_exist_product?.result[0];
-                console.log(is_exist_product)
-                if (is_exist_product) {
-                    const response = await session.put(`products/${is_exist_product?.id}`, formData, {
-                        headers: formData.getHeaders()
-                    });
-                } else {
-                    const response = await session.post('products/', formData, {
-                        headers: formData.getHeaders()
-                    });
-                }
-                // Add product
-                console.log(response.data);
-            }
-            console.log('success')
-        } else {
-            console.error(`Error: ${response.status}`);
-        }
-    } catch (error) {
-        console.error(error);
-    }
-}
-*/
-export const getArfighterItems = async () => {
-    const brand_id = 34; // brand_id 설정
+    // brand_id 설정
     const category_group_id = 86;
 
     try {
@@ -123,7 +33,6 @@ export const getArfighterItems = async () => {
         let sign_in_result = await session.post('auth/sign-in/', account);
 
         /*
-    
         let { data: z_category_list } = await axios.get(`${Z_API_URL}/api/shop.category/index`);
         z_category_list = z_category_list?.data?.list ?? [];
         let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
@@ -170,15 +79,67 @@ export const getArfighterItems = async () => {
         // 카테고리 불러옴
         let insert_list = [];
         let update_list = [];
-
+        let total_size = 0;
         for (var i = 0; i < 100; i++) {
-            let { data: goods_list } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i + 1}&limit=50`);
-            goods_list = goods_list?.data ?? [];
-            console.log(goods_list.length);
+            let { data: goods_data } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i + 1}&limit=50`);
+            goods_data = goods_data?.data ?? [];
+            let {
+                total,
+                per_page,
+                current_page,
+                last_page,
+                data = [],
+            } = goods_data;
+            if (i == 0) {
+                total_size = total;
+            } else {
+                if (i > total_size / 50) {
+                    break;
+                }
+            }
+            for (var j = 0; j < data.length; j++) {
+                let result = await processProduct(data[j], session);
+            }
+            console.log(i);
         }
     } catch (err) {
         console.log(err);
     }
-
 }
-//getArfighterItems();
+const processProduct = async (item, session) => {
+    console.log('@@@@@@@@@@@@@')
+    try {
+        let is_exist_product = await pool.query(`SELECT id FROM products WHERE another_id=? AND brand_id=?`, [
+            item.id,
+            brand_id,
+        ])
+        is_exist_product = is_exist_product?.result[0];
+        let process_item = {
+            'product_name': item.title,
+            'product_price': item.marketprice,
+            'product_sale_price': item.price,
+            'brand_id': parseInt(brand_id),
+            'product_img': item.image,
+            'product_description': item.content,
+            'another_id': item.id,
+        }
+        let formData = new FormData();
+        for (const key in process_item) {
+            formData.append(key, process_item[key]);
+        }
+        if (is_exist_product) {
+            const response = await session.put(`products/${is_exist_product?.id}`, formData, {
+                headers: formData.getHeaders()
+            });
+            console.log(response)
+        } else {
+            const response = await session.post('products/', formData, {
+                headers: formData.getHeaders()
+            });
+            console.log(response)
+        }
+        return true;
+    } catch (err) {
+        console.log(err)
+    }
+}
