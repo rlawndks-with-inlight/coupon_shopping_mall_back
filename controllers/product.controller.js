@@ -442,6 +442,7 @@ const productCtrl = {
             }
             obj = { ...obj, ...files, };
             let result = await updateQuery(`${table_name}`, obj, id);
+            console.log(decode_dns)
             let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, id);
 
             const product_id = id;

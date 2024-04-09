@@ -26,10 +26,11 @@ export const getArfighterItems = async () => {
 
         // Session
         const session = axios.create({
-            baseURL: 'https://theplusmail.co.kr/api/',
+            baseURL: 'http://theplusmail.co.kr/api/',
             withCredentials: true
         });
         // Sign in
+        let domain_settting = await session.get('domain?dns=theplusmail.co.kr');
         let sign_in_result = await session.post('auth/sign-in/', account);
         let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
         category_list = category_list?.result;
@@ -155,3 +156,4 @@ const processProduct = async (item, session, category_list = []) => {
         console.log(err)
     }
 }
+getArfighterItems();
