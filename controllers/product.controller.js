@@ -414,7 +414,7 @@ const productCtrl = {
                 product_img,
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
-                sub_images = [], groups = [], characters = [], properties = {},
+                sub_images = [], groups = [], characters = [], properties = "{}",
                 another_id = 0, price_lang = 'ko',
             } = req.body;
             let files = settingFiles(req.files);

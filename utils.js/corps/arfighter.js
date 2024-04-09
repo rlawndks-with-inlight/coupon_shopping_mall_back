@@ -122,12 +122,14 @@ const processProduct = async (item, session) => {
             'product_img': item.image,
             'product_description': item.content,
             'another_id': item.id,
+            'price_lang': 'cn',
         }
         let formData = new FormData();
         for (const key in process_item) {
             formData.append(key, process_item[key]);
         }
         if (is_exist_product) {
+            formData.append('id', is_exist_product?.id);
             const response = await session.put(`products/${is_exist_product?.id}`, formData, {
                 headers: formData.getHeaders()
             });
@@ -143,3 +145,4 @@ const processProduct = async (item, session) => {
         console.log(err)
     }
 }
+getArfighterItems();
