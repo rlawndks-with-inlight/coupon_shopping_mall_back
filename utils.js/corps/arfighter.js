@@ -125,6 +125,7 @@ const processProduct = async (item, session, category_list = []) => {
         is_exist_product = is_exist_product?.result[0];
         let process_item = {
             'product_name': item.title,
+            'product_comment': item.subtitle,
             'product_price': item.marketprice,
             'product_sale_price': item.price,
             'brand_id': parseInt(brand_id),
@@ -156,3 +157,4 @@ const processProduct = async (item, session, category_list = []) => {
         console.log(err)
     }
 }
+getArfighterItems();
