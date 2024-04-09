@@ -343,7 +343,7 @@ const shopCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { seller_id } = req.query;
 
-            let data = await productCtrl.list({ ...req, IS_RETURN: true}, res, next, 'user');
+            let data = await productCtrl.list({ ...req, IS_RETURN: true, type: 'user'}, res, next);
             data = data?.data;
             return response(req, res, 100, "success", data);
         } catch (err) {

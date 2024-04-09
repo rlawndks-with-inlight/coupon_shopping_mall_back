@@ -102,6 +102,7 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     find_columns = find_columns.map((column) => {
         return column?.COLUMN_NAME
     })
+    let { type } = query;
 
     sql = settingSelectQueryWhere(sql, query, table, find_columns);
     for (var i = 0; i < add_sql_list.length; i++) {
@@ -118,7 +119,7 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
             order = 'id';
         }
     }
-    if (table == 'products') {
+    if (table == 'products' && type == 'user' ) {
         content_sql += ` ORDER BY CASE WHEN products.status = 0 THEN 0 ELSE 1 END ASC, ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
     } else {
         content_sql += ` ORDER BY ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
