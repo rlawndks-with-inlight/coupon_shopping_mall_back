@@ -145,4 +145,3 @@ const processProduct = async (item, session) => {
         console.log(err)
     }
 }
-getArfighterItems();
