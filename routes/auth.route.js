@@ -27,7 +27,7 @@ router
     .put(authCtrl.changePassword);
 router
     .route('/resign')
-    .post(authCtrl.resign);
+    .put(authCtrl.resign);
 router
     .route('/change-info')
     .put(authCtrl.changeInfo);
