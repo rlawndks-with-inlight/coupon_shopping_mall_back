@@ -469,3 +469,48 @@ export const getReqIp = (req) => {
     requestIp = requestIp.replaceAll('::ffff:', '');
     return requestIp;
 }
+export const setProductPriceByLang = (product_ = {}, price_column = 'product_sale_price', from_lang_ = 'ko', to_lang_ = 'ko') => {
+    let product = product_;
+    if (typeof product?.price_lang_obj == 'string') {
+        product.price_lang_obj = JSON.parse(product?.price_lang_obj ?? '{}');
+    }
+    let amount = parseFloat(product[price_column] ?? 0);
+    let from_lang = from_lang_;
+    let to_lang = to_lang_;
+    let multiply_obj = {
+        'en': 0.00074,
+        'cn': 0.0054,
+        'vi': 18.42,
+        'ja': 0.11,
+        'ko': 1,
+    }
+    if (!Object.keys(multiply_obj).includes(to_lang)) {
+        to_lang = 'ko';
+    }
+
+    if (from_lang == to_lang) {
+        return amount;
+    }
+    if (from_lang == 'ko') {
+        amount = amount * multiply_obj[to_lang]
+    } else {
+        let decimal_count = countDecimalPlaces(multiply_obj[from_lang]);
+        let ten_zekop = Math.pow(10, decimal_count);
+        let brother = multiply_obj[from_lang] * ten_zekop;
+        amount = (amount * ten_zekop) / brother * multiply_obj[to_lang]
+    }
+    if (to_lang == 'ko') {
+        amount = parseInt(amount);
+    }
+    return amount;
+}
+function countDecimalPlaces(number) {
+    const numberString = number.toString();
+    const decimalIndex = numberString.indexOf('.');
+
+    if (decimalIndex === -1) {
+        return 0;
+    }
+
+    return numberString.length - decimalIndex - 1;
+}
