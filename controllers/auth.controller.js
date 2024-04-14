@@ -373,12 +373,14 @@ const authCtrl = {
                 password
             } = req.body;
             let user = await pool.query(`SELECT * FROM users WHERE id=${decode_user?.id ?? 0} `);
+            user = user?.result[0];
             let user_pw = (await createHashedPassword(password, user.user_salt)).hashedPassword;
             if (user_pw != user.user_pw) {
                 return response(req, res, -100, "비밀번호가 일치하지 않습니다.", {})
             }
             await updateQuery('users', {
-                status: 3
+                status: 3,
+                is_delete: 1
             }, user?.id);
             await res.clearCookie('token');
             return response(req, res, 100, "success", {})
