@@ -5,7 +5,6 @@ import _ from 'lodash';
 import { deleteQuery, updateQuery } from '../query-util.js';
 import 'dotenv/config';
 import when from 'when';
-import { setProductPriceByLang } from '../util.js';
 const brand_id = 34;
 
 export const getArfighterItems = async () => {
@@ -117,6 +116,10 @@ export const getArfighterItems = async () => {
         console.log(err);
     }
 }
+function convertCNYtoKRW(amountInCNY, exchangeRate) {
+    // 중국 위안을 한국 원으로 변환
+    return amountInCNY * exchangeRate;
+}
 const processProduct = async (item, session, category_list = []) => {
     try {
         let is_exist_product = await pool.query(`SELECT id FROM products WHERE another_id=? AND brand_id=?`, [
@@ -124,8 +127,13 @@ const processProduct = async (item, session, category_list = []) => {
             brand_id,
         ])
         is_exist_product = is_exist_product?.result[0];
-        let product_price = setProductPriceByLang({ product_price: item.marketprice }, 'product_price', 'cn', 'ko');
-        let product_sale_price = setProductPriceByLang({ product_sale_price: item.price }, 'product_sale_price', 'cn', 'ko');
+
+        let exchangeRate = 190.77;
+        let product_price = convertCNYtoKRW(item.marketprice, exchangeRate);
+        product_price = Math.round(product_price / 1000) * 1000;
+        let product_sale_price = convertCNYtoKRW(item.price, exchangeRate);
+        product_sale_price = Math.round(product_sale_price / 1000) * 1000;
+
         let process_item = {
             'product_name': item.title,
             'product_comment': item.subtitle,
@@ -135,7 +143,7 @@ const processProduct = async (item, session, category_list = []) => {
             'product_img': item.image.replace('http://fast.arfighter.com', 'http://www.tao-hai.com'),
             'product_description': item.content,
             'another_id': item.id,
-            'price_lang': 'cn',
+            'price_lang': 'ko',
             'category_id0': _.find(category_list, { another_id: item.category_id }).id,
             'price_lang_obj': JSON.stringify({
                 cn: {
