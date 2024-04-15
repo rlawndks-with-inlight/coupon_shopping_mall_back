@@ -158,12 +158,14 @@ const productCtrl = {
             let product_columns = [
                 `${table_name}.*`,
                 `consignment_user.user_name AS consignment_user_name`,
+                `consignment_user.name AS consignment_name`,
                 `consignment_user.phone_num AS consignment_user_phone_num`,
             ]
             let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
             product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
             product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 AND ${table_name}.status!=5 AND ${table_name}.brand_id=${brand_id} `;
 
+            //console.log(product_sql)
             let data = await pool.query(product_sql);
             data = data?.result[0];
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}');
