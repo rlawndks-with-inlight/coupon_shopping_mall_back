@@ -52,7 +52,8 @@ const shopCtrl = {
                 `products.lang_obj`,
                 `products.status`,
                 `products.price_lang`,
-                `products.show_status`
+                `products.show_status`,
+                `products.price_lang_obj`,
             ]
             let product_sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM products `;
             for (var i = 0; i < categoryDepth; i++) {
@@ -343,7 +344,7 @@ const shopCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { seller_id } = req.query;
 
-            let data = await productCtrl.list({ ...req, IS_RETURN: true, type: 'user'}, res, next);
+            let data = await productCtrl.list({ ...req, IS_RETURN: true, type: 'user' }, res, next);
             data = data?.data;
             return response(req, res, 100, "success", data);
         } catch (err) {
