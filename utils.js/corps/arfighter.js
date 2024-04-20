@@ -10,9 +10,7 @@ const brand_id = 34;
 export const getArfighterItems = async () => {
     // brand_id 설정
     const category_group_id = 86;
-
     try {
-
         let dns_data = await pool.query(`SELECT * FROM brands WHERE id=${brand_id}`);
         dns_data = dns_data?.result[0];
 
@@ -26,11 +24,11 @@ export const getArfighterItems = async () => {
 
         // Session
         const session = axios.create({
-            baseURL: 'http://theplusmail.co.kr/api/',
+            baseURL: 'http://the-plusmall.co.kr/api/',
             withCredentials: true
         });
         // Sign in
-        let domain_settting = await session.get('domain?dns=theplusmail.co.kr');
+        let domain_settting = await session.get('domain?dns=the-plusmall.co.kr');
         let sign_in_result = await session.post('auth/sign-in/', account);
         let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
         category_list = category_list?.result;
@@ -83,8 +81,14 @@ export const getArfighterItems = async () => {
         let insert_list = [];
         let update_list = [];
         let total_size = 0;
-        for (var i = 0; i < 100; i++) {
-            let { data: goods_data } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i + 1}&limit=50`);
+        let max_page = 1;
+        let { data: first_goods_data } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=1&limit=50`);
+        first_goods_data = first_goods_data?.data ?? [];
+        total_size = first_goods_data?.total;
+        max_page = parseInt(total_size / 50) + (total_size % 50 == 0 ? 0 : 1);
+
+        for (var i = max_page; i >= 1; i--) {
+            let { data: goods_data } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i}&limit=50`);
             goods_data = goods_data?.data ?? [];
             let {
                 total,
@@ -93,16 +97,10 @@ export const getArfighterItems = async () => {
                 last_page,
                 data = [],
             } = goods_data;
-            if (i == 0) {
-                total_size = total;
-            } else {
-                if (i > total_size / 50) {
-                    break;
-                }
-            }
+
             let when_list = [];
 
-            for (var j = 0; j < data.length; j++) {
+            for (var j = data.length - 1; j >= 0; j--) {
                 when_list.push(processProduct(data[j], session, category_list));
             }
             for (var j = 0; j < when_list.length; j++) {
