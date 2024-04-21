@@ -312,6 +312,7 @@ export const setGrandParisProducts = async () => {
         }
 
         let insert_property_list = [];
+        let insert_character_list = [];
 
         let property_obj = {
             'N': 17,
@@ -413,6 +414,21 @@ export const setGrandParisProducts = async () => {
                         3,
                     ])
                 }
+                insert_character_list.push([
+                    insert_id,
+                    '성별',
+                    grand_products[i]?.PRODUCT_SEX,
+                ])
+                insert_character_list.push([
+                    insert_id,
+                    '사이즈',
+                    grand_products[i]?.PRODUCT_SIZE,
+                ])
+                insert_character_list.push([
+                    insert_id,
+                    '색상',
+                    grand_products[i]?.PRODUCT_COLOR,
+                ])
             }
             if (i % 1000 == 0) {
                 console.log(i);
@@ -422,6 +438,10 @@ export const setGrandParisProducts = async () => {
         for (var i = 0; i < insert_property_list.length / 1000; i++) {
             let insert_property_list_z = insert_property_list.splice(i * 1000, (i + 1) * 1000);
             let result2 = await pool.query(`INSERT INTO products_and_properties (product_id,property_id,property_group_id) VALUES ?`, [insert_property_list_z]);
+        }
+        for (var i = 0; i < insert_character_list.length / 1000; i++) {
+            let insert_character_list_z = insert_character_list.splice(i * 1000, (i + 1) * 1000);
+            let result2 = await pool.query(`INSERT INTO product_characters (product_id,character_name,character_value) VALUES ?`, [insert_character_list_z]);
         }
         await db.commit();
         console.log('success')
