@@ -298,7 +298,7 @@ const payCtrl = {
 
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
-      const {
+      let {
         amount,
         pay_type = "",
         acct_num,
@@ -310,6 +310,7 @@ const payCtrl = {
         tid,
         dns,
         created_at,
+        phone_num
       } = req.body;
       let brand = await pool.query(`SELECT * FROM brands WHERE dns=?`, [dns]);
       brand = brand?.result[0];
@@ -321,11 +322,13 @@ const payCtrl = {
       brand["shop_obj"] = JSON.parse(brand?.shop_obj ?? "[]");
       brand["blog_obj"] = JSON.parse(brand?.blog_obj ?? "[]");
       brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
-      let phone_num = '';
-      for (let i = 0; i < 8; i++) {
-        const randomNumber = Math.floor(Math.random() * 10);
-        phone_num += randomNumber.toString();
+      if (!phone_num) {
+        for (let i = 0; i < 8; i++) {
+          const randomNumber = Math.floor(Math.random() * 10);
+          phone_num += randomNumber.toString();
+        }
       }
+
       let random_addr = await pool.query(`SELECT * FROM user_addresses ORDER BY RAND() LIMIT 1`);
       random_addr = random_addr?.result[0];
       let obj = {
