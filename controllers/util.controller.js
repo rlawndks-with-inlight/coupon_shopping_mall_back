@@ -308,7 +308,7 @@ export const setGrandParisProducts = async () => {
         let product_obj = {};
 
         for (var i = 0; i < products.length; i++) {
-            product_obj[products[i]?.product_code] = products[i];
+            product_obj[products[i]?.another_id] = products[i];
         }
 
         let insert_property_list = [];
@@ -325,16 +325,25 @@ export const setGrandParisProducts = async () => {
         }
         console.log(`grand_products_length` + grand_products.length)
         for (var i = 0; i < grand_products.length; i++) {
-            if (!product_obj[grand_products[i]?.PRODUCT_CODE]) {
-                let insert_product = await pool.query(`INSERT INTO products (brand_id, product_name, product_code, product_price, product_sale_price, product_description, status, is_delete) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+            if (!product_obj[grand_products[i]?.SEQ]) {
+                let status = 0;
+                if (grand_products[i]?.OPEN_FLAG == 'N') {
+                    status = 5;
+                } else if (grand_products[i]?.SALE_FLAG == 'SOLDOUT') {
+                    status = 2;
+                } else {
+                    status = 0;
+                }
+                let insert_product = await pool.query(`INSERT INTO products (brand_id, product_name, product_code, product_price, product_sale_price, product_description, status, is_delete, another_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
                     5,
                     grand_products[i]?.PRODUCT_NAME,
                     grand_products[i]?.PRODUCT_CODE,
                     grand_products[i]?.ORGIN_PRICE,
                     grand_products[i]?.PRICE,
                     grand_products[i]?.PRODUCT_DETAIL_INFO,
-                    (grand_products[i]?.OPEN_FLAG == 'N' ? 5 : 0),
+                    status,
                     (grand_products[i]?.DELETE_FLAG == 'Y' ? 1 : 0),
+                    grand_products[i]?.SEQ,
                 ]);
                 let insert_id = insert_product?.result?.insertId;
                 let product_imgs = grand_product_imgs.filter(el => el?.PRODUCT_SEQ == grand_products[i]?.SEQ);
