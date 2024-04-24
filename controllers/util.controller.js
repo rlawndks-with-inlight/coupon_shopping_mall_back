@@ -288,6 +288,7 @@ export const setGrandParisProducts = async () => {
         //상품코너o
         //상품설명o
         //
+
         let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
         grand_products = grand_products?.result;
         console.log('grand_products')
@@ -323,6 +324,7 @@ export const setGrandParisProducts = async () => {
             'A-': 12,
             '특B': 24,
         }
+
         console.log(`grand_products_length` + grand_products.length)
         for (var i = 0; i < grand_products.length; i++) {
             if (!product_obj[grand_products[i]?.SEQ]) {
@@ -352,7 +354,8 @@ export const setGrandParisProducts = async () => {
                 let bnd_id = _.find(grand_product_brands, { SEQ: parseInt(grand_products[i]?.BRAND_SEQ) })?.SEQ + 500;
                 let sex_id = grand_products[i]?.PRODUCT_SEX == 'U' ? 2511 : (grand_products[i]?.PRODUCT_SEX == 'M' ? 2510 : 2509);
                 let sql = `UPDATE products SET product_img=?, consignment_none_user_name=?, consignment_none_user_phone_num=?, consignment_user_id=?, sort_idx=? `;
-                let value = [`https://kr.object.ncloudstorage.com/grandparis${main_img}`, grand_products[i]?.SELLER_NAME ?? "", grand_products[i]?.SELLER_MOBILE ?? "", grand_products[i]?.SELLER_MEMBER_SEQ + 1000, insert_id];
+                let value = [`https://kr.object.ncloudstorage.com/grandparis${main_img}`, grand_products[i]?.SELLER_NAME ?? "", grand_products[i]?.SELLER_MOBILE ?? "", (grand_products[i]?.SELLER_MEMBER_SEQ > 0 ? grand_products[i]?.SELLER_MEMBER_SEQ + 1000 : 0), insert_id];
+
                 if (category_id > 0) {
                     sql += `, category_id0=? `
                     value.push(category_id)
@@ -381,6 +384,11 @@ export const setGrandParisProducts = async () => {
                 if (sub_imgs.length > 0) {
                     let insert_sub_imgs = await pool.query(`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`, [sub_imgs]);
                 }
+                insert_property_list.push([//매장
+                    insert_id,//product_id
+                    28,//property_id
+                    6//property_group_id
+                ])
                 if (property_obj[grand_products[i].PRODUCT_USED_FLAG]) {
                     insert_property_list.push([
                         insert_id,//product_id
