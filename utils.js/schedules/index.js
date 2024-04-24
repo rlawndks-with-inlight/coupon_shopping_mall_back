@@ -8,7 +8,7 @@ const scheduleIndex = () => {
   schedule.scheduleJob("0 0/1 * * * *", async function () {
     let return_moment = returnMoment();
     langProcess();
-    if (return_moment.includes(':00:')) {
+    if (return_moment.includes('00:00:')) {
       getArfighterItems();
     }
     if (return_moment.includes('00:00:')) {
