@@ -290,7 +290,7 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
             result.lang_obj = JSON.stringify(result.lang_obj);
             return result;
         } catch (err) {
-            console.log(err)
+            console.log(err?.response?.data);
             result.lang_obj = JSON.stringify(result.lang_obj);
             return result;
         }
