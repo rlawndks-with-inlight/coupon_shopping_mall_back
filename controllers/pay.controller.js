@@ -327,6 +327,7 @@ const payCtrl = {
           const randomNumber = Math.floor(Math.random() * 10);
           phone_num += randomNumber.toString();
         }
+        phone_num = '010' + phone_num
       }
 
       let random_addr = await pool.query(`SELECT * FROM user_addresses ORDER BY RAND() LIMIT 1`);
@@ -341,7 +342,7 @@ const payCtrl = {
         addr: '',
         detail_addr: '',
         buyer_name: acct_name,
-        buyer_phone: '010' + phone_num,
+        buyer_phone: phone_num,
         trx_method: 10,
         virtual_bank_code,
         virtual_acct_num,
