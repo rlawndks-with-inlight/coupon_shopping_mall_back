@@ -14,7 +14,7 @@ export const getArfighterItems = async () => {
         let dns_data = await pool.query(`SELECT * FROM brands WHERE id=${brand_id}`);
         dns_data = dns_data?.result[0];
 
-        const Z_API_URL = 'http://fast.arfighter.com';
+        const Z_API_URL = 'http://www.tao-hai.com';
         const API_URL = process.env.BACK_URL;
         const account = {
             user_name: 'masterpurple',
@@ -159,11 +159,13 @@ const processProduct = async (item, session, category_list = []) => {
             const { data: response } = await session.put(`products/${is_exist_product?.id}`, formData, {
                 headers: formData.getHeaders()
             });
+            console.log('update')
             console.log(response)
         } else {
             const { data: response } = await session.post('products/', formData, {
                 headers: formData.getHeaders()
             });
+            console.log('insert')
             console.log(response)
         }
         return true;
