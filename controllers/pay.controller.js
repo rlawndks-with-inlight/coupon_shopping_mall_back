@@ -171,6 +171,7 @@ const payCtrl = {
         trx_dttm,
         is_cancel = 0,
         temp,
+        ori_trx_id,
       } = req.body;
       console.log(req.body)
       const id = temp;
