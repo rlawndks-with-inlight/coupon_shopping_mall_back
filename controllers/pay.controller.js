@@ -199,6 +199,7 @@ const payCtrl = {
       if (is_cancel) {
         obj = {
           ...pay_data,
+          ori_trx_id,
           cxl_dt: trx_dttm.split(" ")[0],
           cxl_tm: trx_dttm.split(" ")[1],
           is_cancel: 1,
