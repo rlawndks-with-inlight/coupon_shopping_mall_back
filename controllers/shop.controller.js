@@ -59,7 +59,7 @@ const shopCtrl = {
             let product_category_left_join_sql = '';
             for (var i = 0; i < categoryDepth; i++) {
                 product_category_left_join_sql += ` LEFT JOIN product_categories AS product_categories${i} ON products.category_id${i}=product_categories${i}.id `;
-                product_columns.push(`product_categories${i}.category_name AS category_name${i}`);
+                product_columns.push(`product_categories${i}.category_en_name AS category_en_name${i}`);
                 
             }
             product_sql += product_category_left_join_sql;
@@ -82,7 +82,7 @@ const shopCtrl = {
                 `RankedProperties.property_id`,
             ]
             for (var i = 0; i < categoryDepth; i++) {
-                product_and_property_columns.push(`product_categories${i}.category_name AS category_name${i}`);
+                product_and_property_columns.push(`product_categories${i}.category_en_name AS category_en_name${i}`);
             }
             let product_and_property_sql = `
             WITH RankedProperties AS (
