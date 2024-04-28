@@ -56,15 +56,17 @@ const shopCtrl = {
                 `products.price_lang_obj`,
             ]
             let product_sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM products `;
+            let product_category_left_join_sql = '';
             for (var i = 0; i < categoryDepth; i++) {
-                product_sql += ` LEFT JOIN product_categories AS product_categories${i} ON products.category_id${i}=product_categories${i}.id `;
+                product_category_left_join_sql += ` LEFT JOIN product_categories AS product_categories${i} ON products.category_id${i}=product_categories${i}.id `;
                 product_columns.push(`product_categories${i}.category_name AS category_name${i}`);
+                
             }
+            product_sql += product_category_left_join_sql;
             product_sql += ` WHERE products.id IN(${product_ids.join()}) `;
             product_sql += ` AND products.is_delete=0 `;
             product_sql += ` AND products.status!=5 `
             product_sql = product_sql.replaceAll(process.env.SELECT_COLUMN_SECRET, product_columns.join());
-
             //메인obj 에서 items-property-groups가 존재할시
             let product_and_property_columns = [
                 `products.id`,
@@ -79,6 +81,9 @@ const shopCtrl = {
                 `products.show_status`,
                 `RankedProperties.property_id`,
             ]
+            for (var i = 0; i < categoryDepth; i++) {
+                product_and_property_columns.push(`product_categories${i}.category_name AS category_name${i}`);
+            }
             let product_and_property_sql = `
             WITH RankedProperties AS (
                 SELECT
@@ -99,6 +104,7 @@ const shopCtrl = {
             FROM
                 RankedProperties
                 LEFT JOIN products ON RankedProperties.product_id=products.id
+                ${product_category_left_join_sql}
             WHERE
                 row_num <= 50
                 AND RankedProperties.property_id IN (${product_property_ids.join()})
