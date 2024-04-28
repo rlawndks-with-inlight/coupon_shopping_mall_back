@@ -76,7 +76,7 @@ const productCtrl = {
             let category_sql_list = [];
             for (var i = 0; i < categoryDepth; i++) {
                 sql += ` LEFT JOIN product_categories AS product_categories${i} ON product_categories${i}.id=${table_name}.category_id${i}`
-                columns.push(`product_categories${i}.category_name AS category_name${i}`);
+                columns.push(`product_categories${i}.category_en_name AS category_en_name${i}`);
                 if (req.query[`category_id${i}`]) {
                     category_sql_list.push({
                         table: `category_id${i}`,
