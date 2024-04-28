@@ -172,6 +172,7 @@ const payCtrl = {
         is_cancel = 0,
         temp,
       } = req.body;
+      console.log(req.body)
       const id = temp;
       await db.beginTransaction();
       let obj = {};
@@ -188,6 +189,7 @@ const payCtrl = {
         ]);
         pay_data = pay_data?.result[0];
       }
+
       let dns_data = await pool.query("SELECT * FROM brands WHERE id=?", [
         pay_data?.brand_id,
       ]);
