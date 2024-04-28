@@ -179,6 +179,7 @@ const payCtrl = {
       let obj = {};
       let pay_data = {};
       if (is_cancel) {
+        console.log('cancel')
         pay_data = await pool.query(
           `SELECT * FROM ${table_name} WHERE trx_id=? AND is_cancel=0`,
           [ori_trx_id]
