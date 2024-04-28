@@ -181,7 +181,7 @@ const payCtrl = {
       if (is_cancel) {
         pay_data = await pool.query(
           `SELECT * FROM ${table_name} WHERE trx_id=? AND is_cancel=0`,
-          [trx_id]
+          [ori_trx_id]
         );
         pay_data = pay_data?.result[0];
       } else {
@@ -190,7 +190,7 @@ const payCtrl = {
         ]);
         pay_data = pay_data?.result[0];
       }
-
+      console.log(pay_data)
       let dns_data = await pool.query("SELECT * FROM brands WHERE id=?", [
         pay_data?.brand_id,
       ]);
