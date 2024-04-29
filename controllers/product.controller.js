@@ -164,7 +164,7 @@ const productCtrl = {
             ]
             let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
             product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
-            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 AND ${table_name}.status!=5 AND ${table_name}.brand_id=${brand_id} `;
+            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 ${req?.IS_RETURN?`AND ${table_name}.status!=5`:''} AND ${table_name}.brand_id=${brand_id} `;
 
             //console.log(product_sql)
             let data = await pool.query(product_sql);
