@@ -34,7 +34,7 @@ const transactionCtrl = {
                 sql += ` AND trx_status=${trx_status} `;
             }
             if (is_confirm) {
-                sql += ` AND trx_status>=5 `;
+                sql += ` AND trx_status>=1 `;
             }
             if (cancel_status) {
                 if (cancel_status == 1) {
