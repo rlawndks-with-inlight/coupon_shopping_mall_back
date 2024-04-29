@@ -44,6 +44,8 @@ const transactionCtrl = {
                 } else if (cancel_status == 0) {
                     sql += ` AND is_cancel=0 `;
                 }
+            } else {
+                sql += ` AND is_cancel=0 `;
             }
             if (cancel_type) {
                 sql += ` AND cancel_type=${cancel_type} `;
