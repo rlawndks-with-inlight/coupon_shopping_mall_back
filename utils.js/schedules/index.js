@@ -12,7 +12,7 @@ const scheduleIndex = () => {
       getArfighterItems();
     }
     if (return_moment.includes('00:00:')) {
-      setGrandParisProducts();
+      // setGrandParisProducts();
     }
   });
 };
