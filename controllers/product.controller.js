@@ -47,6 +47,7 @@ const productCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { seller_id, property_id, is_consignment, status } = req.query;
             const { type } = req;
+
             let columns = [
                 `${table_name}.*`,
                 `sellers.user_name`,
@@ -116,8 +117,7 @@ const productCtrl = {
             /*if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND products.status!=5 `
             }*/
-            let data = await getSelectQueryList(sql, columns, req.query);
-
+            let data = await getSelectQueryList(sql, columns, {...req.query, type: type});
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
             /*sql_list = [
@@ -161,6 +161,7 @@ const productCtrl = {
                 `consignment_user.user_name AS consignment_user_name`,
                 `consignment_user.name AS consignment_name`,
                 `consignment_user.phone_num AS consignment_user_phone_num`,
+                ` (SELECT MAX(sort_idx) FROM ${table_name} where brand_id=${brand_id}) AS max_sort_idx `
             ]
             let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
             product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
@@ -255,14 +256,14 @@ const productCtrl = {
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 another_id = 0,
-                price_lang = 'ko',
+                price_lang = 'ko', point_save = 0, point_usable, cash_usable, pg_usable, status, show_status
             } = req.body;
 
             let obj = {
                 product_img,
                 brand_id, product_name, product_code, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
-                another_id, price_lang
+                another_id, price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
@@ -423,7 +424,7 @@ const productCtrl = {
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
-                another_id = 0, price_lang = 'ko',
+                another_id = 0, price_lang = 'ko', point_save = 0, point_usable, cash_usable, pg_usable, status, show_status, sort_idx
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -431,7 +432,7 @@ const productCtrl = {
                 product_name, product_code, product_comment, product_description, product_price, product_sale_price, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
                 another_id,
-                price_lang,
+                price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status, sort_idx
             };
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
