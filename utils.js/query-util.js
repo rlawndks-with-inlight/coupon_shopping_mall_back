@@ -118,13 +118,8 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
             order = 'id';
         }
     }
-<<<<<<< HEAD
     if (table == 'products' && type == 'user') {
         content_sql += ` ORDER BY CASE WHEN (products.status = 2 OR products.status = 3 OR products.status = 4 OR products.status = 5) THEN 1 ELSE 0 END ASC, ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
-=======
-    if (table == 'products' && type == 'user' ) {
-        content_sql += ` ORDER BY CASE WHEN (products.status = 2 OR products.status = 3 OR products.status = 4 OR products.status = 5 OR products.product_sale_price = 0) THEN 1 ELSE 0 END ASC, ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
->>>>>>> 880672d810c4532779eda919a91976ddfd1c2528
     } else {
         content_sql += ` ORDER BY ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
     }
