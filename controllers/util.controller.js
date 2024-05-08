@@ -305,13 +305,17 @@ export const setGrandParisProducts = async () => {
 
         let products = await pool.query(`SELECT * FROM products WHERE brand_id=5 ORDER BY id ASC`);
         products = products?.result;
-        console.log('products')
+
         let product_obj = {};
 
         for (var i = 0; i < products.length; i++) {
             product_obj[products[i]?.another_id] = products[i];
         }
 
+
+        await db.commit();
+
+        return;
         let insert_property_list = [];
         let insert_character_list = [];
 
