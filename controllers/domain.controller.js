@@ -40,6 +40,8 @@ const domainCtrl = {
         "fax_num",
         "mail_order_num",
         "show_basic_info",
+        "is_use_otp",
+        "is_closure",
       ];
       //console.log(req.query);
       let brand = await pool.query(

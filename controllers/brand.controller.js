@@ -117,6 +117,8 @@ const brandCtrl = {
         user_name,
         user_pw,
         seller_name,
+        is_use_otp,
+        is_closure,
       } = req.body;
       let files = settingFiles(req.files);
       let obj = {
@@ -147,6 +149,8 @@ const brandCtrl = {
         shop_obj,
         blog_obj,
         seo_obj,
+        is_use_otp,
+        is_closure,
       };
       obj["theme_css"] = JSON.stringify(obj.theme_css);
       //obj["slider_css"] = JSON.stringify(obj.slider_css);
@@ -217,6 +221,8 @@ const brandCtrl = {
         shop_obj = [],
         blog_obj = [],
         seo_obj = {},
+        is_use_otp,
+        is_closure,
       } = req.body;
       const { id } = req.params;
       if (
@@ -255,6 +261,8 @@ const brandCtrl = {
         shop_obj,
         blog_obj,
         seo_obj,
+        is_use_otp,
+        is_closure,
       };
       obj["theme_css"] = JSON.stringify(obj.theme_css);
       //obj["slider_css"] = JSON.stringify(obj.slider_css);
