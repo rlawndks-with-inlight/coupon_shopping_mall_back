@@ -8,7 +8,9 @@ router
     .route('/')
     .get(brandCtrl.list)
     .post(brandCtrl.create);
-
+router
+    .route('/otp')
+    .post(brandCtrl.settingOtp);
 router
     .route('/:id')
     .get(brandCtrl.get)

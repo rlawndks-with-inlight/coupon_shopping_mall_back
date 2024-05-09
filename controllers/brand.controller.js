@@ -19,6 +19,7 @@ import {
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import { brandSettingLang } from "../utils.js/schedules/lang-process.js";
+import speakeasy from 'speakeasy';
 
 const table_name = "brands";
 
@@ -302,6 +303,26 @@ const brandCtrl = {
       logger.error(JSON.stringify(err?.response?.data || err));
       return response(req, res, -200, "서버 에러 발생", false);
     } finally {
+    }
+  },
+  settingOtp: async (req, res, next) => {
+    try {
+      const decode_user = await checkLevel(req.cookies.token, 0, req);
+      const decode_dns = checkDns(req.cookies.dns);
+      const { brand_id } = req.body;
+      let dns_data = await pool.query(`SELECT ${table_name}.* FROM ${table_name} WHERE id=${brand_id}`);
+      dns_data = dns_data?.result[0];
+      const secret = speakeasy.generateSecret({
+        length: 20, // 비밀키의 길이를 설정 (20자리)
+        name: dns_data?.dns, // 사용자 아이디를 비밀키의 이름으로 설정
+        algorithm: 'sha512' // 해시 알고리즘 지정 (SHA-512 사용)
+      })
+      return response(req, res, 100, "success", secret)
+    } catch (err) {
+      console.log(err)
+      return response(req, res, -200, "서버 에러 발생", false)
+    } finally {
+
     }
   },
   design: {

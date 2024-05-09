@@ -6,17 +6,22 @@ import { createHashedPassword, checkLevel, makeUserToken, response, checkDns, lo
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import axios from "axios";
+import speakeasy from 'speakeasy';
 
 const authCtrl = {
     signIn: async (req, res, next) => {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            let { user_name, user_pw, is_manager } = req.body;
+            let { user_name, user_pw, is_manager, otp_num } = req.body;
             let user = await pool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id ?? 0} OR level >=50 ) LIMIT 1`, user_name);
             user = user?.result[0];
 
             if (!user || (is_manager && user.level <= 0)) {
+                return response(req, res, -100, "가입되지 않은 회원입니다.", {})
+            }
+            user_pw = (await createHashedPassword(user_pw, user.user_salt)).hashedPassword;
+            if (user_pw != user.user_pw) {
                 return response(req, res, -100, "가입되지 않은 회원입니다.", {})
             }
             if (user?.status == 1) {
@@ -28,9 +33,16 @@ const authCtrl = {
             if (user?.status == 3) {
                 return response(req, res, -100, "탈퇴회원입니다.", {})
             }
-            user_pw = (await createHashedPassword(user_pw, user.user_salt)).hashedPassword;
-            if (user_pw != user.user_pw) {
-                return response(req, res, -100, "가입되지 않은 회원입니다.", {})
+
+            if (user?.level < 40 && !is_manager && decode_dns?.is_use_otp == 1) {
+                var verified = speakeasy.totp.verify({
+                    secret: user?.otp_token,
+                    encoding: 'base32',
+                    token: otp_num
+                });
+                if (!verified) {
+                    return response(req, res, -100, "OTP번호가 잘못되었습니다.", {})
+                }
             }
             const token = makeUserToken({
                 id: user.id,
@@ -89,6 +101,7 @@ const authCtrl = {
                 profile_img,
                 brand_id,
                 acct_num = "", acct_name = "", acct_bank_name = "", acct_bank_code = "",
+                otp_token = "",
             } = req.body;
             if (!user_pw) {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
@@ -118,6 +131,8 @@ const authCtrl = {
                 brand_id,
                 user_salt,
                 acct_num, acct_name, acct_bank_name, acct_bank_code,
+                otp_token,
+                status: decode_dns?.setting_obj?.is_sign_up_status_1 == 1 ? 1 : 0,
             }
             let result = await insertQuery('users', obj);
             return response(req, res, 100, "success", {})
