@@ -118,8 +118,8 @@ const brandCtrl = {
         user_name,
         user_pw,
         seller_name,
-        is_use_otp,
-        is_closure,
+        is_use_otp = 0,
+        is_closure = 0,
       } = req.body;
       let files = settingFiles(req.files);
       let obj = {
@@ -222,8 +222,8 @@ const brandCtrl = {
         shop_obj = [],
         blog_obj = [],
         seo_obj = {},
-        is_use_otp,
-        is_closure,
+        is_use_otp = 0,
+        is_closure = 0,
       } = req.body;
       const { id } = req.params;
       if (
