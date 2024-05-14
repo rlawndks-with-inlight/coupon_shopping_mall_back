@@ -11,7 +11,7 @@ const transactionCtrl = {
     list: async (req, res, next) => {
         try {
 
-            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_user = checkLevel(req.cookies?.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { trx_status, cancel_status, is_confirm, cancel_type } = req.query;
             if (!decode_user) {
@@ -70,12 +70,24 @@ const transactionCtrl = {
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
                     delete order_data[i].order_groups
+
+                }
+                let transactions_order_obj = {};
+                let transactions_id_obj = {};
+                for (var i = 0; i < data?.content.length; i++) {
+                    transactions_id_obj[data?.content[i]?.id] = i;
+                    transactions_order_obj[data?.content[i]?.id] = [];
+                }
+                for (var i = 0; i < order_data.length; i++) {
+                    transactions_order_obj[order_data[i]?.trans_id].push(order_data[i]);
                 }
                 for (var i = 0; i < data?.content.length; i++) {
-                    data.content[i].orders = order_data.filter((order) => order?.trans_id == data?.content[i]?.id);
+                    data.content[i].orders = transactions_order_obj[data?.content[i]?.id];
+                    if (i % 1000 == 0) {
+                        console.log(i)
+                    }
                 }
             }
-
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -231,4 +243,16 @@ const transactionCtrl = {
     },
 };
 
+const asdsadsad = async () => {
+    try {
+        let result = await transactionCtrl.list({
+            query: {
+                is_confirm: true,
+            }
+        })
+        console.log(result);
+    } catch (err) {
+
+    }
+}
 export default transactionCtrl;
