@@ -83,9 +83,6 @@ const transactionCtrl = {
                 }
                 for (var i = 0; i < data?.content.length; i++) {
                     data.content[i].orders = transactions_order_obj[data?.content[i]?.id];
-                    if (i % 1000 == 0) {
-                        console.log(i)
-                    }
                 }
             }
             return response(req, res, 100, "success", data);
