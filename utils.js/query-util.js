@@ -94,7 +94,7 @@ export const getTableNameBySelectQuery = (sql) => {// select query 가지고 불
     return table;
 }
 export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []) => {
-    let { page = 1, page_size = 100000, is_asc = 0, order, search = "", s_dt, e_dt, } = query;
+    let { page = 1, page_size = 150000, is_asc = 0, order, search = "", s_dt, e_dt, } = query;
     let sql = sql_;
     let table = getTableNameBySelectQuery(sql);
     let find_columns = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);

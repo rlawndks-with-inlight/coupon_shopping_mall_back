@@ -5,6 +5,8 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import XLSX from 'xlsx';
+import fs from 'fs';
 const table_name = 'transactions';
 
 const transactionCtrl = {
@@ -13,6 +15,7 @@ const transactionCtrl = {
 
             const decode_user = checkLevel(req.cookies?.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+
             const { trx_status, cancel_status, is_confirm, cancel_type } = req.query;
             if (!decode_user) {
                 return lowLevelException(req, res);
@@ -245,11 +248,43 @@ const asdsadsad = async () => {
         let result = await transactionCtrl.list({
             query: {
                 is_confirm: true,
+                s_dt: '2024-03-13'
             }
         })
-        console.log(result);
-    } catch (err) {
+        let data = [
+            ['승인번호', '구매자명', '구매자휴대폰번호', '구매금액', '구매상품', '구매시간', '주소', '결제타입'],
+        ];
+        console.log(result.content.length)
+        for (var i = 0; i < result.content.length; i++) {
+            let order_item = result.content[i];
+            data.push([
+                order_item?.appr_num,
+                order_item?.buyer_name,
+                order_item?.buyer_phone,
+                order_item?.amount,
+                order_item?.orders.map(itm => {
+                    return `상품주문명:${itm?.order_name} 상품가:${itm?.order_amount} 배달가:${itm?.delivery_fee}`
+                }).join(' / '),
+                `${order_item?.trx_dt} ${order_item?.trx_tm}`,
+                `${order_item?.addr} ${order_item?.detail_addr}`,
+                `가상계좌`
+            ])
+        }
 
+
+        // 새 워크북 생성
+        const wb = XLSX.utils.book_new();
+        // 새 워크시트 생성
+        const ws = XLSX.utils.aoa_to_sheet(data);
+
+        // 워크북에 워크시트 추가
+        XLSX.utils.book_append_sheet(wb, ws, "데이터");
+
+        // 엑셀 파일로 저장
+        XLSX.writeFile(wb, '데이터.xlsx', { bookSST: true });
+
+    } catch (err) {
+        console.log(err);
     }
 }
 export default transactionCtrl;
