@@ -96,7 +96,7 @@ const shopCtrl = {
                     products_and_properties
                     LEFT JOIN products ON products_and_properties.product_id=products.id
                     WHERE products.is_delete=0
-                    AND products.status=0
+                    AND (products.status=0 OR products.status=1 OR products.status=6 OR products.status=7)
                     AND products.brand_id=${decode_dns?.id}
             )
             SELECT
