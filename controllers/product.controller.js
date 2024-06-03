@@ -45,7 +45,7 @@ const productCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { seller_id, property_id, is_consignment, status } = req.query;
+            const { seller_id, property_id, is_consignment, status, product_type } = req.query;
             const { type } = req;
 
             let columns = [
@@ -104,6 +104,10 @@ const productCtrl = {
 
             if (status) {
                 where_sql += ` AND ${table_name}.id IN (SELECT products.id FROM products WHERE status IN (${status}) ) `
+            }
+
+            if (product_type) {
+                where_sql += ` AND ${table_name}.id IN (SELECT products.id FROM products WHERE product_type IN (${product_type}) ) `
             }
 
             if (is_consignment) {
