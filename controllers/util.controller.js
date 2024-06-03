@@ -289,7 +289,7 @@ export const setGrandParisProducts = async () => {
         //상품설명o
         //
 
-        let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
+        /*let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
         grand_products = grand_products?.result;
         console.log('grand_products')
         let grand_product_imgs = await grandPool.query(`SELECT * FROM PRODUCT_IMG WHERE IMG_FOLDER='/product' AND IMG_TYPE IN ('main','detail') AND DELETE_FLAG='N' ORDER BY SEQ ASC`);
@@ -315,7 +315,147 @@ export const setGrandParisProducts = async () => {
 
         await db.commit();
 
+        return;*/
+
+
+        /*let grand_users = await grandPool.query(`SELECT * FROM MEMBER ORDER BY SEQ ASC`);
+        grand_users = grand_users?.result;
+        console.log('grand_users')
+
+        let users = await pool.query(`SELECT * FROM users WHERE brand_id=5 ORDER BY id ASC`)
+        users = users?.result;
+
+        let user_obj = {}
+
+
+        for (var i = 0; i < grand_users.length; i++) {
+            let user_pw = grand_users[i]?.ACCOUNT;
+            let pw_data = await createHashedPassword(user_pw);
+            user_pw = pw_data.hashedPassword;
+            let user_salt = pw_data.salt;
+            let insert_user = await pool.query(`INSERT INTO users (brand_id, is_delete, user_name, user_pw, user_salt, name, nickname, phone_num, another_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                5,
+                (grand_users[i]?.DELETE_FLAG == 'Y' ? 1 : 0),
+                grand_users[i]?.ACCOUNT,
+                user_pw,
+                user_salt,
+                (grand_users[i]?.NAME ? grand_users[i]?.NAME : grand_users[i].ACCOUNT),
+                (grand_users[i]?.NAME ? grand_users[i]?.NAME : grand_users[i].ACCOUNT),
+                (grand_users[i]?.MOBILE ? grand_users[i].MOBILE : grand_users[i].PHONE),
+                grand_users[i]?.SEQ,
+            ]);
+            let insert_id = insert_user?.result?.insertId;
+            user_obj[grand_users[i]?.SEQ] = insert_id;
+        }*/
+        let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
+        grand_products = grand_products?.result;
+        console.log('grand_products')
+        /*for (var i = 0; i < grand_products.length; i++) {
+            let sql = await pool.query(`UPDATE products SET consignment_none_user_name=?, consignment_none_user_phone_num=?, consignment_user_id=?, point_save=?, point_usable=?, cash_usable=?, pg_usable=? WHERE another_id=${grand_products[i]?.SEQ} AND brand_id=5`,
+            [
+                grand_products[i]?.SELLER_NAME ?? "", 
+                grand_products[i]?.SELLER_MOBILE ?? "", 
+                user_obj[grand_products[i]?.SELLER_MEMBER_SEQ ?? 0] ?? 0,
+                grand_products[i]?.MILEAGE ?? 0,
+                (grand_products[i]?.MILEAGE_PAYMENT_FLAG == 'Y' ? 1 : 0),
+                (grand_products[i]?.CASH_PAYMENT_FLAG == 'Y' ? 1 : 0),
+                (grand_products[i]?.PG_PAYMENT_FLAG == 'Y' ? 1 : 0)
+            ])
+            let result_ = sql?.result
+            console.log(result_)
+        }*/
+
+        /*let products = await pool.query(`SELECT * FROM products WHERE id not IN (SELECT product_id FROM products_and_properties WHERE property_id IN (12, 13, 14, 15, 16, 17, 24)) AND brand_id=5`)
+
+        products = products?.result;
+        console.log('products')
+
+
+        for (const product of products) {
+            for (const grand_product of grand_products) {
+                if (product.another_id == grand_product.SEQ) {
+                    let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
+                        product.id,
+                        (grand_product.PRODUCT_USED_FLAG == 'N' ? 17 : 
+                        grand_product.PRODUCT_USED_FLAG == 'N-S' ? 16 :
+                        grand_product.PRODUCT_USED_FLAG == '특A' ? 15 :
+                        grand_product.PRODUCT_USED_FLAG == 'A+' ? 14 :
+                        grand_product.PRODUCT_USED_FLAG == 'A' ? 13 :
+                        grand_product.PRODUCT_USED_FLAG == 'A-' ? 12 :
+                        grand_product.PRODUCT_USED_FLAG == '특B' ? 24 :
+                        0
+                        ),
+                        4
+                    ])
+                    let result_ = sql?.result
+                    console.log(result_)
+                }
+            }
+        }*/
+
+        let products = await pool.query(`SELECT * FROM products WHERE id not IN (SELECT product_id FROM products_and_properties WHERE property_id IN (18, 19, 20, 21, 22)) AND brand_id=5`)
+
+        products = products?.result;
+        console.log('products')
+
+        for (const product of products) {
+            for (const grand_product of grand_products) {
+                if (product.another_id == grand_product.SEQ) {
+                    if (grand_product.BEST_FLAG == 'Y') {
+                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
+                            product.id,
+                            22,
+                            3
+                        ])
+                        let result_ = sql?.result
+                        console.log(result_)
+                    }
+                    if (grand_product.NEW_ARRIVAL_FLAG == 'Y') {
+                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
+                            product.id,
+                            21,
+                            3
+                        ])
+                        let result_ = sql?.result
+                        console.log(result_)
+                    }
+                    if (grand_product.PRICE_DOWN_FLAG == 'Y') {
+                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
+                            product.id,
+                            20,
+                            3
+                        ])
+                        let result_ = sql?.result
+                        console.log(result_)
+                    }
+                    if (grand_product.CLOTHES_FLAG == 'Y') {
+                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
+                            product.id,
+                            19,
+                            3
+                        ])
+                        let result_ = sql?.result
+                        console.log(result_)
+                    }
+                    if (grand_product.WATCH_JEWELRY_FLAG == 'Y') {
+                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
+                            product.id,
+                            18,
+                            3
+                        ])
+                        let result_ = sql?.result
+                        console.log(result_)
+                    }
+                }
+            }
+        }
+
+        await db.commit()
+        console.log('success')
         return;
+
+
+
         let insert_property_list = [];
         let insert_character_list = [];
 
@@ -472,4 +612,6 @@ export const setGrandParisProducts = async () => {
     }
 
 }
+//setGrandParisProducts();
+
 export default utilCtrl;
