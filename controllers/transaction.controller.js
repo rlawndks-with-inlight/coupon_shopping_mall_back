@@ -61,6 +61,7 @@ const transactionCtrl = {
                 let transaction_orders_column = [
                     `transaction_orders.*`,
                     `products.product_img`,
+                    `products.product_code`,
                     `sellers.user_name AS seller_user_name`,
                 ]
                 let order_sql = `SELECT ${transaction_orders_column.join()} FROM transaction_orders `
@@ -70,6 +71,7 @@ const transactionCtrl = {
                 order_sql += ` ORDER BY transaction_orders.id DESC `
                 let order_data = await pool.query(order_sql);
                 order_data = order_data?.result;
+                console.log(order_data)
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
                     delete order_data[i].order_groups
