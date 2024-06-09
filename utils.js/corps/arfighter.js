@@ -87,7 +87,7 @@ export const getArfighterItems = async () => {
         total_size = first_goods_data?.total;
         max_page = parseInt(total_size / 50) + (total_size % 50 == 0 ? 0 : 1);
 
-        for (var i = max_page; i >= 1; i--) {
+        for (var i = 10; i >= 1; i--) {
             let { data: goods_data } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i}&limit=50`);
             goods_data = goods_data?.data ?? [];
             let {
@@ -142,6 +142,7 @@ const processProduct = async (item, session, category_list = []) => {
             'product_description': item.content,
             'another_id': item.id,
             'price_lang': 'ko',
+            'status': 0,
             'category_id0': _.find(category_list, { another_id: item.category_id }).id,
             'price_lang_obj': JSON.stringify({
                 cn: {
