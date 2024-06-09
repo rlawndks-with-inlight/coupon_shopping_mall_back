@@ -87,7 +87,7 @@ export const getArfighterItems = async () => {
         total_size = first_goods_data?.total;
         max_page = parseInt(total_size / 50) + (total_size % 50 == 0 ? 0 : 1);
 
-        for (var i = 10; i >= 1; i--) {
+        for (var i = max_page; i >= 1; i--) {
             let { data: goods_data } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i}&limit=50`);
             goods_data = goods_data?.data ?? [];
             let {
@@ -151,6 +151,11 @@ const processProduct = async (item, session, category_list = []) => {
                 }
             })
         }
+
+        if (item?.title == '户外用品露营置物架便携式多功能野餐折叠桌椅多层收纳架') {
+            console.log(process_item)
+            console.log(item)
+        }
         let formData = new FormData();
         for (const key in process_item) {
             formData.append(key, process_item[key]);
@@ -163,6 +168,8 @@ const processProduct = async (item, session, category_list = []) => {
             console.log('update')
             console.log(response)
         } else {
+            console.log('#######################################')
+            console.log(process_item)
             const { data: response } = await session.post('products/', formData, {
                 headers: formData.getHeaders()
             });
