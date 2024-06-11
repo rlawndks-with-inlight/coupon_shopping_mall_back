@@ -91,6 +91,7 @@ const transactionCtrl = {
                     }
                 }
                 for (var i = 0; i < data?.content.length; i++) {
+                    console.log(data?.content[i]?.is_cancel == 1 ? data?.content[i]?.transaction_id : data?.content[i]?.id)
                     data.content[i].orders = transactions_order_obj[data?.content[i]?.is_cancel == 1 ? data?.content[i]?.transaction_id : data?.content[i]?.id];
                 }
             }
