@@ -55,7 +55,7 @@ const transactionCtrl = {
             }
             let data = await getSelectQueryList(sql, columns, req.query);
             let trx_ids = data?.content.map(trx => {
-                return trx?.id
+                return trx?.is_cancel == 1 ? trx?.transaction_id : trx?.id
             })
             if (trx_ids?.length > 0) {
                 let transaction_orders_column = [
@@ -87,7 +87,7 @@ const transactionCtrl = {
                     transactions_order_obj[order_data[i]?.trans_id].push(order_data[i]);
                 }
                 for (var i = 0; i < data?.content.length; i++) {
-                    data.content[i].orders = transactions_order_obj[data?.content[i]?.id];
+                    data.content[i].orders = transactions_order_obj[data?.content[i]?.is_cancel == 1 ? data?.content[i]?.transaction_id : data?.content[i]?.id];
                 }
             }
             return response(req, res, 100, "success", data);

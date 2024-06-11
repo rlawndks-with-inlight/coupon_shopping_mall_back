@@ -203,7 +203,6 @@ const payCtrl = {
           cxl_tm: trx_dttm.split(" ")[1],
           is_cancel: 1,
           amount: amount * -1,
-          transaction_id:pay_data?.id,
         };
         delete obj.is_delete;
         delete obj.created_at;
