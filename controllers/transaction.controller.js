@@ -45,7 +45,7 @@ const transactionCtrl = {
                 } else if (cancel_status == 5) {
                     sql += ` AND is_cancel=1 `;
                 } else if (cancel_status == 0) {
-                    sql += ` AND is_cancel=0 `;
+                    sql += ` AND is_cancel=0 AND (select COUNT(*) FROM ${table_name} WHERE transaction_id=${table_name}.id AND is_cancel=1)=0 `;
                 }
             } else {
                 sql += ` AND is_cancel=0 `;
