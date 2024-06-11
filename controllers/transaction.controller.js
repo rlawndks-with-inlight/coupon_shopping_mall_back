@@ -57,6 +57,7 @@ const transactionCtrl = {
             let trx_ids = data?.content.map(trx => {
                 return trx?.is_cancel == 1 ? (trx?.transaction_id ?? 0) : trx?.id
             })
+            console.log(trx_ids)
             if (trx_ids?.length > 0) {
                 let transaction_orders_column = [
                     `transaction_orders.*`,
@@ -70,8 +71,9 @@ const transactionCtrl = {
                 order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.join()}) `
                 order_sql += ` ORDER BY transaction_orders.id DESC `
                 let order_data = await pool.query(order_sql);
+                console.log(order_sql)
                 order_data = order_data?.result;
-                console.log(order_data)
+
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
                     delete order_data[i].order_groups
@@ -92,6 +94,7 @@ const transactionCtrl = {
                     data.content[i].orders = transactions_order_obj[data?.content[i]?.is_cancel == 1 ? data?.content[i]?.transaction_id : data?.content[i]?.id];
                 }
             }
+
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
