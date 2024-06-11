@@ -83,12 +83,13 @@ const transactionCtrl = {
                 for (var i = 0; i < data?.content.length; i++) {
                     transactions_id_obj[data?.content[i]?.id] = i;
                     transactions_order_obj[data?.content[i]?.id] = [];
+                    transactions_order_obj[data?.content[i]?.transaction_id] = [];
                 }
-                if (order_data[i]?.trans_id) {
-                    for (var i = 0; i < order_data.length; i++) {
-                        transactions_order_obj[order_data[i]?.trans_id].push(order_data[i]);
-                    }
+
+                for (var i = 0; i < order_data.length; i++) {
+                    transactions_order_obj[order_data[i]?.trans_id].push(order_data[i]);
                 }
+
                 for (var i = 0; i < data?.content.length; i++) {
                     data.content[i].orders = transactions_order_obj[data?.content[i]?.is_cancel == 1 ? data?.content[i]?.transaction_id : data?.content[i]?.id];
                 }
