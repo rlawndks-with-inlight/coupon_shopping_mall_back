@@ -77,8 +77,8 @@ const transactionCtrl = {
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
                     delete order_data[i].order_groups
-
                 }
+                console.log(order_data)
                 let transactions_order_obj = {};
                 let transactions_id_obj = {};
                 for (var i = 0; i < data?.content.length; i++) {
