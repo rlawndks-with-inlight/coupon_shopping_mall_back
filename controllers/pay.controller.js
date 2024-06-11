@@ -211,9 +211,9 @@ const payCtrl = {
         delete obj.updated_at;
         delete obj.id;
         let result = await insertQuery(`${table_name}`, obj);
-        /*let update_pay_data = updateQuery(table_name, {
-
-        })*/
+        let update_pay_data = updateQuery(table_name, {//이미 결제된건 취소로 판별
+          is_cancel_trans: 1,
+        }, pay_data?.id);
         if (
           amount * -1 * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) <
           0
