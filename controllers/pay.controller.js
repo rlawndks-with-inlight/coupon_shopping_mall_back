@@ -115,6 +115,7 @@ const payCtrl = {
           ),
         ]);
       }
+      console.log(insert_item_data)
       let insert_item_result = await pool.query(
         `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
         [insert_item_data]
