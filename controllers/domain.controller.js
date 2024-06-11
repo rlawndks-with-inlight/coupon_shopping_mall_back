@@ -45,8 +45,7 @@ const domainCtrl = {
       ];
       //console.log(req.query);
       let brand = await pool.query(
-        //`SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
-        `SELECT ${columns.join()} FROM brands WHERE id=5 `
+        `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
       );
       //console.log(brand);
 
