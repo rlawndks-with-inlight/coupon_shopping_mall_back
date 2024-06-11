@@ -45,10 +45,10 @@ const transactionCtrl = {
                 } else if (cancel_status == 5) {
                     sql += ` AND is_cancel=1 `;
                 } else if (cancel_status == 0) {
-                    sql += ` AND is_cancel=0 AND (select COUNT(*) FROM ${table_name} AS trxs WHERE trxs.transaction_id=${table_name}.id AND trxs.is_cancel=1)=0 `;
+                    sql += ` AND is_cancel=0 `;
                 }
             } else {
-                sql += ` AND is_cancel=0 AND (select COUNT(*) FROM ${table_name} AS trxs WHERE trxs.transaction_id=${table_name}.id AND trxs.is_cancel=1)=0 `;
+                sql += ` AND is_cancel=0  `;
             }
             if (cancel_type) {
                 sql += ` AND cancel_type=${cancel_type} `;
