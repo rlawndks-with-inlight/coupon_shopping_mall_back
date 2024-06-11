@@ -55,7 +55,7 @@ const transactionCtrl = {
             }
             let data = await getSelectQueryList(sql, columns, req.query);
             let trx_ids = data?.content.map(trx => {
-                return trx?.is_cancel == 1 ? trx?.transaction_id : trx?.id
+                return trx?.is_cancel == 1 ? (trx?.transaction_id ?? 0) : trx?.id
             })
             if (trx_ids?.length > 0) {
                 let transaction_orders_column = [
