@@ -121,7 +121,7 @@ const productCtrl = {
             /*if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND products.status!=5 `
             }*/
-            let data = await getSelectQueryList(sql, columns, {...req.query, type: type});
+            let data = await getSelectQueryList(sql, columns, { ...req.query, type: type });
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
             /*sql_list = [
@@ -169,7 +169,7 @@ const productCtrl = {
             ]
             let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
             product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
-            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 ${req?.IS_RETURN?`AND ${table_name}.status!=5`:''} AND ${table_name}.brand_id=${brand_id} `;
+            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 ${req?.IS_RETURN ? `AND ${table_name}.status!=5` : ''} AND ${table_name}.brand_id=${brand_id} `;
 
             //console.log(product_sql)
             let data = await pool.query(product_sql);
@@ -438,6 +438,16 @@ const productCtrl = {
                 another_id,
                 price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status,
             };
+            if (brand_id = 5) { //임시
+                let { sort_idx } = req.body;
+                obj = {
+                    product_img,
+                    product_name, product_code, product_comment, product_description, product_price, product_sale_price, delivery_fee, product_type,
+                    consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
+                    another_id,
+                    price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status, sort_idx
+                };
+            }
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
