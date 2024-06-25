@@ -103,6 +103,7 @@ const userCtrl = {
             let {
                 profile_img,
                 brand_id, user_name, user_pw, name, nickname, level = 0, phone_num, note,
+                contract_img, bsin_lic_img, company_name, business_num
             } = req.body;
             let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
             if (is_exist_user?.result.length > 0) {
@@ -117,7 +118,8 @@ const userCtrl = {
             let files = settingFiles(req.files);
             let obj = {
                 profile_img,
-                brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, note
+                brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, note,
+                contract_img, bsin_lic_img, company_name, business_num
             };
             console.log(obj)
             obj = { ...obj, ...files };
@@ -139,7 +141,8 @@ const userCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 profile_img,
-                brand_id, user_name, name, nickname, level, phone_num, note, id
+                brand_id, user_name, name, nickname, level, phone_num, note, id,
+                company_name, business_num, contract_img, bsin_lic_img
             } = req.body;
             let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND id!=?`, [user_name, id]);
             if (is_exist_user?.result.length > 0) {
@@ -148,7 +151,8 @@ const userCtrl = {
             let files = settingFiles(req.files);
             let obj = {
                 profile_img,
-                brand_id, user_name, name, nickname, level, phone_num, note
+                brand_id, user_name, name, nickname, level, phone_num, note,
+                company_name, business_num, contract_img, bsin_lic_img
             };
             obj = { ...obj, ...files };
             let result = await updateQuery(`${table_name}`, obj, id);
