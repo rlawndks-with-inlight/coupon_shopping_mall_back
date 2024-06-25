@@ -54,6 +54,10 @@ const authCtrl = {
                 phone_num: user.phone_num,
                 profile_img: user.profile_img,
                 brand_id: user.brand_id,
+                company_name: user.company_name,
+                business_num: user.business_num,
+                contract_img: user.contract_img,
+                bsin_lic_img: user.bsin_lic_img,
             })
             res.cookie("token", token, {
                 httpOnly: true,
@@ -102,6 +106,10 @@ const authCtrl = {
                 brand_id,
                 acct_num = "", acct_name = "", acct_bank_name = "", acct_bank_code = "",
                 otp_token = "",
+                company_name,
+                business_num,
+                contract_img,
+                bsin_lic_img,
             } = req.body;
             if (!user_pw) {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
@@ -133,6 +141,10 @@ const authCtrl = {
                 acct_num, acct_name, acct_bank_name, acct_bank_code,
                 otp_token,
                 status: decode_dns?.setting_obj?.is_sign_up_status_1 == 1 ? 1 : 0,
+                company_name,
+                business_num,
+                contract_img,
+                bsin_lic_img,
             }
             let result = await insertQuery('users', obj);
             return response(req, res, 100, "success", {})
@@ -183,6 +195,10 @@ const authCtrl = {
                 phone_num,
                 phone_token,
                 profile_img,
+                company_name,
+                business_num,
+                contract_img,
+                bsin_lic_img,
             } = req.body
             let return_moment = returnMoment();
             let send_log = await pool.query(`SELECT * FROM phone_check_tokens WHERE phone_token=? ORDER BY id DESC LIMIT 1`, [
@@ -198,6 +214,10 @@ const authCtrl = {
                 nickname,
                 phone_num,
                 profile_img,
+                company_name,
+                business_num,
+                contract_img,
+                bsin_lic_img,
             }, decode_user?.id);
             await res.clearCookie('token');
             return response(req, res, 100, "success", {})
