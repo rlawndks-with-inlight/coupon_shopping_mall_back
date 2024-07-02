@@ -110,6 +110,8 @@ const authCtrl = {
                 business_num,
                 contract_img,
                 bsin_lic_img,
+                shareholder_list,
+                register_img
             } = req.body;
             if (!user_pw) {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
@@ -145,6 +147,8 @@ const authCtrl = {
                 business_num,
                 contract_img,
                 bsin_lic_img,
+                shareholder_list,
+                register_img
             }
             let result = await insertQuery('users', obj);
             return response(req, res, 100, "success", {})
@@ -202,6 +206,8 @@ const authCtrl = {
                 business_num,
                 contract_img,
                 bsin_lic_img,
+                shareholder_list,
+                register_img
             } = req.body
             let return_moment = returnMoment();
             let send_log = await pool.query(`SELECT * FROM phone_check_tokens WHERE phone_token=? ORDER BY id DESC LIMIT 1`, [
@@ -224,6 +230,8 @@ const authCtrl = {
                 business_num,
                 contract_img,
                 bsin_lic_img,
+                shareholder_list,
+                register_img
             }, decode_user?.id);
             await res.clearCookie('token');
             return response(req, res, 100, "success", {})
