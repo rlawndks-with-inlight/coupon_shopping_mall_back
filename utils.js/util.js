@@ -174,6 +174,8 @@ export const imageFieldList = [
     'contract_file',
     'passbook_file',
     'bsin_lic_file',
+    'shareholder_file',
+    'register_file',
     'id_file',
 
 ].map(field => {
