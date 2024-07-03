@@ -110,7 +110,7 @@ const authCtrl = {
                 business_num,
                 contract_img,
                 bsin_lic_img,
-                shareholder_list,
+                shareholder_img,
                 register_img
             } = req.body;
             if (!user_pw) {
@@ -147,7 +147,7 @@ const authCtrl = {
                 business_num,
                 contract_img,
                 bsin_lic_img,
-                shareholder_list,
+                shareholder_img,
                 register_img
             }
             let result = await insertQuery('users', obj);
@@ -206,7 +206,7 @@ const authCtrl = {
                 business_num,
                 contract_img,
                 bsin_lic_img,
-                shareholder_list,
+                shareholder_img,
                 register_img
             } = req.body
             let return_moment = returnMoment();
@@ -230,7 +230,7 @@ const authCtrl = {
                 business_num,
                 contract_img,
                 bsin_lic_img,
-                shareholder_list,
+                shareholder_img,
                 register_img
             }, decode_user?.id);
             await res.clearCookie('token');
