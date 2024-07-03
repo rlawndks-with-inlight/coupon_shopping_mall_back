@@ -171,10 +171,20 @@ const transactionCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                id
+                id,
+                trx_dt,
+                trx_tm,
+                appr_num,
+                buyer_name,
+                buyer_phone
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
+                trx_dt,
+                trx_tm,
+                appr_num,
+                buyer_name,
+                buyer_phone
             };
             obj = { ...obj, ...files };
 
