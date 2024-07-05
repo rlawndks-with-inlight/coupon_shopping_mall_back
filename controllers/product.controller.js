@@ -456,6 +456,7 @@ const productCtrl = {
                 another_id,
                 price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status,
             };
+            /*
             if (brand_id = 5) { //임시
                 let { sort_idx } = req.body;
                 obj = {
@@ -465,7 +466,8 @@ const productCtrl = {
                     another_id,
                     price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status, sort_idx
                 };
-            }
+            }   
+            */
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];

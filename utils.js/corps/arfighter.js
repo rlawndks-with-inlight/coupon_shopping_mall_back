@@ -168,8 +168,7 @@ const processProduct = async (item, session, category_list = []) => {
                     resultSubImg.push(item?.images[i])
                 }
             }
-            process_item['sub_images'] = resultSubImg;
-            console.log(process_item['sub_images'])
+            process_item['sub_images'] = JSON.stringify(resultSubImg);
             for (const key in process_item) {
                 formData.append(key, process_item[key]);
             }
@@ -180,7 +179,7 @@ const processProduct = async (item, session, category_list = []) => {
             console.log('update')
             console.log(response)
         } else {
-            process_item['sub_images'] = item?.images ?? [];
+            process_item['sub_images'] = JSON.stringify(item?.images ?? []);
             for (const key in process_item) {
                 formData.append(key, process_item[key]);
             }
