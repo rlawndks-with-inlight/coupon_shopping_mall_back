@@ -6,7 +6,7 @@ import { deleteQuery, updateQuery } from '../query-util.js';
 import 'dotenv/config';
 import when from 'when';
 const brand_id = 34;
-
+import { serialize } from 'object-to-formdata';
 export const getArfighterItems = async () => {
     // brand_id 설정
     const category_group_id = 86;
@@ -125,6 +125,8 @@ const processProduct = async (item, session, category_list = []) => {
             brand_id,
         ])
         is_exist_product = is_exist_product?.result[0];
+        let exist_images = await pool.query(`SELECT * FROM product_images WHERE product_id=${is_exist_product?.id}`);
+        exist_images = exist_images?.result;
 
         let exchangeRate = 190.77;
         let product_price = convertCNYtoKRW(item.marketprice, exchangeRate);
@@ -157,10 +159,20 @@ const processProduct = async (item, session, category_list = []) => {
             console.log(item)
         }
         let formData = new FormData();
-        for (const key in process_item) {
-            formData.append(key, process_item[key]);
-        }
+
         if (is_exist_product) {
+            let resultSubImg = exist_images;
+            for (var i = 0; i < (item?.images ?? []).length; i++) {
+                let existImage = _.find(exist_images, { product_sub_img: item?.images[i] });
+                if (!existImage) {
+                    resultSubImg.push(item?.images[i])
+                }
+            }
+            process_item['sub_images'] = resultSubImg;
+            console.log(process_item['sub_images'])
+            for (const key in process_item) {
+                formData.append(key, process_item[key]);
+            }
             formData.append('id', is_exist_product?.id);
             const { data: response } = await session.put(`products/${is_exist_product?.id}`, formData, {
                 headers: formData.getHeaders()
@@ -168,6 +180,10 @@ const processProduct = async (item, session, category_list = []) => {
             console.log('update')
             console.log(response)
         } else {
+            process_item['sub_images'] = item?.images ?? [];
+            for (const key in process_item) {
+                formData.append(key, process_item[key]);
+            }
             console.log('#######################################')
             console.log(process_item)
             const { data: response } = await session.post('products/', formData, {
@@ -181,3 +197,4 @@ const processProduct = async (item, session, category_list = []) => {
         console.log(err)
     }
 }
+//getArfighterItems();
