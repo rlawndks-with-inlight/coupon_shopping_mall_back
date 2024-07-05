@@ -269,6 +269,15 @@ const productCtrl = {
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
                 another_id, price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status
             };
+            if (typeof sub_images == 'string') {
+                sub_images = JSON.parse(sub_images ?? '[]')
+            }
+            if (typeof groups == 'string') {
+                groups = JSON.parse(groups ?? '[]')
+            }
+            if (typeof characters == 'string') {
+                characters = JSON.parse(characters ?? '[]')
+            }
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
@@ -430,6 +439,15 @@ const productCtrl = {
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 another_id = 0, price_lang = 'ko', point_save = 0, point_usable, cash_usable, pg_usable, status = 0, show_status,
             } = req.body;
+            if (typeof sub_images == 'string') {
+                sub_images = JSON.parse(sub_images ?? '[]')
+            }
+            if (typeof groups == 'string') {
+                groups = JSON.parse(groups ?? '[]')
+            }
+            if (typeof characters == 'string') {
+                characters = JSON.parse(characters ?? '[]')
+            }
             let files = settingFiles(req.files);
             let obj = {
                 product_img,
