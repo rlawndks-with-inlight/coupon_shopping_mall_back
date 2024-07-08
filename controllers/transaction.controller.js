@@ -26,6 +26,7 @@ const transactionCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id`
+
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             if (decode_user?.level == 10) {
                 sql += ` AND seller_id=${decode_user?.id} `;
@@ -63,6 +64,8 @@ const transactionCtrl = {
                     `transaction_orders.*`,
                     `products.product_img`,
                     `products.product_code`,
+                    `products.product_name`,
+                    `products.lang_obj`,
                     `sellers.user_name AS seller_user_name`,
                 ]
                 let order_sql = `SELECT ${transaction_orders_column.join()} FROM transaction_orders `
@@ -76,6 +79,7 @@ const transactionCtrl = {
 
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
+                    order_data[i].lang_obj = JSON.parse(order_data[i]?.lang_obj ?? "{}");
                     delete order_data[i].order_groups
                 }
                 let transactions_order_obj = {};
