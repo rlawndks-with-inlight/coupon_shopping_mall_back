@@ -34,6 +34,9 @@ const userWishCtrl = {
             }
 
             let data = await getSelectQueryList(sql, columns, req.query);
+            for (var i = 0; i < data?.content.length; i++) {
+                data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
+            }
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -56,12 +59,16 @@ const userWishCtrl = {
 
             let data = await pool.query(sql);
             data = data?.result;
+            console.log(data)
             data = data.map(item => {
                 return item?.product_id
             })
             data.unshift(0);
             let items = await pool.query(`SELECT * FROM products WHERE id IN (${data.join()}) `);
             items = items?.result;
+            for (var i = 0; i < items?.length; i++) {
+                items[i].lang_obj = JSON.parse(items[i].lang_obj ?? '{}')
+            }
 
             return response(req, res, 100, "success", items);
         } catch (err) {
@@ -79,6 +86,7 @@ const userWishCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
             data = data?.result[0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
