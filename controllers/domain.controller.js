@@ -38,6 +38,7 @@ const domainCtrl = {
         "addr",
         "phone_num",
         "fax_num",
+        "establish_date",
         "mail_order_num",
         "show_basic_info",
         "is_use_otp",
