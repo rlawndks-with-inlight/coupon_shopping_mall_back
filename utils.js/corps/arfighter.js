@@ -125,8 +125,6 @@ const processProduct = async (item, session, category_list = []) => {
             brand_id,
         ])
         is_exist_product = is_exist_product?.result[0];
-        let exist_images = await pool.query(`SELECT * FROM product_images WHERE product_id=${is_exist_product?.id}`);
-        exist_images = exist_images?.result;
 
         let exchangeRate = 190.77;
         let product_price = convertCNYtoKRW(item.marketprice, exchangeRate);
@@ -161,6 +159,8 @@ const processProduct = async (item, session, category_list = []) => {
         let formData = new FormData();
 
         if (is_exist_product) {
+            let exist_images = await pool.query(`SELECT * FROM product_images WHERE product_id=${is_exist_product?.id}`);
+            exist_images = exist_images?.result;
             let resultSubImg = exist_images;
             for (var i = 0; i < (item?.images ?? []).length; i++) {
                 let existImage = _.find(exist_images, { product_sub_img: item?.images[i] });
@@ -196,4 +196,4 @@ const processProduct = async (item, session, category_list = []) => {
         console.log(err)
     }
 }
-//getArfighterItems();
+getArfighterItems();
