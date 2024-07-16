@@ -60,7 +60,7 @@ const shopCtrl = {
             for (var i = 0; i < categoryDepth; i++) {
                 product_category_left_join_sql += ` LEFT JOIN product_categories AS product_categories${i} ON products.category_id${i}=product_categories${i}.id `;
                 product_columns.push(`product_categories${i}.category_en_name AS category_en_name${i}`);
-                
+
             }
             product_sql += product_category_left_join_sql;
             product_sql += ` WHERE products.id IN(${product_ids.join()}) `;
