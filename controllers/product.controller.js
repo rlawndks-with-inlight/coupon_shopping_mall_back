@@ -260,7 +260,7 @@ const productCtrl = {
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 another_id = 0,
-                price_lang = 'ko', point_save = 0, point_usable, cash_usable, pg_usable, status, show_status
+                price_lang = 'ko', point_save = 0, point_usable = 1, cash_usable = 1, pg_usable = 1, status, show_status
             } = req.body;
 
             let obj = {
@@ -437,7 +437,7 @@ const productCtrl = {
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
-                another_id = 0, price_lang = 'ko', point_save = 0, point_usable, cash_usable, pg_usable, status = 0, show_status,
+                another_id = 0, price_lang = 'ko', point_save = 0, point_usable = 1, cash_usable = 1, pg_usable = 1, status = 0, show_status,
             } = req.body;
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
