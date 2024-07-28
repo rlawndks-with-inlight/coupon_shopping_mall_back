@@ -87,7 +87,7 @@ export const getArfighterItems = async () => {
         total_size = first_goods_data?.total;
         max_page = parseInt(total_size / 50) + (total_size % 50 == 0 ? 0 : 1);
 
-        for (var i = max_page; i >= 1; i--) {
+        for (var i = 1; i <= max_page; i++) {
             let { data: goods_data } = await axios.get(`${Z_API_URL}/api/shop.goods/index?page=${i}&limit=50`);
             goods_data = goods_data?.data ?? [];
             let {
@@ -157,6 +157,62 @@ const processProduct = async (item, session, category_list = []) => {
             console.log(item)
         }
         let formData = new FormData();
+
+        const Z_API_URL = 'http://www.tao-hai.com';
+        let { data: option_data } = await axios.get(`${Z_API_URL}/api/shop.goods/goods_sku?id=${item.id}`);
+        option_data = option_data?.data ?? [];
+
+        let option_group = option_data.map(item => item.sku_attr)
+
+        const structuredSkuAttrs = option_group.map(item => {
+            const attributes = item.split(',');
+            const result = {};
+
+            function translateKeyToEnglish(key) {
+                const translations = {
+                    //'颜色': 'color',
+                    //'规格': 'size',
+                    // 필요한 다른 번역들을 여기에 추가
+                };
+                return translations[key] || key; // 번역이 없으면 원래 키를 사용
+            }
+
+            attributes.forEach(attr => {
+                const [key, value] = attr.split(':');
+                // 키 이름을 영어로 변환 (선택적)
+                const englishKey = translateKeyToEnglish(key.trim());
+                result[englishKey] = value.trim();
+            });
+
+            return result;
+        });
+
+        function extractOptionsAndGroups(data) {
+            const groups = [];
+            const options = {};
+
+            data.forEach(item => {
+                Object.keys(item).forEach(key => {
+                    if (!options[key]) {
+                        options[key] = new Set();
+                    }
+                    options[key].add(item[key]);
+                });
+            });
+
+            Object.keys(options).forEach(groupName => {
+                groups.push({
+                    group_name: groupName,
+                    options: Array.from(options[groupName]).map(option => ({ option_name: option }))
+                });
+            });
+
+            return { groups };
+        }
+
+        const { groups } = extractOptionsAndGroups(structuredSkuAttrs);
+
+        process_item['groups'] = JSON.stringify(groups);
 
         if (is_exist_product) {
             let exist_images = await pool.query(`SELECT * FROM product_images WHERE product_id=${is_exist_product?.id}`);
