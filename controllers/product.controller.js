@@ -219,7 +219,7 @@ const productCtrl = {
             if (option_group_ids.length > 0) {
                 sql_list2.push({
                     table: 'options',
-                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 AND status!=5 ORDER BY id ASC`
+                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 ORDER BY id ASC`
                 })
             }
             let when_data2 = await getMultipleQueryByWhen(sql_list2);
@@ -260,7 +260,7 @@ const productCtrl = {
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 another_id = 0,
-                price_lang = 'ko', point_save = 0, point_usable = 1, cash_usable = 1, pg_usable = 1, status, show_status
+                price_lang = 'ko', point_save = 0, point_usable = 1, cash_usable = 1, pg_usable = 1, status, show_status = 0
             } = req.body;
 
             let obj = {
@@ -437,7 +437,7 @@ const productCtrl = {
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
-                another_id = 0, price_lang = 'ko', point_save = 0, point_usable = 1, cash_usable = 1, pg_usable = 1, status = 0, show_status,
+                another_id = 0, price_lang = 'ko', point_save = 0, /*point_usable = 1, cash_usable = 1, pg_usable = 1, status = 0, show_status*/
             } = req.body;
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
@@ -454,7 +454,7 @@ const productCtrl = {
                 product_name, product_code, product_comment, product_description, product_price, product_sale_price, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
                 another_id,
-                price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status,
+                price_lang, point_save, /*point_usable, cash_usable, pg_usable, status, show_status*/
             };
             /*
             if (brand_id = 5) { //임시
