@@ -5,8 +5,99 @@ import _ from 'lodash';
 import { deleteQuery, updateQuery } from '../query-util.js';
 import 'dotenv/config';
 import when from 'when';
+
 const brand_id = 34;
-import { serialize } from 'object-to-formdata';
+const Z_API_URL = 'http://www.tao-hai.com';
+
+const structuredSkuAttrs = (option_group) => {
+    let result_option_group = option_group.map(item => {
+        const attributes = item.split(',');
+        const result = {};
+        function translateKeyToEnglish(key) {
+            const translations = {
+                //'颜色': 'color',
+                //'规格': 'size',
+                // 필요한 다른 번역들을 여기에 추가
+            };
+            return translations[key] || key; // 번역이 없으면 원래 키를 사용
+        }
+
+        attributes.forEach(attr => {
+            const [key, value] = attr.split(':');
+            // 키 이름을 영어로 변환 (선택적)
+            const englishKey = translateKeyToEnglish(key.trim());
+            result[englishKey] = value.trim();
+        });
+
+        return result;
+    });
+    return result_option_group;
+}
+
+function extractOptionsAndGroups(data) {
+    const groups = [];
+    const options = {};
+
+    data.forEach(item => {
+        Object.keys(item).forEach(key => {
+            if (!options[key]) {
+                options[key] = new Set();
+            }
+            options[key].add(item[key]);
+        });
+    });
+
+    Object.keys(options).forEach(groupName => {
+        groups.push({
+            group_name: groupName,
+            options: Array.from(options[groupName]).map(option => ({ option_name: option }))
+        });
+    });
+
+    return { groups };
+}
+const groupFilter = (product_groups_ = [], groups = []) => {
+    let product_groups = product_groups_;
+    let delete_groups = [];
+    for (var i = 0; i < groups.length; i++) {
+        let group = groups[i];
+        let is_exist_group = _.find(product_groups, { group_name: group?.group_name });
+        let group_idx = _.findIndex(product_groups, { group_name: group?.group_name });
+        if (is_exist_group) {
+            let options = group?.options ?? [];
+            for (var j = 0; j < options.length; j++) {
+                let is_exist_option = _.find(is_exist_group?.options, { option_name: options[i]?.option_name });
+                if (is_exist_option) {
+
+                } else {
+                    product_groups[group_idx].options.push(options[i]);
+                }
+            }
+        } else {
+            product_groups.push(group);
+        }
+    }
+    for (var i = 0; i < product_groups.length; i++) {
+        let is_exist_group = _.find(groups, { group_name: product_groups[i]?.group_name });
+        if (!is_exist_group) {
+            product_groups[i].is_delete = 1;
+        } else {
+            product_groups[i].options = (product_groups[i]?.options ?? []).map(option => {
+                let is_exist_option = _.find((is_exist_group?.options ?? []), { option_name: option?.option_name });
+                if (!is_exist_option) {
+                    return {
+                        ...option,
+                        is_delete: 1,
+                    }
+                } else {
+                    return option;
+                }
+
+            })
+        }
+    }
+    return product_groups;
+}
 export const getArfighterItems = async () => {
     // brand_id 설정
     const category_group_id = 86;
@@ -14,7 +105,6 @@ export const getArfighterItems = async () => {
         let dns_data = await pool.query(`SELECT * FROM brands WHERE id=${brand_id}`);
         dns_data = dns_data?.result[0];
 
-        const Z_API_URL = 'http://www.tao-hai.com';
         const API_URL = process.env.BACK_URL;
         const account = {
             user_name: 'masterpurple',
@@ -118,13 +208,38 @@ function convertCNYtoKRW(amountInCNY, exchangeRate) {
     // 중국 위안을 한국 원으로 변환
     return amountInCNY * exchangeRate;
 }
-const processProduct = async (item, session, category_list = []) => {
+const processProduct = async (item_, session, category_list = []) => {
     try {
+        let item = item_;
         let is_exist_product = await pool.query(`SELECT id FROM products WHERE another_id=? AND brand_id=?`, [
             item.id,
             brand_id,
         ])
         is_exist_product = is_exist_product?.result[0];
+
+        let { data: option_data } = await axios.get(`${Z_API_URL}/api/shop.goods/goods_sku?id=${item.id}`);
+        option_data = option_data?.data ?? [];
+        option_data = option_data.map(item => item.sku_attr);
+        const { groups } = extractOptionsAndGroups(structuredSkuAttrs(option_data));
+
+        let product_groups = [];
+        if (is_exist_product) {
+            product_groups = await pool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
+            product_groups = product_groups?.result ?? [];
+            for (var i = 0; i < product_groups.length; i++) {
+                let product_group = product_groups[i];
+                let options = await pool.query(`SELECT * FROM product_options WHERE group_id=${product_group?.id}`);
+                options = options?.result;
+                product_groups[i].options = options;
+            }
+            product_groups = groupFilter(product_groups ?? [], groups);
+
+        } else {
+            product_groups = groups;
+        }
+
+
+
 
         let exchangeRate = 190.77;
         let product_price = convertCNYtoKRW(item.marketprice, exchangeRate);
@@ -158,73 +273,29 @@ const processProduct = async (item, session, category_list = []) => {
         }
         let formData = new FormData();
 
-        const Z_API_URL = 'http://www.tao-hai.com';
-        let { data: option_data } = await axios.get(`${Z_API_URL}/api/shop.goods/goods_sku?id=${item.id}`);
-        option_data = option_data?.data ?? [];
 
-        let option_group = option_data.map(item => item.sku_attr)
 
-        const structuredSkuAttrs = option_group.map(item => {
-            const attributes = item.split(',');
-            const result = {};
 
-            function translateKeyToEnglish(key) {
-                const translations = {
-                    //'颜色': 'color',
-                    //'规格': 'size',
-                    // 필요한 다른 번역들을 여기에 추가
-                };
-                return translations[key] || key; // 번역이 없으면 원래 키를 사용
-            }
-
-            attributes.forEach(attr => {
-                const [key, value] = attr.split(':');
-                // 키 이름을 영어로 변환 (선택적)
-                const englishKey = translateKeyToEnglish(key.trim());
-                result[englishKey] = value.trim();
-            });
-
-            return result;
-        });
-
-        function extractOptionsAndGroups(data) {
-            const groups = [];
-            const options = {};
-
-            data.forEach(item => {
-                Object.keys(item).forEach(key => {
-                    if (!options[key]) {
-                        options[key] = new Set();
-                    }
-                    options[key].add(item[key]);
-                });
-            });
-
-            Object.keys(options).forEach(groupName => {
-                groups.push({
-                    group_name: groupName,
-                    options: Array.from(options[groupName]).map(option => ({ option_name: option }))
-                });
-            });
-
-            return { groups };
-        }
-
-        const { groups } = extractOptionsAndGroups(structuredSkuAttrs);
-
-        process_item['groups'] = JSON.stringify(groups);
+        process_item['groups'] = JSON.stringify(product_groups);
 
         if (is_exist_product) {
             let exist_images = await pool.query(`SELECT * FROM product_images WHERE product_id=${is_exist_product?.id}`);
             exist_images = exist_images?.result;
             let resultSubImg = exist_images;
+
+            let exist_options = await pool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
+            exist_options = exist_options?.result;
+
+            //console.log(exist_options)
+
             for (var i = 0; i < (item?.images ?? []).length; i++) {
                 let existImage = _.find(exist_images, { product_sub_img: item?.images[i] });
                 if (!existImage) {
-                    resultSubImg.push(item?.images[i])
+                    resultSubImg.push({ product_sub_img: item?.images[i] })
                 }
             }
             process_item['sub_images'] = JSON.stringify(resultSubImg);
+            //console.log(process_item)
             for (const key in process_item) {
                 formData.append(key, process_item[key]);
             }
@@ -235,6 +306,11 @@ const processProduct = async (item, session, category_list = []) => {
             console.log('update')
             console.log(response)
         } else {
+            item.images = (item?.images ?? []).map(url => {
+                return {
+                    product_sub_img: url
+                }
+            })
             process_item['sub_images'] = JSON.stringify(item?.images ?? []);
             for (const key in process_item) {
                 formData.append(key, process_item[key]);
@@ -252,4 +328,4 @@ const processProduct = async (item, session, category_list = []) => {
         console.log(err)
     }
 }
-//getArfighterItems();
+getArfighterItems();
