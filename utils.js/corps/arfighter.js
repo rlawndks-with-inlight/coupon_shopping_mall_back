@@ -328,4 +328,4 @@ const processProduct = async (item_, session, category_list = []) => {
         console.log(err)
     }
 }
-getArfighterItems();
+//getArfighterItems();
