@@ -336,6 +336,12 @@ export const getPayType = (num) => {
             description: '무통장입금 이외의 결제 수단으로 결제하시는 경우 포인트를 적립해드리지 않습니다.',
             type: 'virtual_account',
         }
+    } else if (num == 11) {
+        return {
+            title: '상품권결제',
+            description: '실물상품권, 모바일상품권 등을 지원합니다.',
+            type: 'gift_certificate',
+        }
     }
     return {
         title: '',

@@ -57,6 +57,8 @@ const payCtrl = {
         trx_method = 1;
       } else if (trx_type == 'virtual') {
         trx_method = 10;
+      } else if (trx_type == 'gift_certificate') {
+        trx_method = 11;
       } else {
         return response(req, res, -100, "잘못된 결제타입 입니다.", false)
       }
