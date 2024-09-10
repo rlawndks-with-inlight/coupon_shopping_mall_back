@@ -6,21 +6,6 @@
     "auditLog": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\.fb137acfdda830242831464deb523f1c34010447-audit.json",
     "files": [
         {
-            "date": 1703052053802,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-12-20.log",
-            "hash": "4c73390c43592e7a121c81db5112ef31bcf623e58122433bc00afebf3980663e"
-        },
-        {
-            "date": 1703130903707,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-12-21.log",
-            "hash": "fc12ac006f973249cc5630732498fdb7bea908641a1c4d60d4566ccc0aa7c526"
-        },
-        {
-            "date": 1703228151272,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-12-22.log",
-            "hash": "c84535f3798fc63da271ae35f35177b0a6be706c416dd20c1a22301ae3b8e4f4"
-        },
-        {
             "date": 1704456444341,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-01-05.log",
             "hash": "f51a27b6c040be7808acae92bf69375653d73ae9b24e97f4614bdd65070e1f26"
@@ -154,6 +139,21 @@
             "date": 1717940816934,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-06-09.log",
             "hash": "300a42856edeb3404596148547f024ea3a5e5de815488e241cf1612c0c621dda"
+        },
+        {
+            "date": 1723285091264,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-08-10.log",
+            "hash": "de406c32b97ea3d38f654935e3717af8cfe5b9624f33d317b069c17fe63e6c13"
+        },
+        {
+            "date": 1723313479925,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-08-11.log",
+            "hash": "b9bfa4294ebe5ccbb7a02fdbf81a406845b545e2509e43dac0352a5d3d0ce880"
+        },
+        {
+            "date": 1725966698512,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-09-10.log",
+            "hash": "ab2fe1a0b7af6b0748f2940d1bc4c4a5c4f751238f58f70ff840f7410f2b8017"
         }
     ],
     "hashType": "sha256"

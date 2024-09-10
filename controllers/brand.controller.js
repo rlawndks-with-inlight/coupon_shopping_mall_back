@@ -35,8 +35,10 @@ const brandCtrl = {
         sql += `WHERE id=${decode_dns?.id ?? 0}`;
       }
       let data = await getSelectQueryList(sql, columns, req.query);
+      console.log(data)
       let setting_list = await axios.get(`${process.env.SETTING_SITEMAP_URL}/api/setting-check-list`);
       setting_list = setting_list?.data?.data
+      console.log(setting_list)
       for (var i = 0; i < data.content.length; i++) {
         let brand = data.content[i]
         if (setting_list['letsencrypt_files'].includes(brand?.dns) && setting_list['letsencrypt_files'].includes(brand?.dns)) {

@@ -6,21 +6,6 @@
     "auditLog": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\.879916fd01e4458ca41f14f24ad44cd7265d48ed-audit.json",
     "files": [
         {
-            "date": 1703052053813,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-12-20.exception.log",
-            "hash": "ed430a09b520535a8d20bf715cf334773c86a4f8a36c95586fbb6971d834b48c"
-        },
-        {
-            "date": 1703130903716,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-12-21.exception.log",
-            "hash": "b0a716fde81fed05c3b187646dbc99dde92b8fa5b993587e9f0aacd3befb882d"
-        },
-        {
-            "date": 1703228151283,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2023-12-22.exception.log",
-            "hash": "9610b4699a6bacab9b2d71ccf9885a6c936759dea61f0cb677a029a521afdd8b"
-        },
-        {
             "date": 1704456444368,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-01-05.exception.log",
             "hash": "6d7a4989ae8460b3d445f1082b7e408dec517ddc71564e682bf18544b7107e45"
@@ -154,6 +139,21 @@
             "date": 1717940816943,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-06-09.exception.log",
             "hash": "f8b3dbb1f4c708af5f2b1af118bf083c499143882c0e6f7e4c0bd7f3e0d01f0f"
+        },
+        {
+            "date": 1723285091275,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-08-10.exception.log",
+            "hash": "96058c62c6c569c48194b82cd7cd76e9989215cb8944fe6d0d6dd1714abb3f62"
+        },
+        {
+            "date": 1723313479934,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-08-11.exception.log",
+            "hash": "717d30f6b3513d0f5218532164e3a19042a92beeea217f47e13b6ddc80681690"
+        },
+        {
+            "date": 1725966698518,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-09-10.exception.log",
+            "hash": "3addfbaf7dcdb3f07f7d904088727e1e31bc4f11a329921509abe820934479fa"
         }
     ],
     "hashType": "sha256"

@@ -6,21 +6,6 @@
     "auditLog": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\.3e22b66bf46b373cc6ddddf89053bddd8d0e924a-audit.json",
     "files": [
         {
-            "date": 1703052053808,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2023-12-20.error.log",
-            "hash": "9a384a9f66a940ffa06091b6cc96fbde48f4805a70064c1d4cc9281980bffa90"
-        },
-        {
-            "date": 1703130903713,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2023-12-21.error.log",
-            "hash": "221fb4229434136c6eb4b64992ce12813b419f38551a857c252cdd16c16fa44a"
-        },
-        {
-            "date": 1703228151277,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2023-12-22.error.log",
-            "hash": "4429067a5164f9c615989818c5b28f7885aaf40d9b2e4314c7c51bce66ccbb86"
-        },
-        {
             "date": 1704456444358,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2024-01-05.error.log",
             "hash": "9115441ab62145e1f50052e195763f613761cab11d484a33f07d6e42bcc7cf7f"
@@ -154,6 +139,21 @@
             "date": 1717940816938,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2024-06-09.error.log",
             "hash": "47c465f43a6da1ff0cfc0f6303033c25baa11d4782e76f91c90e7ec36d1b5fa6"
+        },
+        {
+            "date": 1723285091270,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2024-08-10.error.log",
+            "hash": "29ae06c5748657eb67e41fc8daf3ba2818cacff22dae98e502fe9d201d1c0ee9"
+        },
+        {
+            "date": 1723313479930,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2024-08-11.error.log",
+            "hash": "d024f51573316b42d576bba7c50dc8fcd07d676d247e39dbba36b7e4e84e6e88"
+        },
+        {
+            "date": 1725966698516,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\error\\2024-09-10.error.log",
+            "hash": "24861a66a9b9066904f6fbd70f18a20712381390898e772de26799297d2252a8"
         }
     ],
     "hashType": "sha256"
