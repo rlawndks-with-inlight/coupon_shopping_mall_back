@@ -23,6 +23,12 @@ export const lang_obj_columns = {
         'product_name',
         'product_comment',
     ],
+    product_options: [
+        'option_name',
+    ],
+    product_option_groups: [
+        'group_name'
+    ]
 }
 
 export const langProcess = async () => {

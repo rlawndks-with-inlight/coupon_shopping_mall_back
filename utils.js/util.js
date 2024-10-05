@@ -332,7 +332,7 @@ export const getPayType = (num) => {
         }
     } else if (num == 10) {
         return {
-            title: '가상계좌',
+            title: '무통장입금',
             description: '무통장입금 이외의 결제 수단으로 결제하시는 경우 포인트를 적립해드리지 않습니다.',
             type: 'virtual_account',
         }
