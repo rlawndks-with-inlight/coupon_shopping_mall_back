@@ -288,7 +288,7 @@ const asdsadsad = async () => {
                 }).join(' / '),
                 `${order_item?.trx_dt} ${order_item?.trx_tm}`,
                 `${order_item?.addr} ${order_item?.detail_addr}`,
-                `가상계좌`
+                `무통장입금`
             ])
         }
 

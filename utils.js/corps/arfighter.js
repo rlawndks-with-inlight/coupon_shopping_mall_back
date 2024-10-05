@@ -6,7 +6,7 @@ import { deleteQuery, updateQuery } from '../query-util.js';
 import 'dotenv/config';
 import when from 'when';
 
-const brand_id = 34;
+const brand_id = 64;
 const Z_API_URL = 'http://www.tao-hai.com';
 
 const structuredSkuAttrs = (option_group) => {
@@ -100,7 +100,7 @@ const groupFilter = (product_groups_ = [], groups = []) => {
 }
 export const getArfighterItems = async () => {
     // brand_id 설정
-    const category_group_id = 86;
+    const category_group_id = 147;
     try {
         let dns_data = await pool.query(`SELECT * FROM brands WHERE id=${brand_id}`);
         dns_data = dns_data?.result[0];
@@ -114,11 +114,11 @@ export const getArfighterItems = async () => {
 
         // Session
         const session = axios.create({
-            baseURL: 'http://the-plusmall.co.kr/api/',
+            baseURL: 'http://the-plusmall.com/api/',
             withCredentials: true
         });
         // Sign in
-        let domain_settting = await session.get('domain?dns=the-plusmall.co.kr');
+        let domain_settting = await session.get('domain?dns=the-plusmall.com');
         let sign_in_result = await session.post('auth/sign-in/', account);
         let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
         category_list = category_list?.result;
@@ -223,7 +223,8 @@ const processProduct = async (item_, session, category_list = []) => {
         const { groups } = extractOptionsAndGroups(structuredSkuAttrs(option_data));
 
         let product_groups = [];
-        if (is_exist_product) {
+        /*
+                if (is_exist_product) {
             product_groups = await pool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
             product_groups = product_groups?.result ?? [];
             for (var i = 0; i < product_groups.length; i++) {
@@ -237,7 +238,7 @@ const processProduct = async (item_, session, category_list = []) => {
         } else {
             product_groups = groups;
         }
-
+*/
 
 
 
@@ -283,8 +284,8 @@ const processProduct = async (item_, session, category_list = []) => {
             exist_images = exist_images?.result;
             let resultSubImg = exist_images;
 
-            let exist_options = await pool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
-            exist_options = exist_options?.result;
+            /*let exist_options = await pool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
+            exist_options = exist_options?.result;*/
 
             //console.log(exist_options)
 
