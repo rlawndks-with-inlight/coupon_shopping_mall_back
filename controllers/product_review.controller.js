@@ -61,11 +61,11 @@ const productReviewCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                brand_id, title, scope, content, profile_img, product_id, user_id
+                brand_id, title, scope, content, profile_img, content_img, product_id, user_id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, title, scope, content, profile_img, product_id, user_id
+                brand_id, title, scope, content, profile_img, content_img, product_id, user_id
             };
 
             obj = { ...obj, ...files };
@@ -88,11 +88,11 @@ const productReviewCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const {
                 id,
-                title, scope, content, profile_img, user_id
+                title, scope, content, profile_img, content_img, user_id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                title, scope, content, profile_img
+                title, scope, content, profile_img, content_img
             };
             obj = { ...obj, ...files };
             if (!(decode_user?.level >= 10 || user_id == decode_user?.id)) {
