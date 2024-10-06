@@ -54,6 +54,7 @@ const shopCtrl = {
                 `products.price_lang`,
                 `products.show_status`,
                 `products.price_lang_obj`,
+                `products.buying_count`
             ]
             let product_sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM products `;
             let product_category_left_join_sql = '';
