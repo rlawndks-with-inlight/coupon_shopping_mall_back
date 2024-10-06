@@ -33,6 +33,13 @@ export const insertQuery = async (table, obj) => {
         return false;
     }
 }
+export const insertMultyQuery = async (table, keys, list = []) => {
+    if (keys.length == 0) {
+        return false;
+    }
+    let result = await pool.query(`INSERT INTO ${table} (${keys.join()}) VALUES ?`, [list]);
+    return result?.result;
+}
 export const insertQueryMultiRow = async (table, list) => {// 개발예정
     let keys = Object.keys(obj);
     if (keys.length == 0) {

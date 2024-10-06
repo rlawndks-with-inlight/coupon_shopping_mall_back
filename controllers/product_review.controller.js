@@ -1,10 +1,12 @@
 'use strict';
 import { pool } from "../config/db.js";
-import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkIsManagerUrl, generateRandomCode } from "../utils.js/function.js";
+import { deleteQuery, getSelectQueryList, insertMultyQuery, insertQuery, insertQueryMultiRow, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
+import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import axios from "axios";
+import _ from "lodash";
 const table_name = 'product_reviews';
 
 const productReviewCtrl = {
@@ -129,4 +131,61 @@ const productReviewCtrl = {
     },
 };
 
+const sadsadasdasd = async () => {
+    try {
+        const brand_id = 66;
+        let { data: categories } = await axios.get(`https://www.cumamarket.co.kr/_next/data/eb38b54477fe79382b5b37cb4cb5706e84e3f0ad/category-list.json`);
+        categories = categories?.pageProps?.ssrCategoryList ?? [];
+        let db_products = await pool.query(`SELECT * FROM products WHERE brand_id=${brand_id}`);
+        db_products = db_products?.result;
+        let db_users = await pool.query(`SELECT * FROM users WHERE brand_id=${brand_id}`);
+        db_users = db_users?.result;
+        let review_list = [];
+        let products = [];
+        for (var i = 0; i < categories.length; i++) {
+            let { data: res_products } = await axios.get(`https://service.cumamarket.co.kr/v1/products/category/${categories[i]?.id}?orderby=latest&take=500&productStatus=stock_in`);
+            products = [...products, ...res_products?.list];
+        }
+        let reviews = [];
+        for (var i = 0; i < products.length; i++) {
+            let { data: res_reviews } = await axios.get(`https://service.cumamarket.co.kr/v1/products/${products[i]?.id}/reviews?page=0&take=500&orderBy=score`);
+            if (res_reviews?.page?.count > 0) {
+                reviews = [...reviews, ...res_reviews?.reviews];
+            }
+        }
+        for (var i = 0; i < reviews.length; i++) {
+            let user_name = reviews[i]?.appUser?.nickname;
+            let user = _.find(db_users, { user_name: user_name });
+            let product = _.find(db_products, { another_id: reviews[i]?.product?.id })
+            if (product) {
+                review_list.push([
+                    product?.id,
+                    brand_id,
+                    reviews[i]?.score * 2,
+                    user?.id,
+                    reviews[i]?.contents,
+                    reviews[i]?.reviewType == 'photoReview' ? reviews[i]?.reviewImages[0] : '',
+                    reviews[i]?.createDate.replaceAll('T', ' ').substring(0, 19)
+                ])
+                if (i % 50 == 0) {
+                    console.log(i);
+                }
+            } else {
+                console.log(reviews[i])
+            }
+        }
+
+        let result = await insertMultyQuery('product_reviews', [
+            'product_id',
+            'brand_id',
+            'scope',
+            'user_id',
+            'content',
+            'content_img',
+            'created_at',
+        ], review_list)
+    } catch (err) {
+        console.log(err);
+    }
+}
 export default productReviewCtrl;
