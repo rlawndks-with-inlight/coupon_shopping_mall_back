@@ -47,7 +47,7 @@ export function generateRandomCode(n) {
     }
     return str
 }
-console.log(generateRandomCode(8))
+//console.log(generateRandomCode(8))
 export const getMainObjType = (type_ = "") => {
     let type = type_;
     let type_split_list = type.split('-');
