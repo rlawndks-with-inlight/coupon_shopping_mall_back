@@ -220,8 +220,8 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
                 },
             ]
             let headers = {
-                'X-NCP-APIGW-API-KEY-ID': 'e31z28ppb6',
-                'X-NCP-APIGW-API-KEY': 'uHJvYtVFJIB3vmbQ76P8gWSJomTCZk6SQ37sg8Dh',
+                'X-NCP-APIGW-API-KEY-ID': 'wtk7tnzpdm',
+                'X-NCP-APIGW-API-KEY': 'JI7mhSqYBpMWdwHp4h5jPvCQ05zZMH5FKJopvTBo',
                 'Content-Type': 'application/json; charset=UTF-8',
             }
             let lang_when_list = [];
