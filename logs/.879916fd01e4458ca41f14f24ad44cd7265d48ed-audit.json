@@ -6,16 +6,6 @@
     "auditLog": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\.879916fd01e4458ca41f14f24ad44cd7265d48ed-audit.json",
     "files": [
         {
-            "date": 1706971541046,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-02-03.exception.log",
-            "hash": "ea752babf6b0319c1054f023a6dc65304cfb2781ce40feb504f25b49903ee502"
-        },
-        {
-            "date": 1706972652095,
-            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-02-04.exception.log",
-            "hash": "b5a2406d15087800a6ad8b01a1914bcfc5afe6a7ea885afb31358db439fe1efe"
-        },
-        {
             "date": 1707060876811,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-02-05.exception.log",
             "hash": "3d999c15460c9341784df24a37b40cca7486187fb010222b39167dd6c232ed32"
@@ -154,6 +144,16 @@
             "date": 1728210946056,
             "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-10-06.exception.log",
             "hash": "536c39393b0132f1c11edb09aef5f3b381ab8f83ab07a2729df8b08b0232d510"
+        },
+        {
+            "date": 1728251507238,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-10-07.exception.log",
+            "hash": "fdfd8e4f52d06f4ed16e12ea06a1e6a733235faf97ec43c845e5b3441711ded5"
+        },
+        {
+            "date": 1728988706703,
+            "name": "C:\\Users\\pc\\Desktop\\project\\asapmall\\back\\logs\\2024-10-15.exception.log",
+            "hash": "3cfa3f0cba81e63107d16148d60fa516f0c09fb7727e3efce13878af39e287f2"
         }
     ],
     "hashType": "sha256"

@@ -133,7 +133,7 @@ const productReviewCtrl = {
 
 const sadsadasdasd = async () => {
     try {
-        const brand_id = 66;
+        const brand_id = 69;
         let { data: categories } = await axios.get(`https://www.cumamarket.co.kr/_next/data/eb38b54477fe79382b5b37cb4cb5706e84e3f0ad/category-list.json`);
         categories = categories?.pageProps?.ssrCategoryList ?? [];
         let db_products = await pool.query(`SELECT * FROM products WHERE brand_id=${brand_id}`);
@@ -157,7 +157,7 @@ const sadsadasdasd = async () => {
             let user_name = reviews[i]?.appUser?.nickname;
             let user = _.find(db_users, { user_name: user_name });
             let product = _.find(db_products, { another_id: reviews[i]?.product?.id })
-            if (product) {
+            if (product && user) {
                 review_list.push([
                     product?.id,
                     brand_id,
@@ -184,6 +184,7 @@ const sadsadasdasd = async () => {
             'content_img',
             'created_at',
         ], review_list)
+        console.log('success')
     } catch (err) {
         console.log(err);
     }

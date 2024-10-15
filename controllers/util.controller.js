@@ -156,7 +156,7 @@ const utilCtrl = {
                 }
 
 
-                let product_columns = ['category_id0', 'category_id1', 'category_id2', 'product_name', 'product_price', 'product_sale_price', 'product_img', 'product_comment', 'product_description', 'id'];
+                let product_columns = ['category_id0', 'category_id1', 'category_id2', 'product_name', 'product_price', 'product_sale_price', 'product_img', 'product_comment', 'product_description', 'another_id', 'id',];
                 let products = await pool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
                 products = products?.result;
                 let product_connect_ids = {};
@@ -181,12 +181,13 @@ const utilCtrl = {
                             product_list[j]?.product_img,
                             product_list[j]?.product_comment,
                             product_list[j]?.product_description,
+                            product_list[j]?.another_id,
                             dns_data?.id,
                             manager?.id
                         ])
                     }
                     if (insert_data.length > 0) {
-                        let result = await pool.query('INSERT INTO products (category_id0,category_id1,category_id2,product_name,product_price,product_sale_price,product_img,product_comment,product_description,brand_id,user_id) VALUES ?', [insert_data])
+                        let result = await pool.query('INSERT INTO products (category_id0,category_id1,category_id2,product_name,product_price,product_sale_price,product_img,product_comment,product_description,another_id,brand_id,user_id) VALUES ?', [insert_data])
                         if (i == 0) {
                             first_insert_product_idx = result?.result?.insertId
                         }
