@@ -16,6 +16,8 @@ const domainCtrl = {
       } = req.query;
       let columns = [
         "id",
+        "seller_id",
+        "seller_trx_fee",
         "name",
         "dns",
         "logo_img",
@@ -44,10 +46,11 @@ const domainCtrl = {
         "is_use_otp",
         "is_closure",
       ];
+
       //console.log(req.query);
       let brand = await pool.query(
         `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
-        //`SELECT ${columns.join()} FROM brands WHERE id=66`
+        //`SELECT ${columns.join()} FROM brands WHERE id=5`
       );
       //console.log(brand);
 
@@ -90,6 +93,7 @@ const domainCtrl = {
         brand.og_img = `${seller?.profile_img}`;
         brand.og_description = `${seller?.seller_name}`;
       }
+      //console.log(brand)
       return response(req, res, 100, "success", brand);
     } catch (err) {
       console.log(err);

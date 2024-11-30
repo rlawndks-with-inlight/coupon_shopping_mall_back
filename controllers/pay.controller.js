@@ -101,12 +101,26 @@ const payCtrl = {
         } AND id IN (${product_seller_ids.join()})`
       );
       seller_data = seller_data?.result;
+
+      /*let trx_fee = await pool.query(
+        `SELECT seller_trx_fee FROM brands WHERE id=${brand_id ?? 0}`
+      )
+      let amount_ = amount * (1 + trx_fee?.result[0].seller_trx_fee / 100)
+      console.log(amount_)
+
+      trx_fee = trx_fee?.result[0].seller_trx_fee
+
+      for (var i = 0; i < products.length; i++) {
+        let val = parseInt(products[i]?.order_amount * (1 + trx_fee / 100))
+        products[i].order_amount = val;
+      }*/
+
       for (var i = 0; i < products.length; i++) {
         insert_item_data.push([
           trans_id,
           parseInt(products[i]?.id),
           products[i]?.order_name,
-          parseFloat(products[i]?.order_amount),
+          parseInt(products[i]?.order_amount),
           parseInt(products[i]?.order_count),
           JSON.stringify(products[i]?.groups ?? []),
           (isNaN(products[i]?.delivery_fee) ? 0 : products[i]?.delivery_fee),
@@ -117,7 +131,8 @@ const payCtrl = {
           ),
         ]);
       }
-      console.log(insert_item_data)
+      //console.log(req.body)
+
       let insert_item_result = await pool.query(
         `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
         [insert_item_data]
