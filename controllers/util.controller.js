@@ -74,6 +74,7 @@ const utilCtrl = {
                 is_copy_product = 0,
                 is_copy_post = 0,
                 is_use_tikitaka = 0,
+                is_selected_categories = [],
             } = req.body;
             if (!decode_user) {
                 return lowLevelException(req, res);
@@ -127,6 +128,7 @@ const utilCtrl = {
                     })
                     product_category_group_connect_ids[product_category_groups[i]?.id] = result?.result?.insertId;
                 }
+                console.log(product_category_groups)
 
                 let product_category_columns = ['product_category_group_id', 'parent_id', 'category_type', 'category_name', 'category_img', 'category_description', 'id'];
                 let product_categories = await pool.query(`SELECT ${product_category_columns.join()} FROM product_categories WHERE product_category_group_id IN (${product_category_groups.map(item => { return item?.id }).join()})`);
@@ -136,6 +138,7 @@ const utilCtrl = {
                     product_categories[i].depth = await findParents(product_categories, product_categories[i]);
                     product_categories[i].depth = product_categories[i].depth.length;
                 }
+                console.log(product_categories)
 
                 for (var i = 0; i < 10; i++) {
                     let product_category_depth_list = product_categories.filter(item => parseInt(item?.depth) == parseInt(i));
@@ -262,6 +265,7 @@ const utilCtrl = {
                     }
                 }
             }
+
             await db.commit();
 
             return response(req, res, 100, "success", {});
