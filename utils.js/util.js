@@ -220,8 +220,8 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
                 },
             ]
             let headers = {
-                'X-NCP-APIGW-API-KEY-ID': 'wtk7tnzpdm',
-                'X-NCP-APIGW-API-KEY': 'JI7mhSqYBpMWdwHp4h5jPvCQ05zZMH5FKJopvTBo',
+                'X-NCP-APIGW-API-KEY-ID': '7q2hh8mua7',
+                'X-NCP-APIGW-API-KEY': 't69ij5LppxHPtlrt4nPPI5NJd0nkgx8SFMsVs2zA',
                 'Content-Type': 'application/json; charset=UTF-8',
             }
             let lang_when_list = [];
@@ -329,6 +329,18 @@ export const getPayType = (num) => {
             title: '인증결제',
             description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
             type: 'certification',
+        }
+    } else if (num == 3) {
+        return {
+            title: `카드결제test`,
+            description: 'Mastercard, Visa 등을 지원합니다.',
+            type: 'card_fintree',
+        }
+    } else if (num == 4) {
+        return {
+            title: `인증결제test`,
+            description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
+            type: 'certification_fintree',
         }
     } else if (num == 10) {
         return {
