@@ -14,10 +14,9 @@ const domainCtrl = {
         post_id = -1,
         seller_id = -1,
       } = req.query;
+
       let columns = [
         "id",
-        "seller_id",
-        "seller_trx_fee",
         "name",
         "dns",
         "logo_img",
@@ -45,25 +44,48 @@ const domainCtrl = {
         "show_basic_info",
         "is_use_otp",
         "is_closure",
+        "seller_id",
       ];
 
-      //console.log(req.query);
+      /*let columns_seller = [
+        "id",
+        "brand_id",
+        "is_delete",
+        "user_name",
+        "name",
+        "nickname",
+        "parent_id",
+        "level",
+        "dns",
+        "oper0_id",
+        "oper1_id",
+        "seller_trx_fee",
+      ];*/
+
+      /* 
       let brand = await pool.query(
-        `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
-        //`SELECT ${columns.join()} FROM brands WHERE id=5`
+        `SELECT ${columns_seller.join()} FROM users WHERE (dns='${dns}') AND is_delete=0`
       );
-      //console.log(brand);
+*/
+      let brand = await pool.query(
+        //`SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
+        `SELECT ${columns.join()} FROM brands WHERE id=5`
+      );
 
       if (brand?.result.length == 0) {
         return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
       }
-      brand = brand?.result[0];
+
+      brand = brand?.result[0]
+
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
       //brand["slider_css"] = JSON.parse(brand?.slider_css ?? "{}");
       brand["setting_obj"] = JSON.parse(brand?.setting_obj ?? "{}");
       brand["none_use_column_obj"] = JSON.parse(brand?.none_use_column_obj ?? "{}");
       brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");
       brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
+
+      let is_seller = brand?.seller_id;
 
       const token = await makeUserToken(brand);
       await res.cookie("dns", token, {
@@ -93,7 +115,16 @@ const domainCtrl = {
         brand.og_img = `${seller?.profile_img}`;
         brand.og_description = `${seller?.seller_name}`;
       }
-      //console.log(brand)
+
+      if (is_seller > 0) {
+        brand["dns_type"] = 'seller';
+        brand["seller_id"] = is_seller;
+      } else {
+        brand["dns_type"] = 'head';
+      }
+
+      //console.log(brand['seller_id'])
+
       return response(req, res, 100, "success", brand);
     } catch (err) {
       console.log(err);

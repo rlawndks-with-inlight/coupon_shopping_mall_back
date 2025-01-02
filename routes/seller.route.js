@@ -16,5 +16,5 @@ router
 router
     .route('/change-pw/:id')
     .put(sellerCtrl.changePassword)
-    
+
 export default router;
