@@ -50,21 +50,37 @@ const payCtrl = {
         bank_code = "",
         acct_num = "",
         use_point = 0,
+        seller_id = 0,
       } = req.body;
       if (trx_type == 'auth') {
         trx_method = 2;
       } else if (trx_type == 'hand') {
         trx_method = 1;
+      } else if (trx_type == 'hand_fintree') {
+        trx_method = 3;
+      } else if (trx_type == 'auth_fintree') {
+        trx_method = 4;
       } else if (trx_type == 'virtual') {
         trx_method = 10;
       } else if (trx_type == 'gift_certificate') {
         trx_method = 11;
-      } else if (trx_type == 'fintree') {
-        trx_method = 20;
       } else {
         return response(req, res, -100, "잘못된 결제타입 입니다.", false)
       }
       let files = settingFiles(req.files);
+      if (seller_id > 0) {
+        let seller_columns = [
+          `id`,
+          `id`,
+          `id`,
+          `id`,
+        ]
+        let seller = await pool.query(`SELECT ${seller_columns.join()} FROM users WHERE id=${seller_id} AND level=10`);
+        seller = seller?.result[0];
+        if (!seller) {
+          return response(req, res, -100, "셀러값이 잘못 되었습니다.", false)
+        }
+      }
       let obj = {
         brand_id,
         user_id,
