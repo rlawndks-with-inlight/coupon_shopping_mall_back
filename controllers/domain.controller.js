@@ -45,6 +45,8 @@ const domainCtrl = {
         "is_use_otp",
         "is_closure",
         "seller_id",
+        "parent_id",
+        "is_head",
       ];
 
       /*let columns_seller = [
@@ -68,8 +70,8 @@ const domainCtrl = {
       );
 */
       let brand = await pool.query(
-        `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
-        //`SELECT ${columns.join()} FROM brands WHERE id=5`
+        //`SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
+        `SELECT ${columns.join()} FROM brands WHERE id=5`
       );
 
       if (brand?.result.length == 0) {
@@ -86,6 +88,11 @@ const domainCtrl = {
       brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
 
       let is_seller = brand?.seller_id;
+      let parent_id = brand?.parent_id;
+
+      if (brand?.is_head == 1) {
+        brand["is_head"] = 1;
+      }
 
       const token = await makeUserToken(brand);
       await res.cookie("dns", token, {
@@ -119,11 +126,12 @@ const domainCtrl = {
       if (is_seller > 0) {
         brand["dns_type"] = 'seller';
         brand["seller_id"] = is_seller;
+        brand["parent_id"] = parent_id;
       } else {
         brand["dns_type"] = 'head';
       }
 
-      //console.log(brand['seller_id'])
+      //console.log(brand)
 
       return response(req, res, 100, "success", brand);
     } catch (err) {
