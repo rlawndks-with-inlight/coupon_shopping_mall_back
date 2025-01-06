@@ -179,7 +179,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                user_name, name, nickname, level = 10, phone_num, note,
+                name, phone_num, title,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, seller_trx_fee = 0, dns,
                 product_ids = [],
                 id
@@ -192,7 +192,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                user_name, name, nickname, level, phone_num, note,
+                name, phone_num, title,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, seller_trx_fee, dns,
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);

@@ -29,6 +29,7 @@ import consignmentCtrl from './consignment.controller.js';
 import thirdPartyCtrl from './third_party.controller.js';
 import dashboardCtrl from './dashboard.controller.js';
 import productFaq from './product_faq.controller.js';
+import sellerAdjustmentsCtrl from './seller_adjustments.controller.js';
 
 export {
     brandCtrl,
@@ -60,4 +61,5 @@ export {
     thirdPartyCtrl,
     dashboardCtrl,
     productFaq,
+    sellerAdjustmentsCtrl,
 };
