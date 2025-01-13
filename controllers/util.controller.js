@@ -216,6 +216,12 @@ const utilCtrl = {
                             ]);
                         }
                     }
+                    if (insert_sub_img_data.length > 0) {
+                        let result = await pool.query('INSERT INTO product_images (product_id, product_sub_img) VALUES ?', [insert_sub_img_data]);
+                        if (i == 0) {
+                            first_insert_product_sub_img_idx = result?.result?.insertId;
+                        }
+                    }
                 }
                 let update_sort_idx = await pool.query(`UPDATE products SET sort_idx=id WHERE brand_id=${dns_data?.id} AND id>=${first_insert_product_idx}`);
                 let new_products = await pool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 AND id>=${first_insert_product_idx} ORDER BY id DESC`);
