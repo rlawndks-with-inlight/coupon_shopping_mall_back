@@ -71,7 +71,7 @@ const domainCtrl = {
 */
       let brand = await pool.query(
         `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
-        //`SELECT ${columns.join()} FROM brands WHERE id=5`
+        //`SELECT ${columns.join()} FROM brands WHERE id=11`
       );
 
       if (brand?.result.length == 0) {

@@ -199,7 +199,7 @@ const utilCtrl = {
                         for (var k = sub_images.length; k >= 1; k--) {
                             insert_sub_img_data.push([
                                 product_list[j]?.id,
-                                sub_images[k - 1]
+                                sub_images[k - 1]['product_sub_img']
                             ])
                         }
                     }
