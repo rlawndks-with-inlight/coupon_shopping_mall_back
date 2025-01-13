@@ -109,7 +109,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num,
+                brand_id, name, phone_num, title,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, seller_trx_fee = 0, dns,
                 product_ids = [],
             } = req.body;
@@ -129,7 +129,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num,
+                brand_id, name, phone_num, title,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, seller_trx_fee, dns,
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);

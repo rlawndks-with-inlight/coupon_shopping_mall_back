@@ -119,53 +119,57 @@ const utilCtrl = {
                 let product_category_groups = await pool.query(`SELECT ${product_category_group_columns.join()} FROM product_category_groups WHERE brand_id=${sender_brand?.id} AND is_delete=0`);
                 product_category_groups = product_category_groups?.result;
                 let product_category_group_connect_ids = {};
-                for (var i = 0; i < product_category_groups.length; i++) {
-                    let obj = { ...product_category_groups[i] };
+                for (var i = product_category_groups.length; i >= 1; i--) {
+                    let obj = { ...product_category_groups[i - 1] };
                     delete obj['id'];
                     let result = await insertQuery('product_category_groups', {
                         ...obj,
                         brand_id: dns_data?.id,
                     })
-                    product_category_group_connect_ids[product_category_groups[i]?.id] = result?.result?.insertId;
+                    product_category_group_connect_ids[product_category_groups[i - 1]?.id] = result?.result?.insertId;
                 }
-                console.log(product_category_groups)
+                //console.log(product_category_groups)
 
                 let product_category_columns = ['product_category_group_id', 'parent_id', 'category_type', 'category_name', 'category_img', 'category_description', 'id'];
                 let product_categories = await pool.query(`SELECT ${product_category_columns.join()} FROM product_categories WHERE product_category_group_id IN (${product_category_groups.map(item => { return item?.id }).join()})`);
                 product_categories = product_categories?.result;
                 let product_category_connect_ids = {};
-                for (var i = 0; i < product_categories.length; i++) {
-                    product_categories[i].depth = await findParents(product_categories, product_categories[i]);
-                    product_categories[i].depth = product_categories[i].depth.length;
+                for (var i = product_categories.length; i >= 1; i--) {
+                    product_categories[i - 1].depth = await findParents(product_categories, product_categories[i - 1]);
+                    product_categories[i - 1].depth = product_categories[i - 1].depth.length;
                 }
-                console.log(product_categories)
+                //console.log(product_categories)
 
                 for (var i = 0; i < 10; i++) {
                     let product_category_depth_list = product_categories.filter(item => parseInt(item?.depth) == parseInt(i));
                     if (product_category_depth_list.length > 0) {
-                        for (var j = 0; j < product_category_depth_list.length; j++) {
-                            let obj = { ...product_category_depth_list[j] };
+                        for (var j = product_category_depth_list.length; j >= 1; j--) {
+                            let obj = { ...product_category_depth_list[j - 1] };
                             delete obj['id'];
                             delete obj['depth'];
                             let result = await insertQuery('product_categories', {
                                 ...obj,
                                 brand_id: dns_data?.id,
-                                product_category_group_id: product_category_group_connect_ids[product_category_depth_list[j]?.product_category_group_id],
-                                parent_id: product_category_connect_ids[product_category_depth_list[j]?.parent_id] ?? -1,
+                                product_category_group_id: product_category_group_connect_ids[product_category_depth_list[j - 1]?.product_category_group_id],
+                                parent_id: product_category_connect_ids[product_category_depth_list[j - 1]?.parent_id] ?? -1,
                             })
-                            product_category_connect_ids[product_category_depth_list[j]?.id] = result?.result?.insertId;
+                            product_category_connect_ids[product_category_depth_list[j - 1]?.id] = result?.result?.insertId;
                         }
                     }
                 }
 
 
                 let product_columns = ['category_id0', 'category_id1', 'category_id2', 'product_name', 'product_price', 'product_sale_price', 'product_img', 'product_comment', 'product_description', 'another_id', 'id',];
+                let product_sub_img_columns = ['product_sub_img'];
+
                 let products = await pool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
                 products = products?.result;
                 let product_connect_ids = {};
                 let first_insert_product_idx = 0;
+                let first_insert_product_sub_img_idx = 0;
                 for (var i = 0; i < parseInt(products.length / 1000) + 1; i++) {
                     let insert_data = [];
+                    let insert_sub_img_data = [];
                     let product_list = products.slice(i * 1000, (i + 1) * 1000);
                     for (var j = 0; j < product_list.length; j++) {
                         let product_price = product_list[j]?.product_price;
@@ -188,11 +192,24 @@ const utilCtrl = {
                             dns_data?.id,
                             manager?.id
                         ])
+
+                        let sub_images = await pool.query(`SELECT ${product_sub_img_columns.join()} FROM product_images WHERE product_id=${product_list[j]?.id} AND is_delete=0 ORDER BY id DESC`)
+
+                        insert_sub_img_data.push([
+                            product_list[j]?.id,
+                            sub_images
+                        ])
                     }
                     if (insert_data.length > 0) {
                         let result = await pool.query('INSERT INTO products (category_id0,category_id1,category_id2,product_name,product_price,product_sale_price,product_img,product_comment,product_description,another_id,brand_id,user_id) VALUES ?', [insert_data])
                         if (i == 0) {
                             first_insert_product_idx = result?.result?.insertId
+                        }
+                    }
+                    if (insert_sub_img_data.length > 0) {
+                        let result = await pool.query('INSERT INTO product_images (product_id, product_sub_img) VALUES ?', [insert_sub_img_data])
+                        if (i == 0) {
+                            first_insert_product_sub_img_idx = result?.result?.insertId
                         }
                     }
                 }
@@ -203,6 +220,7 @@ const utilCtrl = {
                 for (var i = 0; i < products.length; i++) {
                     product_connect_ids[products[i]?.id] = new_products[i]?.id;
                 }
+
                 // let product_option_group_columns = ['id', 'product_id', 'is_able_duplicate_select', 'group_name', 'group_description', 'group_img'];
                 // let product_option_groups = await pool.query(`SELECT ${product_option_group_columns.join()} FROM product_option_groups WHERE product_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
                 // product_option_groups = product_option_groups?.result;
