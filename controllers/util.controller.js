@@ -194,11 +194,14 @@ const utilCtrl = {
                         ])
 
                         let sub_images = await pool.query(`SELECT ${product_sub_img_columns.join()} FROM product_images WHERE product_id=${product_list[j]?.id} AND is_delete=0 ORDER BY id DESC`)
+                        sub_images = sub_images?.result;
 
-                        insert_sub_img_data.push([
-                            product_list[j]?.id,
-                            sub_images
-                        ])
+                        for (var k = sub_images.length; k >= 1; k--) {
+                            insert_sub_img_data.push([
+                                product_list[j]?.id,
+                                sub_images[k - 1]
+                            ])
+                        }
                     }
                     if (insert_data.length > 0) {
                         let result = await pool.query('INSERT INTO products (category_id0,category_id1,category_id2,product_name,product_price,product_sale_price,product_img,product_comment,product_description,another_id,brand_id,user_id) VALUES ?', [insert_data])
