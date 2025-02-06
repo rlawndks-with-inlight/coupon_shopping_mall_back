@@ -354,7 +354,32 @@ export const getPayType = (num) => {
             description: '실물상품권, 모바일상품권 등을 지원합니다.',
             type: 'gift_certificate',
         }
+    } /*else if (num == 20) {
+        return {
+            title: `카드결제test2`,
+            description: 'Mastercard, Visa 등을 지원합니다.',
+            type: 'card_weroute',
+        }
+    }*/ else if (num == 21) {
+        return {
+            title: `인증결제`,
+            description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
+            type: 'certification_weroute',
+        }
+    } else if (num == 30) {
+        return {
+            title: `카드결제test3`,
+            description: 'Mastercard, Visa 등을 지원합니다.',
+            type: 'card_hecto',
+        }
+    } else if (num == 31) {
+        return {
+            title: `휴대폰결제test`,
+            description: '휴대폰결제로 이동합니다.',
+            type: 'phone_hecto',
+        }
     }
+
     return {
         title: '',
         description: '',
