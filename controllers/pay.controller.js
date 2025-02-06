@@ -64,6 +64,14 @@ const payCtrl = {
         trx_method = 10;
       } else if (trx_type == 'gift_certificate') {
         trx_method = 11;
+      } /*else if (trx_type == 'hand_weroute') {
+        trx_method = 20;
+      }*/ else if (trx_type == 'auth_weroute') {
+        trx_method = 21;
+      } else if (trx_type == 'hand_hecto') {
+        trx_method = 30;
+      } else if (trx_type == 'phone_hecto') {
+        trx_method = 31;
       } else {
         return response(req, res, -100, "잘못된 결제타입 입니다.", false)
       }
@@ -156,6 +164,16 @@ const payCtrl = {
         [insert_item_data]
       );
       if (trx_method == 1) {
+        let result = await axios.post(
+          `${process.env.NOTI_URL}/api/v2/pay/hand`,
+          { ...req.body, temp: trans_id }
+        );
+        if (result?.data?.result_cd != "0000") {
+          await db.rollback();
+          return response(req, res, -100, result?.data?.result_msg, false);
+        }
+      }
+      if (trx_method == 30) {
         let result = await axios.post(
           `${process.env.NOTI_URL}/api/v2/pay/hand`,
           { ...req.body, temp: trans_id }
