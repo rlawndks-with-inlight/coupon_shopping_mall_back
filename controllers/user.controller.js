@@ -13,7 +13,7 @@ const userCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { is_user, is_seller } = req.query;
+            const { is_user, is_seller, is_agent } = req.query;
             let columns = [
                 `${table_name}.*`,
                 `(SELECT SUM(point) FROM points WHERE user_id=${table_name}.id) AS point`
@@ -27,6 +27,11 @@ const userCtrl = {
             if (is_seller) {
                 sql += ` AND level=10 `
             }
+
+            if (is_agent) {
+                sql += ` AND level=20 `
+            }
+
             let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
@@ -104,7 +109,8 @@ const userCtrl = {
                 profile_img,
                 brand_id, user_name, user_pw, name, nickname, level = 0, phone_num, note,
                 contract_img, bsin_lic_img, company_name, business_num,
-                acct_num, acct_name, acct_bank_name, shareholder_img, register_img
+                acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
+                seller_trx_fee
             } = req.body;
             let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
             if (is_exist_user?.result.length > 0) {
@@ -112,6 +118,9 @@ const userCtrl = {
             }
             if (level > 0 && decode_user?.level < level) {
                 return lowLevelException(req, res);
+            }
+            if (seller_trx_fee > 1) {
+                return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
             }
             let pw_data = await createHashedPassword(user_pw);
             user_pw = pw_data.hashedPassword;
@@ -121,7 +130,8 @@ const userCtrl = {
                 profile_img,
                 brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, note,
                 contract_img, bsin_lic_img, company_name, business_num,
-                acct_num, acct_name, acct_bank_name, shareholder_img, register_img
+                acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
+                seller_trx_fee
             };
             console.log(obj)
             obj = { ...obj, ...files };
@@ -145,18 +155,23 @@ const userCtrl = {
                 profile_img,
                 brand_id, user_name, name, nickname, level, phone_num, note, id,
                 company_name, business_num, contract_img, bsin_lic_img,
-                acct_num, acct_name, acct_bank_name, shareholder_img, register_img
+                acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
+                seller_trx_fee
             } = req.body;
             let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND id!=?`, [user_name, id]);
             if (is_exist_user?.result.length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
+            }
+            if (seller_trx_fee > 1) {
+                return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
             }
             let files = settingFiles(req.files);
             let obj = {
                 profile_img,
                 brand_id, user_name, name, nickname, level, phone_num, note,
                 company_name, business_num, contract_img, bsin_lic_img,
-                acct_num, acct_name, acct_bank_name, shareholder_img, register_img
+                acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
+                seller_trx_fee
             };
             obj = { ...obj, ...files };
             let result = await updateQuery(`${table_name}`, obj, id);

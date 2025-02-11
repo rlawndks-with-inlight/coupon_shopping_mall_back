@@ -27,6 +27,12 @@ const dashboardCtrl = {
             let trx_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(amount) AS total_amount FROM ${table_name} `;
             trx_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND brand_id=${decode_dns?.id} `;
 
+            if (decode_user?.level == 10) {
+                trx_counts_sql += ` AND seller_id = ${decode_user?.id} `;
+                trx_cancel_counts_sql += ` AND seller_id = ${decode_user?.id} `;
+                trx_amounts_sql += ` AND seller_id = ${decode_user?.id} `;
+            }
+
             if (s_dt) {
                 trx_counts_sql += ` AND ${table_name}.created_at >= '${s_dt} 00:00:00' `;
                 trx_cancel_counts_sql += ` AND ${table_name}.created_at >= '${s_dt} 00:00:00' `;
@@ -61,6 +67,8 @@ const dashboardCtrl = {
             let trx_amounts = await pool.query(trx_amounts_sql);
             trx_amounts = trx_amounts?.result;
             data['trx_amounts_sum'] = trx_amounts;
+
+            //console.log(data)
 
             //문의관리
             let post_category_columns = [

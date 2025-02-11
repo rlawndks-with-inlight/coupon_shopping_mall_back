@@ -45,8 +45,8 @@ const productCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { seller_id, property_id, is_consignment, status, product_type } = req.query;
-            const { type } = req;
+            const { /*seller_id,*/ property_id, is_consignment, status, product_type, manager_type } = req.query;
+            const { type, seller_id } = req;
 
             let columns = [
                 `${table_name}.*`,
@@ -54,14 +54,33 @@ const productCtrl = {
                 `sellers.seller_name`,
                 `(SELECT COUNT(*) FROM transaction_orders LEFT JOIN transactions ON transactions.id=transaction_orders.trans_id WHERE transaction_orders.product_id=${table_name}.id AND transactions.is_cancel=0 AND transactions.trx_status >=5 AND transactions.is_delete=0) AS order_count`,
                 `(SELECT COUNT(*) FROM product_reviews WHERE product_id=${table_name}.id AND is_delete=0) AS review_count`,
-                `consignment_users.user_name AS consignment_user_name`,
-                `consignment_users.phone_num AS consignment_phone_num`,
+                //`consignment_users.user_name AS consignment_user_name`,
+                //`consignment_users.phone_num AS consignment_phone_num`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
-            sql += ` LEFT JOIN users AS consignment_users ON ${table_name}.consignment_user_id=consignment_users.id `;
+            //sql += ` LEFT JOIN users AS consignment_users ON ${table_name}.consignment_user_id=consignment_users.id `;
+
+            if (type == 'seller' || manager_type == 'seller') {
+                columns.push(`seller_products.id AS seller_product_id`)
+                columns.push(`seller_products.seller_id`)
+                if (type == 'seller') {
+                    columns.push(`seller_products.seller_price AS product_sale_price `)
+                    sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=${seller_id} AND seller_products.is_delete=0 `
+                } else if (manager_type == 'seller') {
+                    columns.push(`seller_products.seller_price`)
+                    sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.is_delete=0 `
+                }
+            }
+            //console.log(sql)
 
             let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+
+            if (seller_id > 0) {
+                where_sql += ` AND seller_products.seller_id=${seller_id} `;
+            }
+
+            /*
             if (seller_id > 0) {
                 let connect_data = await pool.query(`SELECT * FROM products_and_sellers WHERE seller_id=${seller_id}`);
                 connect_data = connect_data?.result.map(item => {
@@ -70,6 +89,7 @@ const productCtrl = {
                 connect_data.unshift(0);
                 where_sql += ` AND (${table_name}.id IN (${connect_data.join()})) `;
             }
+            */
             let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id ?? 0} AND is_delete=0 ORDER BY sort_idx DESC `;
             let category_groups = await pool.query(category_group_sql);
             category_groups = category_groups?.result;
@@ -114,9 +134,12 @@ const productCtrl = {
                 where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
             }
             sql += where_sql;
-            if (type == 'user') {
+            if (type == 'user' || type == 'seller' || manager_type == 'seller') {
                 sql += ` AND products.status!=5 `
             }
+
+            //console.log(sql)
+
             //sql += `ORDER BY products.status ASC, products.sort_idx DESC `
             /*if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND products.status!=5 `
@@ -158,17 +181,26 @@ const productCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let { id = 0 } = req.params;
-            const { brand_id } = req.query;
+            const { brand_id, seller_id } = req.query;
 
             let product_columns = [
                 `${table_name}.*`,
-                `consignment_user.user_name AS consignment_user_name`,
-                `consignment_user.name AS consignment_name`,
-                `consignment_user.phone_num AS consignment_user_phone_num`,
+                //`consignment_user.user_name AS consignment_user_name`,
+                //`consignment_user.name AS consignment_name`,
+                //`consignment_user.phone_num AS consignment_user_phone_num`,
                 ` (SELECT MAX(sort_idx) FROM ${table_name} where brand_id=${brand_id}) AS max_sort_idx `
             ]
+            if (seller_id > 0) {
+                product_columns.push(`seller_products.id AS seller_product_id`)
+                product_columns.push(`seller_products.seller_id`)
+                product_columns.push(`seller_products.seller_price AS product_sale_price `)
+            }
             let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
-            product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
+
+            if (seller_id > 0) {
+                product_sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=${seller_id} AND seller_products.is_delete=0 `
+            }
+            //product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
             product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 ${req?.IS_RETURN ? `AND ${table_name}.status!=5` : ''} AND ${table_name}.brand_id=${brand_id} `;
 
             //console.log(product_sql)

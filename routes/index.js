@@ -29,6 +29,7 @@ import thirdPartyRoutes from "./third_party.route.js";
 import dashboardRoutes from "./dashboard.route.js";
 import productFaqRoutes from "./product_faq.route.js"
 import sellerAdjustmentsRoutes from "./seller_adjustments.route.js"
+import sellerProductsRoutes from "./seller_products.route.js";
 
 const router = express.Router(); // eslint-disable-line new-cap
 
@@ -65,6 +66,7 @@ router.use("/upload", uploadRoutes);
 router.use("/util", utilRoutes);
 router.use("/sellers", sellerRoutes);
 router.use("/seller-adjustments", sellerAdjustmentsRoutes)
+router.use("/seller-products", sellerProductsRoutes)
 router.use("/pays", payRoutes);
 router.use("/column", columnRoutes);
 router.use("/third-parties", thirdPartyRoutes);

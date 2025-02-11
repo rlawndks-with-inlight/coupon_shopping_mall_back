@@ -44,12 +44,10 @@ const domainCtrl = {
         "show_basic_info",
         "is_use_otp",
         "is_closure",
-        "seller_id",
         "parent_id",
-        "is_head",
       ];
 
-      /*let columns_seller = [
+      let columns_seller = [
         "id",
         "brand_id",
         "is_delete",
@@ -59,26 +57,38 @@ const domainCtrl = {
         "parent_id",
         "level",
         "dns",
-        "oper0_id",
-        "oper1_id",
+        "oper_id",
         "seller_trx_fee",
-      ];*/
+      ];
 
-      /* 
-      let brand = await pool.query(
+
+      let is_seller_mall = await pool.query(
         `SELECT ${columns_seller.join()} FROM users WHERE (dns='${dns}') AND is_delete=0`
       );
-*/
-      let brand = await pool.query(
-        `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
-        //`SELECT ${columns.join()} FROM brands WHERE id=5`
-      );
 
-      if (brand?.result.length == 0) {
-        return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
+      let brand = [];
+
+      if (is_seller_mall?.result.length == 0) {
+        brand = await pool.query(
+          `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
+          //`SELECT ${columns.join()} FROM brands WHERE id=5`
+        );
+        if (brand?.result.length == 0) {
+          return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
+        }
+      } else {
+        //console.log(is_seller_mall)
+        brand = await pool.query(
+          `SELECT ${columns.join()} FROM brands WHERE id=${is_seller_mall?.result[0].brand_id} AND is_delete=0`
+        );
       }
 
       brand = brand?.result[0]
+
+      if (is_seller_mall?.result.length > 0) {
+        brand['seller_id'] = is_seller_mall?.result[0].id
+        brand['oper_id'] = is_seller_mall?.result[0].oper_id
+      }
 
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
       //brand["slider_css"] = JSON.parse(brand?.slider_css ?? "{}");
@@ -87,12 +97,7 @@ const domainCtrl = {
       brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");
       brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
 
-      let is_seller = brand?.seller_id;
-      let parent_id = brand?.parent_id;
-
-      if (brand?.is_head == 1) {
-        brand["is_head"] = 1;
-      }
+      //console.log(brand)
 
       const token = await makeUserToken(brand);
       await res.cookie("dns", token, {
@@ -121,14 +126,6 @@ const domainCtrl = {
         brand.name = `${brand?.name} - ${seller?.nickname}`;
         brand.og_img = `${seller?.profile_img}`;
         brand.og_description = `${seller?.seller_name}`;
-      }
-
-      if (is_seller > 0) {
-        brand["dns_type"] = 'seller';
-        brand["seller_id"] = is_seller;
-        brand["parent_id"] = parent_id;
-      } else {
-        brand["dns_type"] = 'head';
       }
 
       //console.log(brand)
