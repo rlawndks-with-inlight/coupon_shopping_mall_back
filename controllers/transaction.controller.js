@@ -26,9 +26,9 @@ const transactionCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
 
-            if (decode_dns.is_head == 1) {
+            if (decode_user?.level >= 40) {
                 columns.push(`sellers.name AS seller_user_name`, `sellers.dns AS seller_dns`, `sellers.title AS seller_title`)
-                sql += `LEFT JOIN sellers AS sellers on ${table_name}.seller_id=sellers.seller_id`
+                sql += `LEFT JOIN users AS sellers on ${table_name}.seller_id=sellers.seller_id`
                 sql += ` WHERE ${table_name}.brand_id IN (SELECT id FROM brands WHERE parent_id=${decode_dns?.id ?? 0}) `;
             } else {
                 columns.push(`sellers.user_name AS seller_user_name`)
@@ -37,7 +37,7 @@ const transactionCtrl = {
             }
 
             if (decode_user?.level == 10) {
-                sql += ` AND seller_id=${decode_user?.id} `;
+                sql += ` AND transactions.seller_id=${decode_user?.id} `;
             }
             if (decode_user?.level == 0 || !decode_user) {
                 sql += ` AND user_id=${decode_user?.id ?? -1} `;

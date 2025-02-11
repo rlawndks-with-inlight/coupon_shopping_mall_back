@@ -5,7 +5,7 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-const table_name = 'sellers';
+const table_name = 'users';
 
 const sellerCtrl = {
     list: async (req, res, next) => {
@@ -16,16 +16,21 @@ const sellerCtrl = {
             const { is_seller } = req.query;
             let columns = [
                 `${table_name}.*`,
+                `agent.name AS agent_name`
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE brand_id=${decode_dns?.id ?? 0} `
+            sql += ` LEFT JOIN ${table_name} AS agent ON ${table_name}.oper_id=agent.id `
+            sql += ` WHERE users.brand_id=${decode_dns?.id ?? 0} `
+            if (is_seller == 1) {
+                sql += ` AND users.level=10 `
+            }
 
-            /*if (is_seller) {
-                sql += ` AND level=10 `
-            }*/
             if (decode_user?.level <= 10) {
                 sql += `AND id=${decode_user?.id}`;
             }
+
+            //console.log(sql)
+
             let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);
@@ -109,18 +114,18 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num, title,
-                addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, seller_trx_fee = 0, dns,
+                brand_id, name, phone_num, user_name, user_pw, level, oper_id,
+                addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
             } = req.body;
-            /*let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
+            let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
             if (is_exist_user?.result.length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
-            }*/
+            }
 
-            //let pw_data = await createHashedPassword(user_pw);
-            //user_pw = pw_data.hashedPassword;
-            //let user_salt = pw_data.salt;
+            let pw_data = await createHashedPassword(user_pw);
+            user_pw = pw_data.hashedPassword;
+            let user_salt = pw_data.salt;
             let files = settingFiles(req.files);
             let obj = {
                 background_img,
@@ -129,8 +134,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num, title,
-                addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, seller_trx_fee, dns,
+                brand_id, name, phone_num, user_name, user_pw, user_salt, level, oper_id,
+                addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
             obj['theme_css'] = JSON.stringify(obj.theme_css);
@@ -179,8 +184,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, title,
-                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, seller_trx_fee = 0, dns,
+                name, phone_num, user_name, user_pw, oper_id,
+                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
                 id
             } = req.body;
@@ -192,8 +197,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, title,
-                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, seller_trx_fee, dns,
+                name, phone_num, user_name, user_pw, oper_id,
+                seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
             obj['theme_css'] = JSON.stringify(obj.theme_css);

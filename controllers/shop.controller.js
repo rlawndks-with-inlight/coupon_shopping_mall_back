@@ -351,7 +351,15 @@ const shopCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { seller_id } = req.query;
 
-            let data = await productCtrl.list({ ...req, IS_RETURN: true, type: 'user' }, res, next);
+            let data = 0;
+
+            //console.log(seller_id)
+
+            if (seller_id > 0) {
+                data = await productCtrl.list({ ...req, IS_RETURN: true, type: 'seller', seller_id: seller_id }, res, next)
+            } else {
+                data = await productCtrl.list({ ...req, IS_RETURN: true, type: 'user' }, res, next);
+            }
             data = data?.data;
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -366,8 +374,17 @@ const shopCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { id } = req.params;
-            let data = await productCtrl.get({ ...req, IS_RETURN: true }, res, next);
+            const { id, seller_id } = req.params;
+            let data = 0;
+
+            if (seller_id > 0) {
+                data = await productCtrl.get({ ...req, IS_RETURN: true, seller_id: seller_id }, res, next);
+            } else {
+                data = await productCtrl.get({ ...req, IS_RETURN: true }, res, next);
+            }
+
+            //console.log(seller_id)
+
             data = data?.data;
             if (decode_user?.id > 0) {
                 let view_delete = await pool.query('DELETE FROM product_views WHERE product_id=? AND user_id=? AND brand_id=? ', [
@@ -381,6 +398,9 @@ const shopCtrl = {
                     decode_dns?.id
                 ]);
             }
+
+            //console.log(data)
+
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
