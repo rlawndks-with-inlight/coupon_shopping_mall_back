@@ -1,10 +1,10 @@
 'use strict';
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { readPool } from "../config/db-pool.js";
 
 const table_name = 'transactions';
 
@@ -44,8 +44,8 @@ const dashboardCtrl = {
                 trx_amounts_sql += ` AND ${table_name}.created_at <= '${e_dt} 23:59:59' `
             }
             trx_counts_sql += ` GROUP BY trx_status `;
-            let trx_counts = await pool.query(trx_counts_sql);
-            trx_counts = trx_counts?.result;
+            let trx_counts = await readPool.query(trx_counts_sql);
+            trx_counts = trx_counts[0];
             let trx_sum = 0;
             for (var i = 0; i < trx_counts.length; i++) {
                 data.trx[`trx_${trx_counts[i]?.trx_status}`] = trx_counts[i]?.cnt;
@@ -53,8 +53,8 @@ const dashboardCtrl = {
             }
 
 
-            let trx_cancel_counts = await pool.query(trx_cancel_counts_sql);
-            trx_cancel_counts = trx_cancel_counts?.result[0];
+            let trx_cancel_counts = await readPool.query(trx_cancel_counts_sql);
+            trx_cancel_counts = trx_cancel_counts[0][0];
             data['is_cancel'] = trx_cancel_counts?.cnt;
             trx_sum += trx_cancel_counts?.cnt;
             data['trx_sum'] = trx_sum;
@@ -64,8 +64,8 @@ const dashboardCtrl = {
 
             //s_dt와 e_dt 사이 매출 합
             trx_amounts_sql += ` GROUP BY DATE(created_at) `;
-            let trx_amounts = await pool.query(trx_amounts_sql);
-            trx_amounts = trx_amounts?.result;
+            let trx_amounts = await readPool.query(trx_amounts_sql);
+            trx_amounts = trx_amounts[0];
             data['trx_amounts_sum'] = trx_amounts;
 
             //console.log(data)
@@ -77,8 +77,8 @@ const dashboardCtrl = {
             let post_category_sql = `SELECT ${post_category_columns.join()} FROM post_categories `;
             post_category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
             post_category_sql += ` AND post_categories.is_delete=0 ORDER BY sort_idx DESC`;
-            let post_categories = await pool.query(post_category_sql);
-            post_categories = post_categories?.result;
+            let post_categories = await readPool.query(post_category_sql);
+            post_categories = post_categories[0];
             let post_categories_tree = makeTree(post_categories);
             let request_post_categories = post_categories_tree.filter(el => el?.post_category_read_type == 1 && el?.is_able_user_add == 1)
 
@@ -97,8 +97,8 @@ const dashboardCtrl = {
                 if (e_dt) {
                     request_counts_sql += ` AND posts.created_at <= '${e_dt} 23:59:59' `;
                 }
-                let request_counts = await pool.query(request_counts_sql);
-                request_counts = request_counts?.result[0];
+                let request_counts = await readPool.query(request_counts_sql);
+                request_counts = request_counts[0][0];
                 data[`request_${request_post_categories[i]?.id}`] = request_counts?.cnt ?? 0;
             }
             return response(req, res, 100, "success", data)

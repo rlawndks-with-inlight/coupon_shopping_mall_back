@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import util from 'util';
-import { pool } from "../config/db.js";
 import jwt from 'jsonwebtoken';
 import 'dotenv/config';
 import { readSync } from 'fs';
@@ -9,6 +8,7 @@ import _ from 'lodash';
 import logger from './winston/index.js';
 import axios from 'axios';
 import { deleteQuery, insertQuery, updateQuery } from './query-util.js';
+import { writePool } from '../config/db-pool.js';
 
 const randomBytesPromise = util.promisify(crypto.randomBytes);
 const pbkdf2Promise = util.promisify(crypto.pbkdf2);
@@ -99,7 +99,7 @@ const logRequestResponse = async (req, res, decode_user, decode_dns) => {//ë¡œê·
     } else {
         brand_id = -1;
     }
-    let result = await pool.query(
+    let result = await writePool.query(
         "INSERT INTO logs (request, response_data, response_result, response_message, request_ip, user_id, brand_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [request, JSON.stringify(res?.data), res?.result, res?.message, requestIp, user_id, brand_id]
     )

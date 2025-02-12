@@ -1,10 +1,10 @@
 'use strict';
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { readPool } from "../config/db-pool.js";
 
 const table_name = 'seller_products';
 
@@ -37,8 +37,8 @@ const sellerProductsCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
-            data = data?.result[0];
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }

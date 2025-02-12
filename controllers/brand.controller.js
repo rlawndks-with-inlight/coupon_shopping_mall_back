@@ -1,7 +1,4 @@
 "use strict";
-import axios from "axios";
-import db, { pool } from "../config/db.js";
-import { checkIsManagerUrl } from "../utils.js/function.js";
 import {
   deleteQuery,
   getSelectQueryList,
@@ -20,6 +17,7 @@ import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import { brandSettingLang } from "../utils.js/schedules/lang-process.js";
 import speakeasy from 'speakeasy';
+import { readPool } from "../config/db-pool.js";
 
 const table_name = "brands";
 
@@ -62,8 +60,8 @@ const brandCtrl = {
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { id } = req.params;
-      let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
-      data = data?.result[0];
+      let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
+      data = data[0][0];
       data["theme_css"] = JSON.parse(data?.theme_css ?? "{}");
       //data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
       data["setting_obj"] = JSON.parse(data?.setting_obj ?? "{}");
@@ -167,7 +165,6 @@ const brandCtrl = {
       obj["blog_obj"] = JSON.stringify(obj.blog_obj);
       obj["seo_obj"] = JSON.stringify(obj.seo_obj);
       obj = { ...obj, ...files };
-      await db.beginTransaction();
 
       let result = await insertQuery(`${table_name}`, obj);
       let user_obj = {
@@ -177,19 +174,17 @@ const brandCtrl = {
         nickname: seller_name,
         seller_name: seller_name,
         level: 40,
-        brand_id: result?.result?.insertId,
+        brand_id: result?.insertId,
       };
       let pw_data = await createHashedPassword(user_obj.user_pw);
       user_obj.user_pw = pw_data.hashedPassword;
       let user_salt = pw_data.salt;
       user_obj["user_salt"] = user_salt;
       let user_sign_up = await insertQuery("users", user_obj);
-      await db.commit();
       return response(req, res, 100, "success", {});
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      await db.rollback();
       return response(req, res, -200, "서버 에러 발생", false);
     }
   },
@@ -317,8 +312,8 @@ const brandCtrl = {
       const decode_user = await checkLevel(req.cookies.token, 0, req);
       const decode_dns = checkDns(req.cookies.dns);
       const { brand_id } = req.body;
-      let dns_data = await pool.query(`SELECT ${table_name}.* FROM ${table_name} WHERE id=${brand_id}`);
-      dns_data = dns_data?.result[0];
+      let dns_data = await readPool.query(`SELECT ${table_name}.* FROM ${table_name} WHERE id=${brand_id}`);
+      dns_data = dns_data[0][0];
       const secret = speakeasy.generateSecret({
         length: 20, // 비밀키의 길이를 설정 (20자리)
         name: dns_data?.dns, // 사용자 아이디를 비밀키의 이름으로 설정

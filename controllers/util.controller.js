@@ -1,12 +1,11 @@
 'use strict';
-import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-//import { grandPool } from '../config/grandparis-db.js'
 import _ from "lodash";
+import { readPool, writePool } from "../config/db-pool.js";
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -15,7 +14,6 @@ const utilCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             let { source_id, source_sort_idx, dest_id, dest_sort_idx } = req.body;
             const { table } = req.params;
-            await db.beginTransaction();
             let update_sql = ` UPDATE ${table} SET `
             source_id = parseInt(source_id);
             source_sort_idx = parseInt(source_sort_idx);
@@ -26,16 +24,14 @@ const utilCtrl = {
             } else {//드래그한게 더 작을때
                 update_sql += ` sort_idx=sort_idx-1 WHERE sort_idx > ${source_sort_idx} AND sort_idx <= ${dest_sort_idx} AND id!=${source_id} `;
             }
-            let update_result = await pool.query(update_sql);
+            let update_result = await writePool.query(update_sql);
 
-            let result = await pool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [dest_sort_idx, source_id]);
+            let result = await writePool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [dest_sort_idx, source_id]);
 
-            await db.commit();
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -51,7 +47,7 @@ const utilCtrl = {
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
-            let result = await pool.query(`UPDATE ${table} SET ${column_name}=? WHERE id=?`, [value, id]);
+            let result = await writePool.query(`UPDATE ${table} SET ${column_name}=? WHERE id=?`, [value, id]);
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
@@ -79,25 +75,24 @@ const utilCtrl = {
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
-            let dns_data = await pool.query(`SELECT * FROM brands WHERE dns=?`, [dns]);
-            dns_data = dns_data?.result[0];
+            let dns_data = await readPool.query(`SELECT * FROM brands WHERE dns=?`, [dns]);
+            dns_data = dns_data[0][0];
             if (!dns_data) {
                 return response(req, res, -100, "받을 도메인이 존재하지 않습니다.", false)
             }
-            let sender_brand = await pool.query(`SELECT * FROM brands WHERE id=${sender_brand_id}`)
-            sender_brand = sender_brand?.result[0];
+            let sender_brand = await readPool.query(`SELECT * FROM brands WHERE id=${sender_brand_id}`)
+            sender_brand = sender_brand[0][0];
             if (!sender_brand) {
                 return response(req, res, -100, "복사할 도메인이 존재하지 않습니다.", false)
             }
             if (dns_data?.id == sender_brand?.id) {
                 return response(req, res, -100, "같은 도메인은 복사할 수 없습니다.", false)
             }
-            let manager = await pool.query(`SELECT * FROM users WHERE brand_id=${dns_data?.id} AND level=40`);
-            manager = manager?.result[0];
+            let manager = await readPool.query(`SELECT * FROM users WHERE brand_id=${dns_data?.id} AND level=40`);
+            manager = manager[0][0];
             if (!manager) {
                 return response(req, res, -100, "관리자 계정이 없는 브랜드입니다.", false);
             }
-            await db.beginTransaction();
             if (is_copy_brand_setting == 1) {//브랜드 기본세팅 복사 원할시
                 let result = await updateQuery('brands', {
                     name: sender_brand?.name,
@@ -116,8 +111,8 @@ const utilCtrl = {
             if (is_copy_product == 1) {//상품 복사 원할시
 
                 let product_category_group_columns = ['category_group_name', 'max_depth', 'id'];
-                let product_category_groups = await pool.query(`SELECT ${product_category_group_columns.join()} FROM product_category_groups WHERE brand_id=${sender_brand?.id} AND is_delete=0`);
-                product_category_groups = product_category_groups?.result;
+                let product_category_groups = await readPool.query(`SELECT ${product_category_group_columns.join()} FROM product_category_groups WHERE brand_id=${sender_brand?.id} AND is_delete=0`);
+                product_category_groups = product_category_groups[0];
                 let product_category_group_connect_ids = {};
                 for (var i = product_category_groups.length; i >= 1; i--) {
                     let obj = { ...product_category_groups[i - 1] };
@@ -126,13 +121,13 @@ const utilCtrl = {
                         ...obj,
                         brand_id: dns_data?.id,
                     })
-                    product_category_group_connect_ids[product_category_groups[i - 1]?.id] = result?.result?.insertId;
+                    product_category_group_connect_ids[product_category_groups[i - 1]?.id] = result?.insertId;
                 }
                 //console.log(product_category_groups)
 
                 let product_category_columns = ['product_category_group_id', 'parent_id', 'category_type', 'category_name', 'category_img', 'category_description', 'id'];
-                let product_categories = await pool.query(`SELECT ${product_category_columns.join()} FROM product_categories WHERE product_category_group_id IN (${product_category_groups.map(item => { return item?.id }).join()})`);
-                product_categories = product_categories?.result;
+                let product_categories = await readPool.query(`SELECT ${product_category_columns.join()} FROM product_categories WHERE product_category_group_id IN (${product_category_groups.map(item => { return item?.id }).join()})`);
+                product_categories = product_categories[0];
                 let product_category_connect_ids = {};
                 for (var i = product_categories.length; i >= 1; i--) {
                     product_categories[i - 1].depth = await findParents(product_categories, product_categories[i - 1]);
@@ -153,7 +148,7 @@ const utilCtrl = {
                                 product_category_group_id: product_category_group_connect_ids[product_category_depth_list[j - 1]?.product_category_group_id],
                                 parent_id: product_category_connect_ids[product_category_depth_list[j - 1]?.parent_id] ?? -1,
                             })
-                            product_category_connect_ids[product_category_depth_list[j - 1]?.id] = result?.result?.insertId;
+                            product_category_connect_ids[product_category_depth_list[j - 1]?.id] = result?.insertId;
                         }
                     }
                 }
@@ -162,8 +157,8 @@ const utilCtrl = {
                 let product_columns = ['category_id0', 'category_id1', 'category_id2', 'product_name', 'product_price', 'product_sale_price', 'product_img', 'product_comment', 'product_description', 'another_id', 'id',];
                 let product_sub_img_columns = ['product_sub_img'];
 
-                let products = await pool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
-                products = products?.result;
+                let products = await readPool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
+                products = products[0];
                 let product_connect_ids = {};
                 let first_insert_product_idx = 0;
                 let first_insert_product_sub_img_idx = 0;
@@ -196,18 +191,18 @@ const utilCtrl = {
                         ])
                     }
                     if (insert_data.length > 0) {
-                        let result = await pool.query('INSERT INTO products (category_id0,category_id1,category_id2,product_name,product_price,product_sale_price,product_img,product_comment,product_description,another_id,brand_id,user_id) VALUES ?', [insert_data])
+                        let result = await writePool.query('INSERT INTO products (category_id0,category_id1,category_id2,product_name,product_price,product_sale_price,product_img,product_comment,product_description,another_id,brand_id,user_id) VALUES ?', [insert_data])
                         if (i == 0) {
-                            first_insert_product_idx = result?.result?.insertId
+                            first_insert_product_idx = result[0]?.insertId
                         }
 
                         for (let j = 0; j < product_list.length; j++) {
-                            product_connect_ids[product_list[j].id] = result.result.insertId + j;
+                            product_connect_ids[product_list[j].id] = result[0].insertId + j;
                         }
                     }
                     for (var j = 0; j < product_list.length; j++) {
-                        let sub_images = await pool.query(`SELECT ${product_sub_img_columns.join()} FROM product_images WHERE product_id=${product_list[j]?.id} AND is_delete=0 ORDER BY id DESC`);
-                        sub_images = sub_images?.result;
+                        let sub_images = await readPool.query(`SELECT ${product_sub_img_columns.join()} FROM product_images WHERE product_id=${product_list[j]?.id} AND is_delete=0 ORDER BY id DESC`);
+                        sub_images = sub_images[0];
 
                         for (var k = sub_images.length; k >= 1; k--) {
                             insert_sub_img_data.push([
@@ -217,36 +212,36 @@ const utilCtrl = {
                         }
                     }
                     if (insert_sub_img_data.length > 0) {
-                        let result = await pool.query('INSERT INTO product_images (product_id, product_sub_img) VALUES ?', [insert_sub_img_data]);
+                        let result = await writePool.query('INSERT INTO product_images (product_id, product_sub_img) VALUES ?', [insert_sub_img_data]);
                         if (i == 0) {
-                            first_insert_product_sub_img_idx = result?.result?.insertId;
+                            first_insert_product_sub_img_idx = result[0]?.insertId;
                         }
                     }
                 }
-                let update_sort_idx = await pool.query(`UPDATE products SET sort_idx=id WHERE brand_id=${dns_data?.id} AND id>=${first_insert_product_idx}`);
-                let new_products = await pool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 AND id>=${first_insert_product_idx} ORDER BY id DESC`);
-                new_products = new_products?.result;
+                let update_sort_idx = await writePool.query(`UPDATE products SET sort_idx=id WHERE brand_id=${dns_data?.id} AND id>=${first_insert_product_idx}`);
+                let new_products = await readPool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 AND id>=${first_insert_product_idx} ORDER BY id DESC`);
+                new_products = new_products[0];
 
                 for (var i = 0; i < products.length; i++) {
                     product_connect_ids[products[i]?.id] = new_products[i]?.id;
                 }
 
                 // let product_option_group_columns = ['id', 'product_id', 'is_able_duplicate_select', 'group_name', 'group_description', 'group_img'];
-                // let product_option_groups = await pool.query(`SELECT ${product_option_group_columns.join()} FROM product_option_groups WHERE product_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
-                // product_option_groups = product_option_groups?.result;
+                // let product_option_groups = await readPool.query(`SELECT ${product_option_group_columns.join()} FROM product_option_groups WHERE product_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
+                // product_option_groups = product_option_groups[0];
 
                 // let product_option_columns = ['category_id0', 'category_id1', 'category_id2', 'product_name', 'product_price', 'product_sale_price', 'product_img', 'product_comment', 'product_description', 'id'];
-                // let product_options = await pool.query(`SELECT ${product_option_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
-                // product_options = product_options?.result;
+                // let product_options = await readPool.query(`SELECT ${product_option_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
+                // product_options = product_options[0];
 
                 // let product_character_columns = ['category_id0', 'category_id1', 'category_id2', 'product_name', 'product_price', 'product_sale_price', 'product_img', 'product_comment', 'product_description', 'id'];
-                // let product_characters = await pool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
-                // product_characters = product_characters?.result;
+                // let product_characters = await readPool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
+                // product_characters = product_characters[0];
             }
             if (is_copy_post == 1) {//게시글 복사 원할시
                 let post_category_columns = ['id', 'parent_id', 'post_category_title', 'post_category_type', 'post_category_read_type', 'is_able_user_add'];
-                let post_categories = await pool.query(`SELECT ${post_category_columns.join()} FROM post_categories WHERE brand_id=${sender_brand?.id} AND is_delete=0`);
-                post_categories = post_categories?.result;
+                let post_categories = await readPool.query(`SELECT ${post_category_columns.join()} FROM post_categories WHERE brand_id=${sender_brand?.id} AND is_delete=0`);
+                post_categories = post_categories[0];
                 let post_category_connect_ids = {};
                 for (var i = 0; i < post_categories.length; i++) {
                     post_categories[i].depth = await findParents(post_categories, post_categories[i]);
@@ -264,14 +259,14 @@ const utilCtrl = {
                                 brand_id: dns_data?.id,
                                 parent_id: post_category_connect_ids[post_category_depth_list[j]?.parent_id] ?? -1,
                             })
-                            post_category_connect_ids[post_category_depth_list[j]?.id] = result?.result?.insertId;
+                            post_category_connect_ids[post_category_depth_list[j]?.id] = result?.insertId;
                         }
                     }
                 }
 
                 let first_insert_post_idx = 0;
-                let posts = await pool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE post_categories.brand_id=${sender_brand?.id} AND post_categories.is_delete=0 AND posts.is_delete=0 AND posts.parent_id=-1`);
-                posts = posts?.result;
+                let posts = await readPool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE post_categories.brand_id=${sender_brand?.id} AND post_categories.is_delete=0 AND posts.is_delete=0 AND posts.parent_id=-1`);
+                posts = posts[0];
                 for (var i = 0; i < parseInt(posts.length / 1000) + 1; i++) {
                     let insert_data = [];
                     let post_list = posts.slice(i * 1000, (i + 1) * 1000);
@@ -286,19 +281,17 @@ const utilCtrl = {
                         ])
                     }
                     if (insert_data.length > 0) {
-                        let result = await pool.query('INSERT INTO posts (category_id,user_id,post_title,post_content,post_title_img,is_reply) VALUES ?', [insert_data])
+                        let result = await writePool.query('INSERT INTO posts (category_id,user_id,post_title,post_content,post_title_img,is_reply) VALUES ?', [insert_data])
                         if (i == 0) {
-                            first_insert_post_idx = result?.result?.insertId
+                            first_insert_post_idx = result[0]?.insertId
                         }
                     }
                 }
             }
 
-            await db.commit();
 
             return response(req, res, 100, "success", {});
         } catch (err) {
-            await db.rollback();
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
             return response(req, res, -200, "서버 에러 발생", false)
@@ -307,344 +300,5 @@ const utilCtrl = {
         }
     },
 };
-
-export const setGrandParisProducts = async () => {
-    try {
-        //상품 메인이미지o
-        //상품 서브이미지o
-        //상품명o
-        //상품코드o
-        //상품가격o
-        //상품카테고리
-        //상품브랜드
-        //상품등급o
-        //상품코너o
-        //상품설명o
-        //
-
-        /*let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
-        grand_products = grand_products?.result;
-        console.log('grand_products')
-        let grand_product_imgs = await grandPool.query(`SELECT * FROM PRODUCT_IMG WHERE IMG_FOLDER='/product' AND IMG_TYPE IN ('main','detail') AND DELETE_FLAG='N' ORDER BY SEQ ASC`);
-        grand_product_imgs = grand_product_imgs?.result;
-        console.log('grand_product_imgs')
-        let grand_product_categories = await grandPool.query(`SELECT * FROM PRODUCT_CATEGORY ORDER BY SEQ ASC`);
-        grand_product_categories = grand_product_categories?.result;
-        console.log('grand_product_categories')
-        let grand_product_brands = await grandPool.query(`SELECT * FROM PRODUCT_BRAND ORDER BY SEQ ASC`);
-        grand_product_brands = grand_product_brands?.result;
-        console.log('grand_product_brands')
-        await db.beginTransaction();
-
-        let products = await pool.query(`SELECT * FROM products WHERE brand_id=5 ORDER BY id ASC`);
-        products = products?.result;
-
-        let product_obj = {};
-
-        for (var i = 0; i < products.length; i++) {
-            product_obj[products[i]?.another_id] = products[i];
-        }
-
-
-        await db.commit();
-
-        return;*/
-
-
-        /*let grand_users = await grandPool.query(`SELECT * FROM MEMBER ORDER BY SEQ ASC`);
-        grand_users = grand_users?.result;
-        console.log('grand_users')
-
-        let users = await pool.query(`SELECT * FROM users WHERE brand_id=5 ORDER BY id ASC`)
-        users = users?.result;
-
-        let user_obj = {}
-
-
-        for (var i = 0; i < grand_users.length; i++) {
-            let user_pw = grand_users[i]?.ACCOUNT;
-            let pw_data = await createHashedPassword(user_pw);
-            user_pw = pw_data.hashedPassword;
-            let user_salt = pw_data.salt;
-            let insert_user = await pool.query(`INSERT INTO users (brand_id, is_delete, user_name, user_pw, user_salt, name, nickname, phone_num, another_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                5,
-                (grand_users[i]?.DELETE_FLAG == 'Y' ? 1 : 0),
-                grand_users[i]?.ACCOUNT,
-                user_pw,
-                user_salt,
-                (grand_users[i]?.NAME ? grand_users[i]?.NAME : grand_users[i].ACCOUNT),
-                (grand_users[i]?.NAME ? grand_users[i]?.NAME : grand_users[i].ACCOUNT),
-                (grand_users[i]?.MOBILE ? grand_users[i].MOBILE : grand_users[i].PHONE),
-                grand_users[i]?.SEQ,
-            ]);
-            let insert_id = insert_user?.result?.insertId;
-            user_obj[grand_users[i]?.SEQ] = insert_id;
-        }*/
-        let grand_products = await grandPool.query(`SELECT * FROM PRODUCT ORDER BY SEQ ASC`);
-        grand_products = grand_products?.result;
-        console.log('grand_products')
-        /*for (var i = 0; i < grand_products.length; i++) {
-            let sql = await pool.query(`UPDATE products SET consignment_none_user_name=?, consignment_none_user_phone_num=?, consignment_user_id=?, point_save=?, point_usable=?, cash_usable=?, pg_usable=? WHERE another_id=${grand_products[i]?.SEQ} AND brand_id=5`,
-            [
-                grand_products[i]?.SELLER_NAME ?? "", 
-                grand_products[i]?.SELLER_MOBILE ?? "", 
-                user_obj[grand_products[i]?.SELLER_MEMBER_SEQ ?? 0] ?? 0,
-                grand_products[i]?.MILEAGE ?? 0,
-                (grand_products[i]?.MILEAGE_PAYMENT_FLAG == 'Y' ? 1 : 0),
-                (grand_products[i]?.CASH_PAYMENT_FLAG == 'Y' ? 1 : 0),
-                (grand_products[i]?.PG_PAYMENT_FLAG == 'Y' ? 1 : 0)
-            ])
-            let result_ = sql?.result
-            console.log(result_)
-        }*/
-
-        /*let products = await pool.query(`SELECT * FROM products WHERE id not IN (SELECT product_id FROM products_and_properties WHERE property_id IN (12, 13, 14, 15, 16, 17, 24)) AND brand_id=5`)
-
-        products = products?.result;
-        console.log('products')
-
-
-        for (const product of products) {
-            for (const grand_product of grand_products) {
-                if (product.another_id == grand_product.SEQ) {
-                    let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
-                        product.id,
-                        (grand_product.PRODUCT_USED_FLAG == 'N' ? 17 : 
-                        grand_product.PRODUCT_USED_FLAG == 'N-S' ? 16 :
-                        grand_product.PRODUCT_USED_FLAG == '특A' ? 15 :
-                        grand_product.PRODUCT_USED_FLAG == 'A+' ? 14 :
-                        grand_product.PRODUCT_USED_FLAG == 'A' ? 13 :
-                        grand_product.PRODUCT_USED_FLAG == 'A-' ? 12 :
-                        grand_product.PRODUCT_USED_FLAG == '특B' ? 24 :
-                        0
-                        ),
-                        4
-                    ])
-                    let result_ = sql?.result
-                    console.log(result_)
-                }
-            }
-        }*/
-
-        let products = await pool.query(`SELECT * FROM products WHERE id not IN (SELECT product_id FROM products_and_properties WHERE property_id IN (18, 19, 20, 21, 22)) AND brand_id=5`)
-
-        products = products?.result;
-        console.log('products')
-
-        for (const product of products) {
-            for (const grand_product of grand_products) {
-                if (product.another_id == grand_product.SEQ) {
-                    if (grand_product.BEST_FLAG == 'Y') {
-                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
-                            product.id,
-                            22,
-                            3
-                        ])
-                        let result_ = sql?.result
-                        console.log(result_)
-                    }
-                    if (grand_product.NEW_ARRIVAL_FLAG == 'Y') {
-                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
-                            product.id,
-                            21,
-                            3
-                        ])
-                        let result_ = sql?.result
-                        console.log(result_)
-                    }
-                    if (grand_product.PRICE_DOWN_FLAG == 'Y') {
-                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
-                            product.id,
-                            20,
-                            3
-                        ])
-                        let result_ = sql?.result
-                        console.log(result_)
-                    }
-                    if (grand_product.CLOTHES_FLAG == 'Y') {
-                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
-                            product.id,
-                            19,
-                            3
-                        ])
-                        let result_ = sql?.result
-                        console.log(result_)
-                    }
-                    if (grand_product.WATCH_JEWELRY_FLAG == 'Y') {
-                        let sql = await pool.query(`INSERT INTO products_and_properties (product_id, property_id, property_group_id) VALUES (?, ?, ?)`, [
-                            product.id,
-                            18,
-                            3
-                        ])
-                        let result_ = sql?.result
-                        console.log(result_)
-                    }
-                }
-            }
-        }
-
-        await db.commit()
-        console.log('success')
-        return;
-
-
-
-        let insert_property_list = [];
-        let insert_character_list = [];
-
-        let property_obj = {
-            'N': 17,
-            'N-S': 16,
-            '특A': 15,
-            'A+': 14,
-            'A': 13,
-            'A-': 12,
-            '특B': 24,
-        }
-
-        console.log(`grand_products_length` + grand_products.length)
-        for (var i = 0; i < grand_products.length; i++) {
-            if (!product_obj[grand_products[i]?.SEQ]) {
-                let status = 0;
-                if (grand_products[i]?.OPEN_FLAG == 'N') {
-                    status = 5;
-                } else if (grand_products[i]?.SALE_FLAG == 'SOLDOUT') {
-                    status = 2;
-                } else {
-                    status = 0;
-                }
-                let insert_product = await pool.query(`INSERT INTO products (brand_id, product_name, product_code, product_price, product_sale_price, product_description, status, is_delete, another_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                    5,
-                    grand_products[i]?.PRODUCT_NAME,
-                    grand_products[i]?.PRODUCT_CODE,
-                    grand_products[i]?.ORGIN_PRICE,
-                    grand_products[i]?.PRICE,
-                    grand_products[i]?.PRODUCT_DETAIL_INFO,
-                    status,
-                    (grand_products[i]?.DELETE_FLAG == 'Y' ? 1 : 0),
-                    grand_products[i]?.SEQ,
-                ]);
-                let insert_id = insert_product?.result?.insertId;
-                let product_imgs = grand_product_imgs.filter(el => el?.PRODUCT_SEQ == grand_products[i]?.SEQ);
-                let main_img = product_imgs.filter(el => el?.IMG_TYPE == 'main')[0]?.IMG_URL;
-                let category_id = _.find(grand_product_categories, { CATEGORY_CODE: grand_products[i]?.CATEGORY_CODE })?.SEQ ? (_.find(grand_product_categories, { CATEGORY_CODE: grand_products[i]?.CATEGORY_CODE })?.SEQ + 1000) : 0;
-                let bnd_id = _.find(grand_product_brands, { SEQ: parseInt(grand_products[i]?.BRAND_SEQ) })?.SEQ + 500;
-                let sex_id = grand_products[i]?.PRODUCT_SEX == 'U' ? 2511 : (grand_products[i]?.PRODUCT_SEX == 'M' ? 2510 : 2509);
-                let sql = `UPDATE products SET product_img=?, consignment_none_user_name=?, consignment_none_user_phone_num=?, consignment_user_id=?, sort_idx=? `;
-                let value = [`https://kr.object.ncloudstorage.com/grandparis${main_img}`, grand_products[i]?.SELLER_NAME ?? "", grand_products[i]?.SELLER_MOBILE ?? "", (grand_products[i]?.SELLER_MEMBER_SEQ > 0 ? grand_products[i]?.SELLER_MEMBER_SEQ + 1000 : 0), insert_id];
-
-                if (category_id > 0) {
-                    sql += `, category_id0=? `
-                    value.push(category_id)
-                }
-                if (bnd_id > 0) {
-                    sql += `, category_id1=? `
-                    value.push(bnd_id)
-
-                }
-                if (sex_id > 0) {
-                    sql += `, category_id2=? `
-                    value.push(sex_id)
-                }
-                sql += ` WHERE id=? `
-                value.push(insert_id)
-                let update_item = await pool.query(sql, value);
-                let sub_imgs = [];
-                for (var j = 0; j < product_imgs.length; j++) {
-                    if (product_imgs[j]?.IMG_TYPE == 'detail') {
-                        sub_imgs.push([
-                            insert_id,
-                            `https://kr.object.ncloudstorage.com/grandparis${product_imgs[j]?.IMG_URL}`,
-                        ])
-                    }
-                }
-                if (sub_imgs.length > 0) {
-                    let insert_sub_imgs = await pool.query(`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`, [sub_imgs]);
-                }
-                insert_property_list.push([//매장
-                    insert_id,//product_id
-                    28,//property_id
-                    6//property_group_id
-                ])
-                if (property_obj[grand_products[i].PRODUCT_USED_FLAG]) {
-                    insert_property_list.push([
-                        insert_id,//product_id
-                        property_obj[grand_products[i].PRODUCT_USED_FLAG],//property_id
-                        4//property_group_id
-                    ])
-                }
-                if (grand_products[i].BEST_FLAG == 'Y') {
-                    insert_property_list.push([
-                        insert_id,
-                        22,
-                        3,
-                    ])
-                }
-                if (grand_products[i].NEW_ARRIVAL_FLAG == 'Y') {
-                    insert_property_list.push([
-                        insert_id,
-                        21,
-                        3,
-                    ])
-                }
-                if (grand_products[i].PRICE_DOWN_FLAG == 'Y') {
-                    insert_property_list.push([
-                        insert_id,
-                        20,
-                        3,
-                    ])
-                }
-                if (grand_products[i].CLOTHES_FLAG == 'Y') {
-                    insert_property_list.push([
-                        insert_id,
-                        19,
-                        3,
-                    ])
-                }
-                if (grand_products[i].WATCH_JEWELRY_FLAG == 'Y') {
-                    insert_property_list.push([
-                        insert_id,
-                        18,
-                        3,
-                    ])
-                }
-                insert_character_list.push([
-                    insert_id,
-                    '성별',
-                    grand_products[i]?.PRODUCT_SEX,
-                ])
-                insert_character_list.push([
-                    insert_id,
-                    '사이즈',
-                    grand_products[i]?.PRODUCT_SIZE,
-                ])
-                insert_character_list.push([
-                    insert_id,
-                    '색상',
-                    grand_products[i]?.PRODUCT_COLOR,
-                ])
-            }
-            if (i % 1000 == 0) {
-                console.log(i);
-            }
-        }
-        console.log(`insert_property_list_length` + insert_property_list.length)
-        for (var i = 0; i < insert_property_list.length / 1000; i++) {
-            let insert_property_list_z = insert_property_list.splice(i * 1000, (i + 1) * 1000);
-            let result2 = await pool.query(`INSERT INTO products_and_properties (product_id,property_id,property_group_id) VALUES ?`, [insert_property_list_z]);
-        }
-        for (var i = 0; i < insert_character_list.length / 1000; i++) {
-            let insert_character_list_z = insert_character_list.splice(i * 1000, (i + 1) * 1000);
-            let result2 = await pool.query(`INSERT INTO product_characters (product_id,character_name,character_value) VALUES ?`, [insert_character_list_z]);
-        }
-        await db.commit();
-        console.log('success')
-    } catch (err) {
-        await db.rollback();
-        console.log(err)
-    }
-
-}
-//setGrandParisProducts();
 
 export default utilCtrl;

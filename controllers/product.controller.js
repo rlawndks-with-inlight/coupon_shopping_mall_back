@@ -1,12 +1,10 @@
 'use strict';
-import axios from "axios";
-import db, { pool } from "../config/db.js";
-import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
+import { readPool, writePool } from "../config/db-pool.js";
 const table_name = 'products';
 
 /*const productInserter = () => {
@@ -82,8 +80,8 @@ const productCtrl = {
 
             /*
             if (seller_id > 0) {
-                let connect_data = await pool.query(`SELECT * FROM products_and_sellers WHERE seller_id=${seller_id}`);
-                connect_data = connect_data?.result.map(item => {
+                let connect_data = await readPool.query(`SELECT * FROM products_and_sellers WHERE seller_id=${seller_id}`);
+                connect_data = connect_data[0].map(item => {
                     return item?.product_id
                 })
                 connect_data.unshift(0);
@@ -91,8 +89,8 @@ const productCtrl = {
             }
             */
             let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id ?? 0} AND is_delete=0 ORDER BY sort_idx DESC `;
-            let category_groups = await pool.query(category_group_sql);
-            category_groups = category_groups?.result;
+            let category_groups = await readPool.query(category_group_sql);
+            category_groups = category_groups[0];
 
             let category_sql_list = [];
             for (var i = 0; i < categoryDepth; i++) {
@@ -158,8 +156,8 @@ const productCtrl = {
                 ...data,
                 brand_name: brand_data?.brand_name,
             }*/
-            let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
-            sub_images = sub_images?.result;
+            let sub_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
+            sub_images = sub_images[0];
             for (var i = 0; i < data?.content.length; i++) {
                 let images = sub_images.filter(item => item?.product_id == data?.content[i]?.id);
                 data.content[i].sub_images = images ?? [];
@@ -204,8 +202,8 @@ const productCtrl = {
             product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 ${req?.IS_RETURN ? `AND ${table_name}.status!=5` : ''} AND ${table_name}.brand_id=${brand_id} `;
 
             //console.log(product_sql)
-            let data = await pool.query(product_sql);
-            data = data?.result[0];
+            let data = await readPool.query(product_sql);
+            data = data[0][0];
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}');
 
             id = data?.id;
@@ -315,10 +313,9 @@ const productCtrl = {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
                 }
             }
-            await db.beginTransaction();
             if (consignment_user_name) {
-                let consignment_user = await pool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
-                consignment_user = consignment_user?.result[0];
+                let consignment_user = await readPool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
+                consignment_user = consignment_user[0][0];
                 if (!consignment_user) {
                     return response(req, res, -100, "위탁할 회원정보를 찾을 수 없습니다.", false);
                 }
@@ -328,25 +325,24 @@ const productCtrl = {
 
             let result = await insertQuery(`${table_name}`, obj);
 
-            let dns_data = await pool.query(`SELECT id, setting_obj FROM brands WHERE id=${brand_id}`);
-            dns_data = dns_data?.result[0];
+            let dns_data = await readPool.query(`SELECT id, setting_obj FROM brands WHERE id=${brand_id}`);
+            dns_data = dns_data[0][0];
             dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
 
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, result?.result?.insertId);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, result?.insertId);
 
 
-            if (!result?.result?.insertId) {
-                await db.rollback();
+            if (!result?.insertId) {
                 return response(req, res, -100, "상품 저장중 에러", false)
             }
 
 
-            const product_id = result?.result?.insertId;
+            const product_id = result?.insertId;
 
-            let user = await pool.query(`SELECT level FROM users WHERE id=?`, [user_id]);
-            user = user?.result[0];
+            let user = await readPool.query(`SELECT level FROM users WHERE id=?`, [user_id]);
+            user = user[0][0];
             if (user?.level == 10) {
-                let insert_and_table = await pool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES (?, ?)`, [user_id, product_id]);
+                let insert_and_table = await writePool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES (?, ?)`, [user_id, product_id]);
             }
 
             let sql_list = [];
@@ -360,7 +356,7 @@ const productCtrl = {
                         is_able_duplicate_select: group?.is_able_duplicate_select ?? 0,
                         group_description: group?.group_description,
                     });
-                    let group_id = group_result?.result?.insertId;
+                    let group_id = group_result?.insertId;
                     let options = group?.options ?? [];
                     let result_options = [];
                     for (var j = 0; j < options.length; j++) {
@@ -443,12 +439,10 @@ const productCtrl = {
             }
 
             let when = await getMultipleQueryByWhen(sql_list);
-            await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -505,11 +499,10 @@ const productCtrl = {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
                 }
             }
-            await db.beginTransaction();
 
             if (consignment_user_name) {
-                let consignment_user = await pool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
-                consignment_user = consignment_user?.result[0];
+                let consignment_user = await readPool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
+                consignment_user = consignment_user[0][0];
                 if (!consignment_user) {
                     return response(req, res, -100, "위탁할 회원정보를 찾을 수 없습니다.", false);
                 }
@@ -518,8 +511,8 @@ const productCtrl = {
             obj = { ...obj, ...files, };
             let result = await updateQuery(`${table_name}`, obj, id);
 
-            let dns_data = await pool.query(`SELECT id, setting_obj FROM brands WHERE id=${brand_id}`);
-            dns_data = dns_data?.result[0];
+            let dns_data = await readPool.query(`SELECT id, setting_obj FROM brands WHERE id=${brand_id}`);
+            dns_data = dns_data[0][0];
             dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
 
             let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, id);
@@ -549,7 +542,7 @@ const productCtrl = {
                             group_description: group?.group_description,
                         });
                     }
-                    let group_id = group_result?.result?.insertId || group?.id;
+                    let group_id = group_result?.insertId || group?.id;
                     let options = group?.options ?? [];
 
                     for (var j = 0; j < options.length; j++) {
@@ -576,13 +569,13 @@ const productCtrl = {
                 }
             }
             if (insert_option_list.length > 0) {
-                let option_result = await pool.query(`INSERT INTO product_options (group_id, option_name, option_price, option_description) VALUES ?`, [insert_option_list]);
+                let option_result = await writePool.query(`INSERT INTO product_options (group_id, option_name, option_price, option_description) VALUES ?`, [insert_option_list]);
             }
             if (delete_group_list.length > 0) {
-                let option_result = await pool.query(`UPDATE product_option_groups SET is_delete=1 WHERE id IN (${delete_group_list.join()}) `);
+                let option_result = await writePool.query(`UPDATE product_option_groups SET is_delete=1 WHERE id IN (${delete_group_list.join()}) `);
             }
             if (delete_option_list.length > 0) {
-                let option_result = await pool.query(`UPDATE product_options SET is_delete=1 WHERE id IN (${delete_option_list.join()}) OR group_id IN (${delete_group_list.join()})`);
+                let option_result = await writePool.query(`UPDATE product_options SET is_delete=1 WHERE id IN (${delete_option_list.join()}) OR group_id IN (${delete_group_list.join()})`);
             }
             //character
             let insert_character_list = [];
@@ -607,10 +600,10 @@ const productCtrl = {
                 }
             }
             if (insert_character_list.length > 0) {
-                let option_result = await pool.query(`INSERT INTO product_characters (product_id, character_name, character_value) VALUES ?`, [insert_character_list]);
+                let option_result = await writePool.query(`INSERT INTO product_characters (product_id, character_name, character_value) VALUES ?`, [insert_character_list]);
             }
             if (delete_character_list.length > 0) {
-                let option_result = await pool.query(`DELETE FROM product_characters WHERE id IN (${delete_character_list.join()})`);
+                let option_result = await writePool.query(`DELETE FROM product_characters WHERE id IN (${delete_character_list.join()})`);
             }
             //sub image
             let insert_sub_image_list = [];
@@ -630,13 +623,13 @@ const productCtrl = {
                 }
             }
             if (insert_sub_image_list.length > 0) {
-                let sub_image_result = await pool.query(`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`, [insert_sub_image_list]);
+                let sub_image_result = await writePool.query(`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`, [insert_sub_image_list]);
             }
             if (delete_sub_image_list.length > 0) {
-                let sub_image_result = await pool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_sub_image_list.join()})`);
+                let sub_image_result = await writePool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_sub_image_list.join()})`);
             }
             //property
-            let delete_property_result = await pool.query(`DELETE FROM products_and_properties WHERE product_id=${product_id}`);
+            let delete_property_result = await writePool.query(`DELETE FROM products_and_properties WHERE product_id=${product_id}`);
 
             let insert_property_list = [];
             properties = JSON.parse(properties);
@@ -651,14 +644,12 @@ const productCtrl = {
                 }
             }
             if (insert_property_list.length > 0) {
-                let property_result = await pool.query(`INSERT INTO products_and_properties (product_id, property_group_id, property_id) VALUES ?`, [insert_property_list]);
+                let property_result = await writePool.query(`INSERT INTO products_and_properties (product_id, property_group_id, property_id) VALUES ?`, [insert_property_list]);
             }
-            await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err));
-            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -675,7 +666,7 @@ const productCtrl = {
                     id
                 })
             } else {
-                let result = await pool.query(`DELETE FROM products_and_sellers WHERE seller_id=${decode_user?.id} AND product_id=${id}`);
+                let result = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${decode_user?.id} AND product_id=${id}`);
             }
 
             return response(req, res, 100, "success", {})

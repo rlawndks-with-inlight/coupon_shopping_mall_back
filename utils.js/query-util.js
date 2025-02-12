@@ -1,12 +1,12 @@
-import { pool } from '../config/db.js';
 import 'dotenv/config';
 import when from 'when';
 import { searchColumns } from './search-columns.js';
+import { readPool, writePool } from '../config/db-pool.js';
 
 export const insertQuery = async (table, obj) => {
     try {
-        let find_column = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
-        find_column = find_column?.result;
+        let find_column = await readPool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
+        find_column = find_column[0];
         find_column = find_column.map((column) => {
             return column?.COLUMN_NAME
         })
@@ -21,14 +21,14 @@ export const insertQuery = async (table, obj) => {
             return obj[key]
         });
 
-        let result = await pool.query(`INSERT INTO ${table} (${keys.join()}) VALUES (${question_list.join()})`, values);
+        let result = await writePool.query(`INSERT INTO ${table} (${keys.join()}) VALUES (${question_list.join()})`, values);
         if (find_column.includes('sort_idx')) {
-            let setting_sort_idx = await pool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [
-                result?.result?.insertId,
-                result?.result?.insertId,
+            let setting_sort_idx = await writePool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [
+                result[0]?.insertId,
+                result[0]?.insertId,
             ])
         }
-        return result;
+        return result[0];
     } catch (err) {
         return false;
     }
@@ -37,8 +37,8 @@ export const insertMultyQuery = async (table, keys, list = []) => {
     if (keys.length == 0) {
         return false;
     }
-    let result = await pool.query(`INSERT INTO ${table} (${keys.join()}) VALUES ?`, [list]);
-    return result?.result;
+    let result = await writePool.query(`INSERT INTO ${table} (${keys.join()}) VALUES ?`, [list]);
+    return result[0];
 }
 export const insertQueryMultiRow = async (table, list) => {// 개발예정
     let keys = Object.keys(obj);
@@ -51,8 +51,8 @@ export const insertQueryMultiRow = async (table, list) => {// 개발예정
     let values = keys.map(key => {
         return obj[key]
     });
-    let result = await pool.query(`INSERT INTO ${table} (${keys.join()}) VALUES (${question_list.join()})`, values);
-    return result;
+    let result = await writePool.query(`INSERT INTO ${table} (${keys.join()}) VALUES (${question_list.join()})`, values);
+    return result[0];
 }
 export const deleteQuery = async (table, where_obj, delete_true) => {
     let keys = Object.keys(where_obj);
@@ -67,8 +67,8 @@ export const deleteQuery = async (table, where_obj, delete_true) => {
     if (delete_true) {
         sql = `DELETE FROM ${table} WHERE ${where_list.join('AND')}`
     }
-    let result = await pool.query(sql);
-    return result;
+    let result = await writePool.query(sql);
+    return result[0];
 }
 export const updateQuery = async (table, obj, id) => {
     let keys = Object.keys(obj);
@@ -81,13 +81,13 @@ export const updateQuery = async (table, obj, id) => {
     let values = keys.map(key => {
         return obj[key]
     });
-    let result = await pool.query(`UPDATE ${table} SET ${question_list.join()} WHERE id=${id}`, values);
+    let result = await writePool.query(`UPDATE ${table} SET ${question_list.join()} WHERE id=${id}`, values);
 
-    return result;
+    return result[0];
 }
 export const selectQuerySimple = async (table, id) => {
-    let result = await pool.query(`SELECT * FROM ${table} WHERE id=${id}`);
-    return result;
+    let result = await readPool.query(`SELECT * FROM ${table} WHERE id=${id}`);
+    return result[0];
 }
 export const getTableNameBySelectQuery = (sql) => {// select query 가지고 불러올 메인 table명 불러오기 select * from user as asd
     let sql_split_list = sql.split(' FROM ')[1].split(' ');
@@ -104,8 +104,8 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     let { page = 1, page_size = 150000, is_asc = 0, order, search = "", s_dt, e_dt, } = query;
     let sql = sql_;
     let table = getTableNameBySelectQuery(sql);
-    let find_columns = await pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
-    find_columns = find_columns?.result;
+    let find_columns = await readPool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
+    find_columns = find_columns[0];
     find_columns = find_columns.map((column) => {
         return column?.COLUMN_NAME
     })
@@ -142,7 +142,7 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     for (var i = 0; i < sql_list.length; i++) {
         result_list.push({
             table: sql_list[i].table,
-            content: (await pool.query(sql_list[i].sql))
+            content: (await readPool.query(sql_list[i].sql))
         });
     }
 
@@ -155,7 +155,7 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
         page_size,
     }
     for (var i = 0; i < result.length; i++) {
-        obj[result[i].table] = result[i]?.content?.result
+        obj[result[i].table] = result[i]?.content[0]
     }
     return settingSelectQueryObj(obj);
 }
@@ -197,7 +197,7 @@ export const getMultipleQueryByWhen = async (sql_list = [], is_list) => {
     for (var i = 0; i < sql_list.length; i++) {
         result_list.push({
             table: sql_list[i].table,
-            content: (await pool.query(sql_list[i].sql, sql_list[i]?.data ?? []))
+            content: (await writePool.query(sql_list[i].sql, sql_list[i]?.data ?? []))
         });
     }
     for (var i = 0; i < result_list.length; i++) {
@@ -206,7 +206,7 @@ export const getMultipleQueryByWhen = async (sql_list = [], is_list) => {
     let result = (await when(result_list));
     let data = {};
     for (var i = 0; i < result.length; i++) {
-        data[result[i].table] = result[i]?.content?.result
+        data[result[i].table] = result[i]?.content[0]
     }
     return data;
 }

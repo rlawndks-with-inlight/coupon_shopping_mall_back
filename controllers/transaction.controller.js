@@ -1,5 +1,4 @@
 'use strict';
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
@@ -7,6 +6,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
 import fs from 'fs';
+import { readPool } from "../config/db-pool.js";
 const table_name = 'transactions';
 
 const transactionCtrl = {
@@ -81,9 +81,9 @@ const transactionCtrl = {
                 order_sql += ` LEFT JOIN users AS sellers ON transaction_orders.seller_id=sellers.id `
                 order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.join()}) `
                 order_sql += ` ORDER BY transaction_orders.id DESC `
-                let order_data = await pool.query(order_sql);
+                let order_data = await readPool.query(order_sql);
 
-                order_data = order_data?.result;
+                order_data = order_data[0];
 
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
@@ -131,13 +131,13 @@ const transactionCtrl = {
                     return response(req, res, -100, "존재하지 않는 주문입니다.", false)
                 }
             }
-            let data = await pool.query(sql)
-            data = data?.result[0];
+            let data = await readPool.query(sql)
+            data = data[0][0];
             if (!data) {
                 return response(req, res, -100, "존재하지 않는 주문번호 입니다.", {})
             }
-            let order_data = await pool.query(`SELECT * FROM transaction_orders WHERE trans_id=${data?.id ?? 0} ORDER BY id DESC`);
-            order_data = order_data?.result;
+            let order_data = await readPool.query(`SELECT * FROM transaction_orders WHERE trans_id=${data?.id ?? 0} ORDER BY id DESC`);
+            order_data = order_data[0];
             for (var i = 0; i < order_data.length; i++) {
                 order_data[i].groups = JSON.parse(order_data[i]?.groups ?? "[]");
             }
@@ -253,8 +253,8 @@ const transactionCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
-            data = data?.result[0];
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
+            data = data[0][0];
             if (data?.user_id != decode_user?.id) {
                 return lowLevelException(req, res);
             }

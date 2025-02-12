@@ -1,10 +1,10 @@
 'use strict';
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { readPool } from "../config/db-pool.js";
 const table_name = 'users';
 
 const userCtrl = {
@@ -49,8 +49,8 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} AND ${table_name}.is_delete=0 `);
-            let user_tree = makeTree(user_list?.result, decode_user);
+            let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} AND ${table_name}.is_delete=0 `);
+            let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
             console.log(err)
@@ -66,8 +66,8 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
-            data = data?.result[0];
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
@@ -112,8 +112,8 @@ const userCtrl = {
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
                 seller_trx_fee
             } = req.body;
-            let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
-            if (is_exist_user?.result.length > 0) {
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
+            if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
             if (level > 0 && decode_user?.level < level) {
@@ -158,8 +158,8 @@ const userCtrl = {
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
                 seller_trx_fee
             } = req.body;
-            let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND id!=?`, [user_name, id]);
-            if (is_exist_user?.result.length > 0) {
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND id!=?`, [user_name, id]);
+            if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
             if (seller_trx_fee > 1) {
@@ -193,7 +193,7 @@ const userCtrl = {
             let { user_pw } = req.body;
 
             let user = await selectQuerySimple(table_name, id);
-            user = user?.result[0];
+            user = user[0];
             if (!user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
@@ -221,7 +221,7 @@ const userCtrl = {
             const { id } = req.params
             let { status } = req.body;
             let user = await selectQuerySimple(table_name, id);
-            user = user?.result[0];
+            user = user[0];
             if (!user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }

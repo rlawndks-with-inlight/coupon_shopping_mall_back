@@ -1,12 +1,12 @@
 'use strict';
 import _ from "lodash";
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
+import { readPool } from "../config/db-pool.js";
 const table_name = 'post_categories';
 
 
@@ -45,8 +45,8 @@ const postCategoryCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await pool.query(`SELECT * FROM ${table_name} WHERE brand_id=${decode_dns?.id ?? 0}`);
-            data = data?.result;
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE brand_id=${decode_dns?.id ?? 0}`);
+            data = data[0];
             let category = _.find(data, { id: id });
             data = await makeTree(data, category);
             category = _.find(data, { id: parseInt(id) });
@@ -77,7 +77,7 @@ const postCategoryCtrl = {
             };
             obj = { ...obj, ...files };
             let result = await insertQuery(`${table_name}`, obj);
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.result?.insertId);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.insertId);
 
             return response(req, res, 100, "success", {})
         } catch (err) {

@@ -1,5 +1,4 @@
 'use strict';
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl, generateRandomCode } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertMultyQuery, insertQuery, insertQueryMultiRow, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
@@ -7,6 +6,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import axios from "axios";
 import _ from "lodash";
+import { readPool } from "../config/db-pool.js";
 const table_name = 'product_reviews';
 
 const productReviewCtrl = {
@@ -43,8 +43,8 @@ const productReviewCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
-            data = data?.result[0];
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
@@ -133,13 +133,13 @@ const productReviewCtrl = {
 
 const sadsadasdasd = async () => {
     try {
-        const brand_id = 69;
+        const brand_id = 70;
         let { data: categories } = await axios.get(`https://www.cumamarket.co.kr/_next/data/eb38b54477fe79382b5b37cb4cb5706e84e3f0ad/category-list.json`);
         categories = categories?.pageProps?.ssrCategoryList ?? [];
-        let db_products = await pool.query(`SELECT * FROM products WHERE brand_id=${brand_id}`);
-        db_products = db_products?.result;
-        let db_users = await pool.query(`SELECT * FROM users WHERE brand_id=${brand_id}`);
-        db_users = db_users?.result;
+        let db_products = await readPool.query(`SELECT * FROM products WHERE brand_id=${brand_id}`);
+        db_products = db_products[0];
+        let db_users = await readPool.query(`SELECT * FROM users WHERE brand_id=${brand_id}`);
+        db_users = db_users[0];
         let review_list = [];
         let products = [];
         for (var i = 0; i < categories.length; i++) {

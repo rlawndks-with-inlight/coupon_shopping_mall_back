@@ -1,10 +1,10 @@
 'use strict';
-import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { readPool, writePool } from "../config/db-pool.js";
 const table_name = 'users';
 
 const sellerCtrl = {
@@ -48,8 +48,8 @@ const sellerCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            let user_list = await pool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} AND ${table_name}.is_delete=0 `);
-            let user_tree = makeTree(user_list?.result, decode_user);
+            let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} AND ${table_name}.is_delete=0 `);
+            let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
             console.log(err)
@@ -65,13 +65,13 @@ const sellerCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
-            data = data?.result[0];
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
-            let products = await pool.query(`SELECT * FROM products WHERE id IN (SELECT product_id FROM products_and_sellers WHERE seller_id=${id} ORDER BY id DESC)`);
-            products = products?.result;
+            let products = await readPool.query(`SELECT * FROM products WHERE id IN (SELECT product_id FROM products_and_sellers WHERE seller_id=${id} ORDER BY id DESC)`);
+            products = products[0];
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
             //data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
@@ -118,8 +118,8 @@ const sellerCtrl = {
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
             } = req.body;
-            let is_exist_user = await pool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
-            if (is_exist_user?.result.length > 0) {
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
+            if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
 
@@ -140,12 +140,11 @@ const sellerCtrl = {
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
             obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj = { ...obj, ...files };
-            await db.beginTransaction();
             let result = await insertQuery(`${table_name}`, obj);
             if (!result) {
                 return response(req, res, -100, "셀러추가중 에러", false)
             }
-            let user_id = result?.result?.insertId;
+            let user_id = result?.insertId;
 
 
             if (product_ids.length > 0) {
@@ -156,9 +155,8 @@ const sellerCtrl = {
                         product_ids[i],
                     ])
                 }
-                let result2 = await pool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES ?`, [insert_products]);
+                let result2 = await writePool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES ?`, [insert_products]);
             }
-            await db.commit();
             return response(req, res, 100, "success", {
                 id: user_id
             })
@@ -166,7 +164,6 @@ const sellerCtrl = {
             //console.log(123)
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -203,9 +200,8 @@ const sellerCtrl = {
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
             obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj = { ...obj, ...files };
-            await db.beginTransaction();
             let result = await updateQuery(`${table_name}`, obj, id);
-            let delete_connect = await pool.query(`DELETE FROM products_and_sellers WHERE seller_id=${id}`);
+            let delete_connect = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${id}`);
 
             if (product_ids.length > 0) {
                 let insert_products = [];
@@ -215,14 +211,12 @@ const sellerCtrl = {
                         product_ids[i],
                     ])
                 }
-                let result2 = await pool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES ?`, [insert_products]);
+                let result2 = await writePool.query(`INSERT INTO products_and_sellers (seller_id, product_id) VALUES ?`, [insert_products]);
             }
-            await db.commit();
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            await db.rollback();
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -237,7 +231,7 @@ const sellerCtrl = {
             let { user_pw } = req.body;
 
             let user = await selectQuerySimple(table_name, id);
-            user = user?.result[0];
+            user = user[0];
             if (!user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
@@ -265,7 +259,7 @@ const sellerCtrl = {
             const { id } = req.params
             let { status } = req.body;
             let user = await selectQuerySimple(table_name, id);
-            user = user?.result[0];
+            user = user[0];
             if (!user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }

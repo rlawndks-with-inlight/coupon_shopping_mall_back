@@ -1,6 +1,5 @@
 "use strict";
 import axios from "axios";
-import db, { pool } from "../config/db.js";
 import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
 import {
   deleteQuery,
@@ -19,6 +18,7 @@ import {
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
+import { readPool, writePool } from "../config/db-pool.js";
 const table_name = "transactions";
 
 const payCtrl = {
@@ -83,8 +83,8 @@ const payCtrl = {
           `id`,
           `id`,
         ]
-        let seller = await pool.query(`SELECT ${seller_columns.join()} FROM users WHERE id=${seller_id} AND level=10`);
-        seller = seller?.result[0];
+        let seller = await readPool.query(`SELECT ${seller_columns.join()} FROM users WHERE id=${seller_id} AND level=10`);
+        seller = seller[0][0];
         if (!seller) {
           return response(req, res, -100, "셀러값이 잘못 되었습니다.", false)
         }
@@ -112,29 +112,28 @@ const payCtrl = {
         use_point,
       };
       obj = { ...obj, ...files };
-      await db.beginTransaction();
 
       let result = await insertQuery(`${table_name}`, obj);
 
-      let trans_id = result?.result?.insertId;
+      let trans_id = result?.insertId;
       let insert_item_data = [];
       let product_seller_ids = products.map((item) => {
         return item?.seller_id ?? 0;
       });
       product_seller_ids.unshift(0);
-      let seller_data = await pool.query(
+      let seller_data = await readPool.query(
         `SELECT * FROM users WHERE brand_id=${brand_id ?? 0
         } AND id IN (${product_seller_ids.join()})`
       );
-      seller_data = seller_data?.result;
+      seller_data = seller_data[0];
 
-      /*let trx_fee = await pool.query(
+      /*let trx_fee = await readPool.query(
         `SELECT seller_trx_fee FROM brands WHERE id=${brand_id ?? 0}`
       )
-      let amount_ = amount * (1 + trx_fee?.result[0].seller_trx_fee / 100)
+      let amount_ = amount * (1 + trx_fee[0][0].seller_trx_fee / 100)
       console.log(amount_)
 
-      trx_fee = trx_fee?.result[0].seller_trx_fee
+      trx_fee = trx_fee[0][0].seller_trx_fee
 
       for (var i = 0; i < products.length; i++) {
         let val = parseInt(products[i]?.order_amount * (1 + trx_fee / 100))
@@ -159,7 +158,7 @@ const payCtrl = {
       }
       //console.log(req.body)
 
-      let insert_item_result = await pool.query(
+      let insert_item_result = await writePool.query(
         `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
         [insert_item_data]
       );
@@ -169,7 +168,6 @@ const payCtrl = {
           { ...req.body, temp: trans_id }
         );
         if (result?.data?.result_cd != "0000") {
-          await db.rollback();
           return response(req, res, -100, result?.data?.result_msg, false);
         }
       }
@@ -179,18 +177,15 @@ const payCtrl = {
           { ...req.body, temp: trans_id }
         );
         if (result?.data?.result_cd != "0000") {
-          await db.rollback();
           return response(req, res, -100, result?.data?.result_msg, false);
         }
       }
-      await db.commit();
       return response(req, res, 100, "success", {
         id: trans_id,
       });
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      await db.rollback();
       return response(
         req,
         res,
@@ -227,27 +222,25 @@ const payCtrl = {
         temp,
         ori_trx_id,
       } = req.body;
-      console.log(req.body)
       const id = temp;
-      await db.beginTransaction();
       let obj = {};
       let pay_data = {};
       if (is_cancel) {
-        pay_data = await pool.query(
+        pay_data = await readPool.query(
           `SELECT * FROM ${table_name} WHERE trx_id=? AND is_cancel=0`,
           [ori_trx_id]
         );
-        pay_data = pay_data?.result[0];
+        pay_data = pay_data[0][0];
       } else {
-        pay_data = await pool.query(`SELECT * FROM ${table_name} WHERE id=?`, [
+        pay_data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [
           id,
         ]);
-        pay_data = pay_data?.result[0];
+        pay_data = pay_data[0][0];
       }
-      let dns_data = await pool.query("SELECT * FROM brands WHERE id=?", [
+      let dns_data = await readPool.query("SELECT * FROM brands WHERE id=?", [
         pay_data?.brand_id,
       ]);
-      dns_data = dns_data?.result[0];
+      dns_data = dns_data[0][0];
       dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
       if (is_cancel) {
         obj = {
@@ -278,7 +271,7 @@ const payCtrl = {
             point:
               amount * -1 * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
             type: 5,
-            trans_id: result?.result?.insertId,
+            trans_id: result?.insertId,
           });
         }
       } else {
@@ -305,12 +298,10 @@ const payCtrl = {
         }
       }
 
-      await db.commit();
       return response(req, res, 100, "success", {});
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      await db.rollback();
       return response(req, res, -200, "서버 에러 발생", false);
     } finally {
     }
@@ -408,10 +399,10 @@ function generateArrayWithSum(products_ = [], targetSum = 0) {
 }
 const asdsadsad = async () => {
   try {
-    let trxs = await pool.query(`SELECT * FROM transactions WHERE brand_id IN (23, 24, 21) AND id <= 186863`);
-    trxs = trxs?.result;
-    let products = await pool.query(`SELECT * FROM products WHERE brand_id IN (23, 24, 21)`);
-    products = products?.result;
+    let trxs = await readPool.query(`SELECT * FROM transactions WHERE brand_id IN (23, 24, 21) AND id <= 186863`);
+    trxs = trxs[0];
+    let products = await readPool.query(`SELECT * FROM products WHERE brand_id IN (23, 24, 21)`);
+    products = products[0];
     for (var i = 0; i < trxs.length; i++) {
       let brand_products = products.filter(el => el?.brand_id == trxs[i]?.brand_id);
       let result_products = generateArrayWithSum(brand_products, trxs[i]?.amount)
@@ -430,7 +421,7 @@ const asdsadsad = async () => {
         ]);
       }
       if (insert_item_data.length > 0) {
-        let insert_item_result = await pool.query(
+        let insert_item_result = await writePool.query(
           `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
           [insert_item_data]
         );

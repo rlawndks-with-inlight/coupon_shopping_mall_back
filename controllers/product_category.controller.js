@@ -1,11 +1,11 @@
 'use strict';
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
+import { readPool } from "../config/db-pool.js";
 const table_name = 'product_categories';
 
 
@@ -18,8 +18,8 @@ const productCategoryCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { product_category_group_id, page, page_size } = req.query;
 
-            let category_groups = await pool.query(`SELECT sort_type FROM product_category_groups WHERE id=${product_category_group_id}`);
-            category_groups = category_groups?.result[0];
+            let category_groups = await readPool.query(`SELECT sort_type FROM product_category_groups WHERE id=${product_category_group_id}`);
+            category_groups = category_groups[0][0];
 
             let columns = [
                 `${table_name}.*`,
@@ -53,8 +53,8 @@ const productCategoryCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
-            data = data?.result[0];
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
@@ -98,7 +98,7 @@ const productCategoryCtrl = {
             obj = { ...obj, ...files, };
 
             let result = await insertQuery(`${table_name}`, obj);
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.result?.insertId);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.insertId);
 
             return response(req, res, 100, "success", {})
         } catch (err) {

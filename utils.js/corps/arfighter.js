@@ -1,10 +1,10 @@
 import axios from 'axios';
 import FormData from 'form-data';
-import { pool } from '../../config/db.js';
 import _ from 'lodash';
 import { deleteQuery, updateQuery } from '../query-util.js';
 import 'dotenv/config';
 import when from 'when';
+import { readPool } from '../../config/db-pool.js';
 
 const brand_id = 64;
 const Z_API_URL = 'http://www.tao-hai.com';
@@ -102,8 +102,8 @@ export const getArfighterItems = async () => {
     // brand_id 설정
     const category_group_id = 147;
     try {
-        let dns_data = await pool.query(`SELECT * FROM brands WHERE id=${brand_id}`);
-        dns_data = dns_data?.result[0];
+        let dns_data = await readPool.query(`SELECT * FROM brands WHERE id=${brand_id}`);
+        dns_data = dns_data[0][0];
 
         const API_URL = process.env.BACK_URL;
         const account = {
@@ -120,14 +120,14 @@ export const getArfighterItems = async () => {
         // Sign in
         let domain_settting = await session.get('domain?dns=the-plusmall.com');
         let sign_in_result = await session.post('auth/sign-in/', account);
-        let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
-        category_list = category_list?.result;
+        let category_list = await readPool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
+        category_list = category_list[0];
 
         /*
         let { data: z_category_list } = await axios.get(`${Z_API_URL}/api/shop.category/index`);
         z_category_list = z_category_list?.data?.list ?? [];
-        let category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
-        category_list = category_list?.result;
+        let category_list = await readPool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
+        category_list = category_list[0];
         for (var i = 0; i < category_list.length; i++) {
             let category = category_list[i];
             let z_category = _.find(z_category_list, { id: parseInt(category?.another_id) });
@@ -148,8 +148,8 @@ export const getArfighterItems = async () => {
                 });
             }
         }
-        category_list = await pool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
-        category_list = category_list?.result;
+        category_list = await readPool.query(`SELECT * FROM product_categories WHERE product_category_group_id=${category_group_id}`);
+        category_list = category_list[0];
 
         for (var i = 0; i < z_category_list.length; i++) {
             let z_category = z_category_list[i];
@@ -211,11 +211,11 @@ function convertCNYtoKRW(amountInCNY, exchangeRate) {
 const processProduct = async (item_, session, category_list = []) => {
     try {
         let item = item_;
-        let is_exist_product = await pool.query(`SELECT id FROM products WHERE another_id=? AND brand_id=?`, [
+        let is_exist_product = await readPool.query(`SELECT id FROM products WHERE another_id=? AND brand_id=?`, [
             item.id,
             brand_id,
         ])
-        is_exist_product = is_exist_product?.result[0];
+        is_exist_product = is_exist_product[0][0];
 
         let { data: option_data } = await axios.get(`${Z_API_URL}/api/shop.goods/goods_sku?id=${item.id}`);
         option_data = option_data?.data ?? [];
@@ -225,12 +225,12 @@ const processProduct = async (item_, session, category_list = []) => {
         let product_groups = [];
         /*
                 if (is_exist_product) {
-            product_groups = await pool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
-            product_groups = product_groups?.result ?? [];
+            product_groups = await readPool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
+            product_groups = product_groups[0] ?? [];
             for (var i = 0; i < product_groups.length; i++) {
                 let product_group = product_groups[i];
-                let options = await pool.query(`SELECT * FROM product_options WHERE group_id=${product_group?.id}`);
-                options = options?.result;
+                let options = await readPool.query(`SELECT * FROM product_options WHERE group_id=${product_group?.id}`);
+                options = options[0];
                 product_groups[i].options = options;
             }
             product_groups = groupFilter(product_groups ?? [], groups);
@@ -280,12 +280,12 @@ const processProduct = async (item_, session, category_list = []) => {
         process_item['groups'] = JSON.stringify(product_groups);
 
         if (is_exist_product) {
-            let exist_images = await pool.query(`SELECT * FROM product_images WHERE product_id=${is_exist_product?.id}`);
-            exist_images = exist_images?.result;
+            let exist_images = await readPool.query(`SELECT * FROM product_images WHERE product_id=${is_exist_product?.id}`);
+            exist_images = exist_images[0];
             let resultSubImg = exist_images;
 
-            /*let exist_options = await pool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
-            exist_options = exist_options?.result;*/
+            /*let exist_options = await readPool.query(`SELECT * FROM product_option_groups WHERE product_id=${is_exist_product?.id}`);
+            exist_options = exist_options[0];*/
 
             //console.log(exist_options)
 

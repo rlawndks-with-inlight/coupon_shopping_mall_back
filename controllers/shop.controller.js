@@ -1,5 +1,4 @@
 'use strict';
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl, getMainObjType, returnMoment } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
@@ -9,6 +8,7 @@ import postCtrl from "./post.controller.js";
 import productFaqCtrl from "./product_faq.controller.js";
 import _ from "lodash";
 import logger from "../utils.js/winston/index.js";
+import { readPool, writePool } from "../config/db-pool.js";
 
 const shopCtrl = {
     setting: async (req, res, next) => {
@@ -25,8 +25,8 @@ const shopCtrl = {
                 'basic_info',
             ]
 
-            let brand_data = await pool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=${decode_dns?.id ?? 0}`);
-            brand_data = brand_data?.result[0];
+            let brand_data = await readPool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=${decode_dns?.id ?? 0}`);
+            brand_data = brand_data[0][0];
             brand_data['shop_obj'] = JSON.parse(brand_data?.shop_obj ?? '[]');
             brand_data['blog_obj'] = JSON.parse(brand_data?.blog_obj ?? '[]');
             let product_ids = [...(await settingMainObj(brand_data['shop_obj'])).product_ids, ...(await settingMainObj(brand_data['blog_obj'])).product_ids,];
@@ -238,8 +238,8 @@ const shopCtrl = {
                 }
             }
             //상품이미지처리
-            let sub_images = await pool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
-            sub_images = sub_images?.result;
+            let sub_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
+            sub_images = sub_images[0];
             for (var i = 0; i < data?.products.length; i++) {
                 let images = sub_images.filter(item => item?.product_id == data?.products[i]?.id);
                 data.products[i].sub_images = images ?? [];
@@ -296,8 +296,8 @@ const shopCtrl = {
             })
             post_category_ids.unshift(0);
             let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.join()}) AND is_delete=0 GROUP BY category_id, id HAVING COUNT(*) <= 10`;
-            let recent_post_data = await pool.query(recent_post_sql)
-            recent_post_data = recent_post_data?.result;
+            let recent_post_data = await readPool.query(recent_post_sql)
+            recent_post_data = recent_post_data[0];
             for (var i = 0; i < data?.post_categories.length; i++) {
                 if (!(data?.post_categories[i]?.parent_id > 0)) {
                     let children_ids = findChildIds(data?.post_categories, data?.post_categories[i]?.id);
@@ -387,12 +387,12 @@ const shopCtrl = {
 
             data = data?.data;
             if (decode_user?.id > 0) {
-                let view_delete = await pool.query('DELETE FROM product_views WHERE product_id=? AND user_id=? AND brand_id=? ', [
+                let view_delete = await writePool.query('DELETE FROM product_views WHERE product_id=? AND user_id=? AND brand_id=? ', [
                     id,
                     decode_user?.id ?? -1,
                     decode_dns?.id
                 ]);
-                let view_count = await pool.query('INSERT INTO product_views (product_id, user_id, brand_id) VALUES (?, ?, ?)', [
+                let view_count = await writePool.query('INSERT INTO product_views (product_id, user_id, brand_id) VALUES (?, ?, ?)', [
                     id,
                     decode_user?.id ?? -1,
                     decode_dns?.id
@@ -452,8 +452,8 @@ const shopCtrl = {
                 order_sql += ` LEFT JOIN users AS sellers ON transaction_orders.seller_id=sellers.id `
                 order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.join()}) `
                 order_sql += ` ORDER BY transaction_orders.id DESC `
-                let order_data = await pool.query(order_sql);
-                order_data = order_data?.result;
+                let order_data = await readPool.query(order_sql);
+                order_data = order_data[0];
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
                     delete order_data[i].order_groups
@@ -522,8 +522,8 @@ const shopCtrl = {
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
                 category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-                let category_list = await pool.query(category_sql);
-                category_list = category_list?.result;
+                let category_list = await readPool.query(category_sql);
+                category_list = category_list[0];
 
                 let category = _.find(category_list, { id: parseInt(category_id) });
                 let top_parent = findParent(category_list, category);
@@ -550,8 +550,8 @@ const shopCtrl = {
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
                 category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-                let category_list = await pool.query(category_sql);
-                category_list = category_list?.result;
+                let category_list = await readPool.query(category_sql);
+                category_list = category_list[0];
 
                 let category = _.find(category_list, { id: parseInt(category_id) });
                 let top_parent = findParent(category_list, category);
@@ -559,8 +559,8 @@ const shopCtrl = {
                 if (top_parent?.is_able_user_add != 1) {
                     return lowLevelException(req, res);
                 }
-                let post = await pool.query(`SELECT * FROM posts WHERE id=${id}`);
-                post = post?.result[0];
+                let post = await readPool.query(`SELECT * FROM posts WHERE id=${id}`);
+                post = post[0][0];
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
                 }
@@ -581,8 +581,8 @@ const shopCtrl = {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
-                let post = await pool.query(`SELECT * FROM posts WHERE id=${id}`);
-                post = post?.result[0];
+                let post = await readPool.query(`SELECT * FROM posts WHERE id=${id}`);
+                post = post[0][0];
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
                 }
@@ -636,11 +636,12 @@ const shopCtrl = {
             try {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
+                const { category_id } = req.body;
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
                 category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-                let category_list = await pool.query(category_sql);
-                category_list = category_list?.result;
+                let category_list = await readPool.query(category_sql);
+                category_list = category_list[0];
 
                 let category = _.find(category_list, { id: parseInt(category_id) });
                 let top_parent = findParent(category_list, category);
@@ -667,8 +668,8 @@ const shopCtrl = {
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
                 category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-                let category_list = await pool.query(category_sql);
-                category_list = category_list?.result;
+                let category_list = await readPool.query(category_sql);
+                category_list = category_list[0];
 
                 let category = _.find(category_list, { id: parseInt(category_id) });
                 let top_parent = findParent(category_list, category);
@@ -676,8 +677,8 @@ const shopCtrl = {
                 if (top_parent?.is_able_user_add != 1) {
                     return lowLevelException(req, res);
                 }
-                let post = await pool.query(`SELECT * FROM posts WHERE id=${id}`);
-                post = post?.result[0];
+                let post = await readPool.query(`SELECT * FROM posts WHERE id=${id}`);
+                post = post[0][0];
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
                 }
@@ -698,8 +699,8 @@ const shopCtrl = {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
-                let post = await pool.query(`SELECT * FROM posts WHERE id=${id}`);
-                post = post?.result[0];
+                let post = await readPool.query(`SELECT * FROM posts WHERE id=${id}`);
+                post = post[0][0];
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
                 }

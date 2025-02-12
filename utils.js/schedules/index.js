@@ -1,7 +1,6 @@
 import schedule from "node-schedule";
 import { returnMoment } from "../function.js";
 import { langProcess } from "./lang-process.js";
-import { setGrandParisProducts } from "../../controllers/util.controller.js";
 import { getArfighterItems } from '../corps/arfighter.js'
 
 const scheduleIndex = () => {
@@ -13,9 +12,6 @@ const scheduleIndex = () => {
     langProcess();
     if (return_moment.includes('00:00:')) {
       getArfighterItems();
-    }
-    if (return_moment.includes('00:00:')) {
-      // setGrandParisProducts();
     }
   });
 };

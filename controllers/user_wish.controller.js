@@ -1,10 +1,9 @@
 'use strict';
-import { pool } from "../config/db.js";
-import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { readPool } from "../config/db-pool.js";
 const table_name = 'user_wishs';
 
 const userWishCtrl = {
@@ -57,15 +56,15 @@ const userWishCtrl = {
             let sql = `SELECT * FROM ${table_name} `;
             sql += ` WHERE ${table_name}.user_id=${decode_user?.id ?? 0} AND brand_id=${decode_dns?.id ?? 0} ORDER BY id DESC `;
 
-            let data = await pool.query(sql);
-            data = data?.result;
+            let data = await readPool.query(sql);
+            data = data[0];
             console.log(data)
             data = data.map(item => {
                 return item?.product_id
             })
             data.unshift(0);
-            let items = await pool.query(`SELECT * FROM products WHERE id IN (${data.join()}) `);
-            items = items?.result;
+            let items = await readPool.query(`SELECT * FROM products WHERE id IN (${data.join()}) `);
+            items = items[0];
             for (var i = 0; i < items?.length; i++) {
                 items[i].lang_obj = JSON.parse(items[i].lang_obj ?? '{}')
             }
@@ -85,9 +84,8 @@ const userWishCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await pool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
-            data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
-            data = data?.result[0];
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
@@ -112,8 +110,8 @@ const userWishCtrl = {
             if (!decode_user) {
                 return response(req, res, -100, "로그인을 해주세요.", false)
             }
-            let exist_wish = await pool.query(`SELECT * FROM ${table_name} WHERE product_id=? AND user_id=?`, [product_id, decode_user?.id]);
-            exist_wish = exist_wish?.result;
+            let exist_wish = await readPool.query(`SELECT * FROM ${table_name} WHERE product_id=? AND user_id=?`, [product_id, decode_user?.id]);
+            exist_wish = exist_wish[0];
             if (exist_wish.length > 0) {
                 return response(req, res, -100, "이미 찜한 상품입니다.", false)
             }

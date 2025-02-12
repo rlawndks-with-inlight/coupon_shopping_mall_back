@@ -1,12 +1,12 @@
 'use strict';
 import _ from "lodash";
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, findChildIds, findParent, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
+import { readPool } from "../config/db-pool.js";
 const table_name = 'posts';
 
 
@@ -20,8 +20,8 @@ const postCtrl = {
 
             let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
             category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-            let category_list = await pool.query(category_sql);
-            category_list = category_list?.result;
+            let category_list = await readPool.query(category_sql);
+            category_list = category_list[0];
 
             let category = _.find(category_list, { id: parseInt(category_id) });
             let top_parent = findParent(category_list, category);
@@ -55,8 +55,8 @@ const postCtrl = {
                 return item?.id
             });
             post_ids.unshift(0);
-            let child_posts = await pool.query(`SELECT * FROM posts WHERE parent_id IN (${post_ids.join()}) ORDER BY id DESC`);
-            child_posts = child_posts?.result;
+            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id IN (${post_ids.join()}) ORDER BY id DESC`);
+            child_posts = child_posts[0];
             data.content = data.content.map((item) => {
                 return {
                     ...item,
@@ -86,11 +86,11 @@ const postCtrl = {
             let sql = ` SELECT ${columns.join()} FROM ${table_name} `
             sql += ` LEFT JOIN post_categories ON ${table_name}.category_id=post_categories.id `;
             sql += ` WHERE ${table_name}.id=${id} `
-            let data = await pool.query(sql);
-            data = data?.result[0];
+            let data = await readPool.query(sql);
+            data = data[0][0];
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
-            let child_posts = await pool.query(`SELECT * FROM posts WHERE parent_id=${id} ORDER BY id DESC`);
-            child_posts = child_posts?.result;
+            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id=${id} ORDER BY id DESC`);
+            child_posts = child_posts[0];
             data.replies = child_posts;
             return response(req, res, 100, "success", data)
         } catch (err) {
@@ -120,7 +120,7 @@ const postCtrl = {
             obj = { ...obj, ...files };
             let result = await insertQuery(`${table_name}`, obj);
 
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.result?.insertId);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.insertId);
 
 
             return response(req, res, 100, "success", {})

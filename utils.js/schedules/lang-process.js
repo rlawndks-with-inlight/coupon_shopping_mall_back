@@ -1,4 +1,4 @@
-import { pool } from "../../config/db.js"
+import { readPool, writePool } from "../../config/db-pool.js";
 import { deleteQuery, updateQuery } from "../query-util.js";
 import { settingLangs } from "../util.js";
 
@@ -32,8 +32,8 @@ export const lang_obj_columns = {
 }
 
 export const langProcess = async () => {
-    let process_items = await pool.query(`SELECT * FROM ${table_name} WHERE is_confirm=0`);
-    process_items = process_items?.result;
+    let process_items = await readPool.query(`SELECT * FROM ${table_name} WHERE is_confirm=0`);
+    process_items = process_items[0];
     if (process_items.length > 0) {
         let brand_ids = process_items.map(itm => {
             return itm?.brand_id
@@ -41,8 +41,8 @@ export const langProcess = async () => {
         brand_ids = new Set(brand_ids);
         brand_ids = [...brand_ids];
 
-        let brands = await pool.query(`SELECT * FROM brands WHERE id IN (${brand_ids.join()})`);
-        brands = brands?.result;
+        let brands = await readPool.query(`SELECT * FROM brands WHERE id IN (${brand_ids.join()})`);
+        brands = brands[0];
 
         let brand_obj = {};
 
@@ -82,8 +82,8 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
     let new_brand_data = new_brand_data_;
     new_brand_data.setting_obj = JSON.parse(new_brand_data?.setting_obj ?? '{}');
 
-    let ago_brand = await pool.query(`SELECT * FROM brands WHERE id=${new_brand_data?.id}`);
-    ago_brand = ago_brand?.result[0];
+    let ago_brand = await readPool.query(`SELECT * FROM brands WHERE id=${new_brand_data?.id}`);
+    ago_brand = ago_brand[0][0];
     ago_brand.setting_obj = JSON.parse(ago_brand?.setting_obj ?? '{}');
     if (new_brand_data?.setting_obj?.is_use_lang == 1) {
         new_brand_data.shop_obj = JSON.parse(new_brand_data?.shop_obj ?? '[]');
@@ -132,8 +132,8 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
         for (var i = 0; i < Object.keys(lang_obj_columns).length; i++) {
             let table = Object.keys(lang_obj_columns)[i];
             if (table == 'posts') {
-                let posts = await pool.query(`SELECT posts.id, posts.post_title, posts.post_content FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE post_categories.brand_id=${new_brand_data?.id}`);
-                posts = posts?.result;
+                let posts = await readPool.query(`SELECT posts.id, posts.post_title, posts.post_content FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE post_categories.brand_id=${new_brand_data?.id}`);
+                posts = posts[0];
                 for (var j = 0; j < posts.length; j++) {
                     insert_lang_process_list.push([
                         table,
@@ -143,8 +143,8 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
                     ])
                 }
             } else {
-                let items = await pool.query(`SELECT id,${lang_obj_columns[table].join()} FROM ${table} WHERE brand_id=${new_brand_data?.id}`);
-                items = items?.result;
+                let items = await readPool.query(`SELECT id,${lang_obj_columns[table].join()} FROM ${table} WHERE brand_id=${new_brand_data?.id}`);
+                items = items[0];
                 for (var j = 0; j < items.length; j++) {
 
                     insert_lang_process_list.push([
@@ -157,7 +157,7 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
             }
         }
         for (var i = 0; i < insert_lang_process_list.length / 1000; i++) {
-            let result = await pool.query(`INSERT INTO ${table_name} (table_name, item_id, brand_id, obj) VALUES ?`, [insert_lang_process_list.slice((i * 1000), (i + 1) * 1000)]);
+            let result = await writePool.query(`INSERT INTO ${table_name} (table_name, item_id, brand_id, obj) VALUES ?`, [insert_lang_process_list.slice((i * 1000), (i + 1) * 1000)]);
         }
     }
 

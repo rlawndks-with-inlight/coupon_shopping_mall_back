@@ -1,9 +1,9 @@
 "use strict";
-import { pool } from "../config/db.js";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { checkLevel, makeUserToken, response } from "../utils.js/util.js";
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
+import { readPool } from "../config/db-pool.js";
 const domainCtrl = {
   get: async (req, res, next) => {
 
@@ -62,32 +62,32 @@ const domainCtrl = {
       ];
 
 
-      let is_seller_mall = await pool.query(
+      let is_seller_mall = await readPool.query(
         `SELECT ${columns_seller.join()} FROM users WHERE (dns='${dns}') AND is_delete=0`
       );
 
       let brand = [];
 
-      if (is_seller_mall?.result.length == 0) {
-        brand = await pool.query(
+      if (is_seller_mall[0].length == 0) {
+        brand = await readPool.query(
           `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
           //`SELECT ${columns.join()} FROM brands WHERE id=5`
         );
-        if (brand?.result.length == 0) {
+        if (brand[0].length == 0) {
           return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
         }
       } else {
         //console.log(is_seller_mall)
-        brand = await pool.query(
+        brand = await readPool.query(
           `SELECT ${columns.join()} FROM brands WHERE id=${is_seller_mall?.result[0].brand_id} AND is_delete=0`
         );
       }
 
-      brand = brand?.result[0]
+      brand = brand[0][0]
 
-      if (is_seller_mall?.result.length > 0) {
-        brand['seller_id'] = is_seller_mall?.result[0].id
-        brand['oper_id'] = is_seller_mall?.result[0].oper_id
+      if (is_seller_mall[0].length > 0) {
+        brand['seller_id'] = is_seller_mall[0][0].id
+        brand['oper_id'] = is_seller_mall[0][0].oper_id
       }
 
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
@@ -108,20 +108,20 @@ const domainCtrl = {
       });
       brand.ssr_content = {};
       if (product_id > 0) {
-        let product = await pool.query(`SELECT * FROM products WHERE id=${product_id} AND brand_id=${brand?.id}`);
-        product = product?.result[0];
+        let product = await readPool.query(`SELECT * FROM products WHERE id=${product_id} AND brand_id=${brand?.id}`);
+        product = product[0][0];
         if (product) {
           brand.name = `${brand?.name} - ${product?.product_name}`;
           brand.og_img = `${product?.product_img}`;
           brand.og_description = `${product?.product_comment}`;
         }
       } else if (post_id > 0) {
-        let post = await pool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE posts.id=${post_id} AND post_categories.brand_id=${brand?.id}`);
-        post = post?.result[0];
+        let post = await readPool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE posts.id=${post_id} AND post_categories.brand_id=${brand?.id}`);
+        post = post[0][0];
         brand.name = `${brand?.name} - ${post?.post_title}`;
       } else if (seller_id > 0) {
-        let seller = await pool.query(`SELECT * FROM users WHERE id=${seller_id} AND brand_id=${brand?.id} AND level>=10`);
-        seller = seller?.result[0];
+        let seller = await readPool.query(`SELECT * FROM users WHERE id=${seller_id} AND brand_id=${brand?.id} AND level>=10`);
+        seller = seller[0][0];
 
         brand.name = `${brand?.name} - ${seller?.nickname}`;
         brand.og_img = `${seller?.profile_img}`;
