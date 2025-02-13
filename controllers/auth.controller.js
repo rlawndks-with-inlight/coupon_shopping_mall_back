@@ -119,7 +119,10 @@ const authCtrl = {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
             }
             let pw_data = await createHashedPassword(user_pw);
-            let is_exist_user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0} AND seller_id=${seller_id}`, [user_name]);
+            let is_exist_user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0} ${seller_id > 0 ? `AND seller_id=${seller_id}` : ``}`, [user_name]);
+
+            //console.log(decode_dns?.seller_id)
+            //console.log(is_exist_user[0])
 
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
@@ -273,14 +276,16 @@ const authCtrl = {
             ) {
                 return response(req, res, -100, "인증번호 발송기능이 제공되지 않습니다. 본사에 문의해 주세요.", false)
             }
-            let send_message = await axios.post(`${process.env.BONAEJA_URL}/api/msg/v1/send`, {
+
+            let { data: send_message } = await axios.post(`${process.env.BONAEJA_URL}/api/msg/v1/send`, {
                 api_key: decode_dns?.bonaeja_obj?.api_key,
                 user_id: decode_dns?.bonaeja_obj?.user_id,
                 sender: decode_dns?.bonaeja_obj?.sender,
                 receiver: phone_num.replaceAll(' ', '').replaceAll('-', ''),
                 msg: `[${decode_dns?.name}] 인증번호 ${rand_num}을(를) 입력해주세요.`,
             })
-            if (send_message?.data?.code == 100) {
+
+            if (send_message?.code == 100) {
                 let result = await writePool.query(`INSERT INTO phone_check_tokens (brand_id, phone_num, phone_token, rand_num) VALUES (?, ?, ?, ?)`, [
                     decode_dns?.id,
                     phone_num,
