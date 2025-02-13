@@ -26,7 +26,7 @@ const transactionCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
 
-            console.log(req.query)
+            //console.log(req.query)
 
             columns.push(`sellers.user_name AS seller_user_name`)
             sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id`
