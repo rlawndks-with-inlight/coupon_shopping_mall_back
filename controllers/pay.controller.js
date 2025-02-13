@@ -19,9 +19,25 @@ import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
 import { readPool, writePool } from "../config/db-pool.js";
+import crypto from 'crypto';
+
+
 const table_name = "transactions";
 
 const payCtrl = {
+
+  hecto: async (req, res, next) => {
+    try {
+
+    }
+    catch (err) {
+      console.log(err);
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return response(req, res, -200, "서버 에러 발생", false);
+    } finally {
+    }
+  },
+
   ready: async (req, res, next) => {
     //인증결제
     try {
@@ -52,6 +68,7 @@ const payCtrl = {
         use_point = 0,
         seller_id = 0,
       } = req.body;
+
       if (trx_type == 'auth') {
         trx_method = 2;
       } else if (trx_type == 'hand') {
@@ -68,7 +85,7 @@ const payCtrl = {
         trx_method = 20;
       }*/ else if (trx_type == 'auth_weroute') {
         trx_method = 21;
-      } else if (trx_type == 'hand_hecto') {
+      } else if (trx_type == 'card_hecto') {
         trx_method = 30;
       } else if (trx_type == 'phone_hecto') {
         trx_method = 31;
@@ -170,16 +187,13 @@ const payCtrl = {
         if (result?.data?.result_cd != "0000") {
           return response(req, res, -100, result?.data?.result_msg, false);
         }
+      } else if (trx_method == 30) {
+        return response(req, res, 100, "success", {
+          id: trans_id,
+          settleParams: req.body.settleParams
+        });
       }
-      if (trx_method == 30) {
-        let result = await axios.post(
-          `${process.env.NOTI_URL}/api/v2/pay/hand`,
-          { ...req.body, temp: trans_id }
-        );
-        if (result?.data?.result_cd != "0000") {
-          return response(req, res, -100, result?.data?.result_msg, false);
-        }
-      }
+
       return response(req, res, 100, "success", {
         id: trans_id,
       });
@@ -397,6 +411,7 @@ function generateArrayWithSum(products_ = [], targetSum = 0) {
   // 합계가 원하는 값에 도달하면 배열 반환
   return result;
 }
+
 const asdsadsad = async () => {
   try {
     let trxs = await readPool.query(`SELECT * FROM transactions WHERE brand_id IN (23, 24, 21) AND id <= 186863`);
