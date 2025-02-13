@@ -187,11 +187,6 @@ const payCtrl = {
         if (result?.data?.result_cd != "0000") {
           return response(req, res, -100, result?.data?.result_msg, false);
         }
-      } else if (trx_method == 30) {
-        return response(req, res, 100, "success", {
-          id: trans_id,
-          settleParams: req.body.settleParams
-        });
       }
 
       return response(req, res, 100, "success", {
