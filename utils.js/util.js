@@ -368,14 +368,14 @@ export const getPayType = (num) => {
         }
     } else if (num == 30) {
         return {
-            title: `카드결제test3`,
-            description: 'Mastercard, Visa 등을 지원합니다.',
+            title: `인증결제`,
+            description: '카드결제 등을 지원합니다.',
             type: 'card_hecto',
         }
     } else if (num == 31) {
         return {
-            title: `휴대폰결제test`,
-            description: '휴대폰결제로 이동합니다.',
+            title: `휴대폰결제`,
+            description: '휴대폰결제창으로 이동합니다.',
             type: 'phone_hecto',
         }
     }
