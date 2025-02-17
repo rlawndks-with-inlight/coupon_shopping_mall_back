@@ -46,6 +46,7 @@ const productCtrl = {
             const { /*seller_id,*/ property_id, is_consignment, status, product_type, manager_type } = req.query;
             const { type, seller_id } = req;
 
+
             let columns = [
                 `${table_name}.*`,
                 `sellers.user_name`,
