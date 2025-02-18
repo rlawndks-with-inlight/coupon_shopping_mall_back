@@ -70,7 +70,6 @@ const domainCtrl = {
 
       if (is_seller_mall[0].length == 0) {
         brand = await readPool.query(
-          //
           `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
           //`SELECT ${columns.join()} FROM brands WHERE id=5`
         );
