@@ -77,10 +77,8 @@ const domainCtrl = {
           return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
         }
       } else {
-        console.log(is_seller_mall)
-        console.log(is_seller_mall?.result[0])
         brand = await readPool.query(
-          `SELECT ${columns.join()} FROM brands WHERE id=${is_seller_mall?.result[0][0].brand_id} AND is_delete=0`
+          `SELECT ${columns.join()} FROM brands WHERE id=${is_seller_mall[0][0].brand_id} AND is_delete=0`
         );
       }
 
