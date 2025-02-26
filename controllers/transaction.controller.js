@@ -16,7 +16,7 @@ const transactionCtrl = {
             const decode_user = checkLevel(req.cookies?.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            const { trx_status, cancel_status, is_confirm, cancel_type } = req.query;
+            const { trx_status, cancel_status, is_confirm, cancel_type, type } = req.query;
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
@@ -28,14 +28,18 @@ const transactionCtrl = {
 
             //console.log(req.query)
 
-            columns.push(`sellers.user_name AS seller_user_name`)
-            sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id`
+            if (decode_dns?.setting_obj?.is_use_seller == 1) {
+                columns.push(`sellers.user_name AS seller_user_name`)
+                sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id`
+            } else {
+
+            }
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
 
             if (decode_user?.level == 10) {
                 sql += ` AND transactions.seller_id=${decode_user?.id} `;
             }
-            if (decode_user?.level == 0 || !decode_user) {
+            if (decode_user?.level == 0 || !decode_user || type == 'user') {
                 sql += ` AND user_id=${decode_user?.id ?? -1} `;
             }
             if (trx_status) {
@@ -58,6 +62,9 @@ const transactionCtrl = {
             if (cancel_type) {
                 sql += ` AND cancel_type=${cancel_type} `;
             }
+
+            //console.log(sql)
+
             let data = await getSelectQueryList(sql, columns, req.query);
             let trx_ids = data?.content.map(trx => {
                 return trx?.is_cancel == 1 ? (trx?.transaction_id ?? 0) : trx?.id
