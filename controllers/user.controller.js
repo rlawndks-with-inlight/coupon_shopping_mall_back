@@ -133,7 +133,7 @@ const userCtrl = {
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
                 seller_trx_fee
             };
-            console.log(obj)
+            //console.log(obj)
             obj = { ...obj, ...files };
             let result = await insertQuery(`${table_name}`, obj);
 
