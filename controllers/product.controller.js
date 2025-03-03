@@ -132,7 +132,25 @@ const productCtrl = {
             if (is_consignment) {
                 where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
             }
+
             sql += where_sql;
+
+
+            if (manager_type == 'seller' && decode_user?.seller_range_o != 0) {
+                sql += ` AND product_sale_price BETWEEN ${decode_user?.seller_range_u} AND ${decode_user?.seller_range_o}`
+            }
+
+            if (manager_type == 'seller' && (decode_user?.seller_brand != undefined || decode_user?.seller_category != undefined)) {
+                //console.log(decode_user?.seller_category)
+                if (decode_user?.seller_category == undefined) {
+                    sql += ` AND category_id1 IN (${decode_user?.seller_brand})`
+                } else if (decode_user?.seller_brand == undefined) {
+                    sql += ` AND category_id0 IN (${decode_user?.seller_category}) `
+                } else {
+                    sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
+                }
+            }
+
             if (type == 'user' || type == 'seller' || manager_type == 'seller') {
                 sql += ` AND products.status!=5 `
             }

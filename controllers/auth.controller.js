@@ -59,6 +59,11 @@ const authCtrl = {
                 contract_img: user.contract_img,
                 bsin_lic_img: user.bsin_lic_img,
                 oper_id: user.oper_id,
+                seller_trx_fee: user.seller_trx_fee,
+                seller_range_u: user.seller_range_u,
+                seller_range_o: user.seller_range_o,
+                seller_brand: user.seller_brand,
+                seller_category: user.seller_category,
             })
             res.cookie("token", token, {
                 httpOnly: true,
@@ -133,6 +138,15 @@ const authCtrl = {
                     return lowLevelException(req, res);
                 }
             }
+
+            if (decode_dns?.setting_obj?.is_use_seller == 1) {
+                let is_exist_phone = await readPool.query(`SELECT * FROM phone_registration WHERE phone_number=? AND brand_id=${decode_dns?.id ?? 0}`, [phone_num]);
+                if (is_exist_phone[0].length <= 0) {
+                    //console.log(is_exist_phone[0])
+                    return response(req, res, -100, "가입 허락된 전화번호가 아닙니다. 관리자에 문의하세요.", false)
+                }
+            }
+
             user_pw = pw_data.hashedPassword;
             let user_salt = pw_data.salt;
             let obj = {
@@ -157,6 +171,7 @@ const authCtrl = {
                 register_img,
                 seller_id
             }
+
             let result = await insertQuery('users', obj);
             return response(req, res, 100, "success", {})
         } catch (err) {

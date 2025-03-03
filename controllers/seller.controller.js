@@ -29,6 +29,10 @@ const sellerCtrl = {
                 sql += `AND id=${decode_user?.id}`;
             }
 
+            if (decode_user?.level == 20) {
+                sql += `AND users.oper_id=${decode_user?.id}`
+            }
+
             //console.log(sql)
 
             let data = await getSelectQueryList(sql, columns, req.query);
@@ -114,7 +118,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num, user_name, user_pw, level, oper_id,
+                brand_id, name, phone_num, user_name, user_pw, level, oper_id, seller_trx_fee,
+                seller_range_u = 0, seller_range_o = 0, seller_brand, seller_category, seller_color, seller_logo_img,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
             } = req.body;
@@ -134,7 +139,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num, user_name, user_pw, user_salt, level, oper_id,
+                brand_id, name, phone_num, user_name, user_pw, user_salt, level, oper_id, seller_trx_fee,
+                seller_range_u, seller_range_o, seller_brand, seller_category, seller_color, seller_logo_img,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
@@ -181,7 +187,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, user_name, user_pw, oper_id,
+                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee,
+                seller_range_u = 0, seller_range_o = 0, seller_brand, seller_category, seller_color, seller_logo_img,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
                 id
@@ -194,12 +201,16 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, user_name, user_pw, oper_id,
+                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee,
+                seller_range_u, seller_range_o, seller_brand, seller_category, seller_color, seller_logo_img,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
             obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj = { ...obj, ...files };
+
+            //console.log(obj)
+
             let result = await updateQuery(`${table_name}`, obj, id);
             let delete_connect = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${id}`);
 
