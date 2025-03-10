@@ -62,7 +62,7 @@ const utilCtrl = {
     },
     unipass: async (req, res, next) => {
         try {
-            const decode_user = checkLevel(req.cookies.token, 10);
+            const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { code } = req.body;
 
