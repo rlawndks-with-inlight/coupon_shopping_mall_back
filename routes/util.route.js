@@ -7,7 +7,9 @@ const router = express.Router(); // eslint-disable-line new-cap
 router
     .route('/copy')
     .post(utilCtrl.copy);
-
+router
+    .route('/unipass')
+    .post(utilCtrl.unipass);
 router
     .route('/:table/sort')
     .post(utilCtrl.sort);
