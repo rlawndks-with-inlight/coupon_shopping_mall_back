@@ -6,6 +6,9 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
 import { readPool, writePool } from "../config/db-pool.js";
+import axios from "axios";
+import * as cheerio from "cheerio";
+
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -49,6 +52,44 @@ const utilCtrl = {
             }
             let result = await writePool.query(`UPDATE ${table} SET ${column_name}=? WHERE id=?`, [value, id]);
             return response(req, res, 100, "success", {});
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    unipass: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 10);
+            const decode_dns = checkDns(req.cookies.dns);
+            const { code } = req.body;
+
+            const payload = new URLSearchParams({
+                action_type: 'query',
+                chk_data: `${decode_user?.name}/${code}/${decode_user?.phone_num}`
+            }).toString()
+
+            const result = await axios.post("https://www.gsiexpress.com/pcc_chk.php", payload, {
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
+            });
+
+            let data = result.data ?? {}
+            const $ = cheerio.load(data);
+
+            const resultDiv = $("div.panel-heading").filter(function () {
+                return $(this).text().includes("검증결과");
+            }).next("div.panel-body");
+
+            const resultMessage1 = resultDiv.find("tbody tr td:nth-child(4)").text().trim();
+            const resultMessage2 = resultDiv.find("tbody tr td:nth-child(5)").text().trim();
+
+            data = { message: `${resultMessage1} : ${resultMessage2}` }
+
+            return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
