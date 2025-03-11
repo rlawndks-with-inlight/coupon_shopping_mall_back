@@ -64,11 +64,16 @@ const utilCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const { code } = req.body;
+            const { name, code, phone_num } = req.body;
+
+            /*const payload = new URLSearchParams({
+                action_type: 'query',
+                chk_data: `${decode_user?.name}/${code}/${decode_user?.phone_num}`
+            }).toString()*/
 
             const payload = new URLSearchParams({
                 action_type: 'query',
-                chk_data: `${decode_user?.name}/${code}/${decode_user?.phone_num}`
+                chk_data: `${name}/${code}/${phone_num}`
             }).toString()
 
             const result = await axios.post("https://www.gsiexpress.com/pcc_chk.php", payload, {
