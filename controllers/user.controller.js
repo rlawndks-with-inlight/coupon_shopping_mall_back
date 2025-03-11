@@ -112,7 +112,7 @@ const userCtrl = {
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
                 seller_trx_fee
             } = req.body;
-            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id}`, [user_name]);
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND is_delete = 0`, [user_name]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
@@ -158,7 +158,7 @@ const userCtrl = {
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
                 seller_trx_fee
             } = req.body;
-            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND id!=?`, [user_name, id]);
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND is_delete = 0 AND id!=?`, [user_name, id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }

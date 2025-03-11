@@ -244,6 +244,13 @@ const shopCtrl = {
                 let images = sub_images.filter(item => item?.product_id == data?.products[i]?.id);
                 data.products[i].sub_images = images ?? [];
             }
+            //상품설명이미지처리
+            let description_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
+            description_images = description_images[0];
+            for (var i = 0; i < data?.products.length; i++) {
+                let images = description_images.filter(item => item?.product_id == data?.products[i]?.id);
+                data.products[i].description_images = images ?? [];
+            }
             //셀러처리
             data['sellers'] = data?.sellers.map((item) => {
                 return {

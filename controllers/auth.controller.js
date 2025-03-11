@@ -52,6 +52,7 @@ const authCtrl = {
                 parent_id: user.parent_id,
                 level: user.level,
                 phone_num: user.phone_num,
+                unipass: user.unipass,
                 profile_img: user.profile_img,
                 brand_id: user.brand_id,
                 company_name: user.company_name,
@@ -108,6 +109,7 @@ const authCtrl = {
                 parent_id = -1,
                 level = 0,
                 phone_num,
+                unipass,
                 profile_img,
                 brand_id,
                 acct_num = "", acct_name = "", acct_bank_name = "", acct_bank_code = "",
@@ -124,7 +126,7 @@ const authCtrl = {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
             }
             let pw_data = await createHashedPassword(user_pw);
-            let is_exist_user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0} ${seller_id > 0 ? `AND seller_id=${seller_id}` : ``}`, [user_name]);
+            let is_exist_user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0} AND is_delete = 0 ${seller_id > 0 ? `AND seller_id=${seller_id}` : ``}`, [user_name]);
 
             //console.log(decode_dns?.seller_id)
             //console.log(is_exist_user[0])
@@ -157,6 +159,7 @@ const authCtrl = {
                 parent_id,
                 level,
                 phone_num,
+                unipass,
                 profile_img,
                 brand_id,
                 user_salt,

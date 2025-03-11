@@ -182,7 +182,6 @@ const productCtrl = {
                 data.content[i].sub_images = images ?? [];
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
             }
-
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -242,6 +241,10 @@ const productCtrl = {
                     sql: `SELECT * FROM product_images WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC`
                 },
                 {
+                    table: 'description_images',
+                    sql: `SELECT * FROM product_images WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC`
+                },
+                {
                     table: 'scope',
                     sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=${id} `
                 },
@@ -280,6 +283,7 @@ const productCtrl = {
                 ...data,
                 groups,
                 sub_images: when_data?.sub_images,
+                description_images: when_data?.description_images,
                 properties: when_data?.properties,
                 characters: when_data2?.characters,
                 product_average_scope: when_data?.scope[0]?.product_average_scope,
@@ -308,7 +312,7 @@ const productCtrl = {
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
-                another_id = 0,
+                description_images = [], another_id = 0,
                 price_lang = 'ko', point_save = 0, point_usable = 1, cash_usable = 1, pg_usable = 1, status, show_status = 0
             } = req.body;
 
@@ -321,6 +325,10 @@ const productCtrl = {
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
             }
+            if (typeof description_images == 'string') {
+                description_images = JSON.parse(description_images ?? '[]')
+            }
+
             if (typeof groups == 'string') {
                 groups = JSON.parse(groups ?? '[]')
             }
@@ -434,6 +442,27 @@ const productCtrl = {
                     data: [insert_sub_image_list]
                 })
             }
+
+            //description image
+            let insert_description_image_list = [];
+            for (var i = 0; i < description_images.length; i++) {
+                if (description_images[i]?.is_delete != 1) {
+                    insert_description_image_list.push([
+                        product_id,
+                        description_images[i]?.product_description_img,
+                    ])
+                }
+            }
+            if (insert_description_image_list.length > 0) {
+                sql_list.push({
+                    table: `description_images`,
+                    sql: `INSERT INTO product_images (product_id, product_description_img) VALUES ?`,
+                    data: [insert_description_image_list]
+                })
+            }
+
+            //console.log(insert_description_image_list)
+
             //property         
             let insert_property_list = [];
 
@@ -481,11 +510,14 @@ const productCtrl = {
                 product_img,
                 product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
-                sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
+                sub_images = [], description_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 another_id = 0, price_lang = 'ko', point_save = 0, /*point_usable = 1, cash_usable = 1, pg_usable = 1, status = 0, show_status*/
             } = req.body;
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
+            }
+            if (typeof description_images == 'string') {
+                description_images = JSON.parse(description_images ?? '[]')
             }
             if (typeof groups == 'string') {
                 groups = JSON.parse(groups ?? '[]')
@@ -647,6 +679,31 @@ const productCtrl = {
             if (delete_sub_image_list.length > 0) {
                 let sub_image_result = await writePool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_sub_image_list.join()})`);
             }
+
+            //description image
+            let insert_description_image_list = [];
+            let delete_description_image_list = [];
+            for (var i = 0; i < description_images.length; i++) {
+                if (description_images[i]?.is_delete == 1) {
+                    delete_description_image_list.push(description_images[i]?.id ?? 0);
+                } else {
+                    if (description_images[i]?.id) {
+
+                    } else {
+                        insert_description_image_list.push([
+                            product_id,
+                            description_images[i]?.product_description_img,
+                        ])
+                    }
+                }
+            }
+            if (insert_description_image_list.length > 0) {
+                let description_image_result = await writePool.query(`INSERT INTO product_images (product_id, product_description_img) VALUES ?`, [insert_description_image_list]);
+            }
+            if (delete_sub_image_list.length > 0) {
+                let description_image_result = await writePool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_description_image_list.join()})`);
+            }
+
             //property
             let delete_property_result = await writePool.query(`DELETE FROM products_and_properties WHERE product_id=${product_id}`);
 
