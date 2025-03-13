@@ -65,7 +65,7 @@ const phoneRegistrationCtrl = {
             } = req.body;
             let files = settingFiles(req.files);
 
-            let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE phone_number=? AND brand_id=${brand_id}`, [phone_number]);
+            let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE phone_number=? AND brand_id=${brand_id} AND is_delete=0`, [phone_number]);
             if (is_exist_number[0].length > 0) {
                 return response(req, res, -100, "등록된 번호가 이미 존재합니다.", false)
             }
