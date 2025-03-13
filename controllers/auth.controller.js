@@ -142,7 +142,7 @@ const authCtrl = {
             }
 
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
-                let is_exist_phone = await readPool.query(`SELECT * FROM phone_registration WHERE phone_number=? AND brand_id=${decode_dns?.id ?? 0}`, [phone_num]);
+                let is_exist_phone = await readPool.query(`SELECT * FROM phone_registration WHERE phone_number=? AND brand_id=${decode_dns?.id ?? 0} AND is_delete = 0`, [phone_num]);
                 if (is_exist_phone[0].length <= 0) {
                     //console.log(is_exist_phone[0])
                     return response(req, res, -100, "가입 허락된 전화번호가 아닙니다. 관리자에 문의하세요.", false)
