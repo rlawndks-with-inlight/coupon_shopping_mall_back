@@ -142,11 +142,11 @@ const productCtrl = {
 
             if (manager_type == 'seller' && (decode_user?.seller_brand != undefined || decode_user?.seller_category != undefined)) {
                 //console.log(decode_user?.seller_category)
-                if (!decode_user?.seller_category) {
+                if (decode_user?.seller_brand && !decode_user?.seller_category) {
                     sql += ` AND category_id1 IN (${decode_user?.seller_brand})`
-                } else if (!decode_user?.seller_brand) {
+                } else if (!decode_user?.seller_brand && decode_user?.seller_category) {
                     sql += ` AND category_id0 IN (${decode_user?.seller_category}) `
-                } else {
+                } else if (decode_user?.seller_brand && decode_user?.seller_category) {
                     sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
                 }
             }

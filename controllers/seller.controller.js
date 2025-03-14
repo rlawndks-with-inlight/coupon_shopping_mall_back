@@ -26,7 +26,7 @@ const sellerCtrl = {
             }
 
             if (decode_user?.level <= 10) {
-                sql += `AND id=${decode_user?.id}`;
+                sql += `AND users.id=${decode_user?.id}`;
             }
 
             if (decode_user?.level == 20) {

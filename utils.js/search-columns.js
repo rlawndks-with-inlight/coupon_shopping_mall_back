@@ -5,4 +5,5 @@ export const searchColumns = {
     'users': ['user_name', 'name', 'nickname', 'phone_num'],
     'seller_adjustments': ['brands.name', 'users.name', 'users.nickname'],
     'product_categories': ['category_name', 'category_en_name'],
+    'phone_registration': ['phone_num'],
 }
