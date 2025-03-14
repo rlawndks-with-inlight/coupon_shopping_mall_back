@@ -14,7 +14,12 @@ const authCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let { user_name, user_pw, is_manager, otp_num } = req.body;
-            let user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id ?? 0} OR level >=50 ) LIMIT 1`, user_name);
+            let user = '';
+            if (decode_dns?.setting_obj?.is_use_seller == 1) {
+                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND seller_id=${decode_dns?.seller_id ?? 0} AND ( brand_id=${decode_dns?.id ?? 0} OR level >=50 ) LIMIT 1`, user_name);
+            } else {
+                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id ?? 0} OR level >=50 ) LIMIT 1`, user_name);
+            }
             user = user[0][0];
 
             if (!user || (is_manager && user.level <= 0)) {
