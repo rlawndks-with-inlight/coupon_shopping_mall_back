@@ -14,8 +14,5 @@ router
 router
     .route('/:trx_type')
     .post(payCtrl.ready);
-router
-    .route('/hecto')
-    .post(payCtrl.hecto)
 
 export default router;
