@@ -26,18 +26,6 @@ const table_name = "transactions";
 
 const payCtrl = {
 
-  hecto: async (req, res, next) => {
-    try {
-
-    }
-    catch (err) {
-      console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
-      return response(req, res, -200, "서버 에러 발생", false);
-    } finally {
-    }
-  },
-
   ready: async (req, res, next) => {
     //인증결제
     try {
@@ -69,6 +57,7 @@ const payCtrl = {
         seller_id = 0,
       } = req.body;
 
+
       if (trx_type == 'auth') {
         trx_method = 2;
       } else if (trx_type == 'hand') {
@@ -90,6 +79,7 @@ const payCtrl = {
       } else if (trx_type == 'phone_hecto') {
         trx_method = 31;
       } else {
+        //console.log(trx_type);
         return response(req, res, -100, "잘못된 결제타입 입니다.", false)
       }
       let files = settingFiles(req.files);
@@ -129,6 +119,7 @@ const payCtrl = {
         use_point,
       };
       obj = { ...obj, ...files };
+      //console.log(req.body)
 
       let result = await insertQuery(`${table_name}`, obj);
 
@@ -186,6 +177,17 @@ const payCtrl = {
         );
         if (result?.data?.result_cd != "0000") {
           return response(req, res, -100, result?.data?.result_msg, false);
+        }
+      }
+
+      if (trx_method == 3) {
+        let result = await axios.post(
+          `https://api.fintree.kr/payment.keyin`, { ...req.body }
+        );
+        if (result?.data?.resultCd == "9999") {
+          return response(req, res, -100, result?.data?.resultMsg, false);
+        } else {
+          return;
         }
       }
 
