@@ -59,6 +59,7 @@ const domainCtrl = {
         "dns",
         "oper_id",
         "seller_trx_fee",
+        "seller_point",
       ];
 
 
@@ -87,6 +88,7 @@ const domainCtrl = {
       if (is_seller_mall[0].length > 0) {
         brand['seller_id'] = is_seller_mall[0][0].id
         brand['oper_id'] = is_seller_mall[0][0].oper_id
+        brand['seller_point'] = is_seller_mall[0][0].seller_point
       }
 
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
