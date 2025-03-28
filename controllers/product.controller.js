@@ -150,6 +150,18 @@ const productCtrl = {
                     sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
                 }
             }
+            if (manager_type == 'seller' && (decode_user?.seller_property != undefined)) {
+
+                if (decode_user?.seller_property.split(',').includes('0')) {
+                    sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (48) )`
+                }
+                if (decode_user?.seller_property.split(',').includes('1')) {
+                    sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (47) )`
+                }
+                if (decode_user?.seller_property.split(',').includes('2')) {
+                    sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (46) )`
+                }
+            }
 
             if (type == 'user' || type == 'seller' || manager_type == 'seller') {
                 sql += ` AND products.status!=5 `

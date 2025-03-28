@@ -118,8 +118,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num, user_name, user_pw, level, oper_id, seller_trx_fee,
-                seller_range_u = 0, seller_range_o = 0, seller_brand, seller_category, seller_demo_num, seller_color, seller_logo_img,
+                brand_id, name, phone_num, user_name, user_pw, level, oper_id, seller_trx_fee, seller_point,
+                seller_range_u = 0, seller_range_o = 0, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
             } = req.body;
@@ -127,7 +127,12 @@ const sellerCtrl = {
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
-
+            if (seller_trx_fee > 1) {
+                return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
+            }
+            if (seller_point > 1) {
+                return response(req, res, -100, "포인트 적립률이 100%보다 큽니다", false)
+            }
             let pw_data = await createHashedPassword(user_pw);
             user_pw = pw_data.hashedPassword;
             let user_salt = pw_data.salt;
@@ -139,8 +144,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num, user_name, user_pw, user_salt, level, oper_id, seller_trx_fee,
-                seller_range_u, seller_range_o, seller_brand, seller_category, seller_demo_num, seller_color, seller_logo_img,
+                name, phone_num, user_name, user_pw, user_salt, level, oper_id, seller_trx_fee, seller_point,
+                seller_range_u, seller_range_o, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
@@ -187,12 +192,18 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee,
-                seller_range_u = 0, seller_range_o = 0, seller_brand, seller_category, seller_demo_num, seller_color, seller_logo_img,
+                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee, seller_point,
+                seller_range_u = 0, seller_range_o = 0, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
                 id
             } = req.body;
+            if (seller_trx_fee > 1) {
+                return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
+            }
+            if (seller_point > 1) {
+                return response(req, res, -100, "포인트 적립률이 100%보다 큽니다", false)
+            }
             let files = settingFiles(req.files);
             let obj = {
                 background_img,
@@ -201,8 +212,8 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee,
-                seller_range_u, seller_range_o, seller_brand, seller_category, seller_demo_num, seller_color, seller_logo_img,
+                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee, seller_point,
+                seller_range_u, seller_range_o, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
