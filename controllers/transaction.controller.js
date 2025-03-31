@@ -192,7 +192,7 @@ const transactionCtrl = {
                 appr_num,
                 buyer_name,
                 buyer_phone,
-                check_img
+                //check_img
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
@@ -201,7 +201,7 @@ const transactionCtrl = {
                 appr_num,
                 buyer_name,
                 buyer_phone,
-                check_img
+                //check_img
             };
             obj = { ...obj, ...files };
 
