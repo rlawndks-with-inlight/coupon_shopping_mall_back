@@ -60,6 +60,9 @@ const domainCtrl = {
         "oper_id",
         "seller_trx_fee",
         "seller_point",
+        "seller_logo_img",
+        "seller_color",
+        "seller_demo_num"
       ];
 
 
@@ -85,18 +88,33 @@ const domainCtrl = {
 
       brand = brand[0][0]
 
-      if (is_seller_mall[0].length > 0) {
-        brand['seller_id'] = is_seller_mall[0][0].id
-        brand['oper_id'] = is_seller_mall[0][0].oper_id
-        brand['seller_point'] = is_seller_mall[0][0].seller_point
-      }
-
       brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
       //brand["slider_css"] = JSON.parse(brand?.slider_css ?? "{}");
       brand["setting_obj"] = JSON.parse(brand?.setting_obj ?? "{}");
       brand["none_use_column_obj"] = JSON.parse(brand?.none_use_column_obj ?? "{}");
       brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");
       brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
+
+      if (is_seller_mall[0].length > 0) {
+        brand['seller_id'] = is_seller_mall[0][0].id
+        brand['oper_id'] = is_seller_mall[0][0].oper_id
+        brand['seller_point'] = is_seller_mall[0][0].seller_point
+
+        if (is_seller_mall[0][0].seller_logo_img) {
+          brand['logo_img'] = is_seller_mall[0][0].seller_logo_img
+        }
+        if (is_seller_mall[0][0].seller_color) {
+          brand['theme_css']['main_color'] = is_seller_mall[0][0].seller_color
+        }
+        if (is_seller_mall[0][0].seller_demo_num) {
+          if (is_seller_mall[0][0].seller_demo_num == 1) {
+            brand['setting_obj']['shop_demo_num'] = 4
+          }
+          if (is_seller_mall[0][0].seller_demo_num == 2) {
+            brand['setting_obj']['shop_demo_num'] = 9
+          }
+        }
+      }
 
       //console.log(brand)
 
