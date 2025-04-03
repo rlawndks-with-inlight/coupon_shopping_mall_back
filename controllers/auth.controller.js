@@ -22,6 +22,8 @@ const authCtrl = {
             }
             user = user[0][0];
 
+            //console.log(decode_dns)
+
             if (!user || (is_manager && user.level <= 0)) {
                 return response(req, res, -100, "가입되지 않은 회원입니다.", {})
             }

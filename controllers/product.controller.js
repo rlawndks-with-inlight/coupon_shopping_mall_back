@@ -141,13 +141,58 @@ const productCtrl = {
             }
 
             if (manager_type == 'seller' && (decode_user?.seller_brand != undefined || decode_user?.seller_category != undefined)) {
-                //console.log(decode_user?.seller_category)
                 if (decode_user?.seller_brand && !decode_user?.seller_category) {
                     sql += ` AND category_id1 IN (${decode_user?.seller_brand})`
                 } else if (!decode_user?.seller_brand && decode_user?.seller_category) {
-                    sql += ` AND category_id0 IN (${decode_user?.seller_category}) `
+                    let category_sql_list = [];
+                    category_sql_list.push({
+                        table: `category_id0`,
+                        sql: `SELECT * FROM product_categories WHERE product_category_group_id=195 AND is_delete=0 ORDER BY sort_idx DESC`
+                    })
+                    let category_obj = await getMultipleQueryByWhen(category_sql_list);
+
+                    let seller_category = decode_user?.seller_category.split(',')
+
+                    let seller_categories = []
+
+                    if (Object.keys(category_obj).length > 0) {
+                        for (var i = 0; i < Object.keys(category_obj).length; i++) {
+                            let key = Object.keys(category_obj)[i];
+                            for (var j = 0; j < seller_category?.length; j++) {
+                                let category_ids = findChildIds(category_obj[key], seller_category[j]);
+                                category_ids.unshift(parseInt(seller_category[j]));
+                                seller_categories.unshift(category_ids.join())
+                            }
+                            sql += `AND category_id0 IN (${seller_categories.join()})`
+                        }
+                    }
+
+                    //sql += ` AND category_id0 IN (${decode_user?.seller_category}) `
                 } else if (decode_user?.seller_brand && decode_user?.seller_category) {
-                    sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
+                    let category_sql_list = [];
+                    category_sql_list.push({
+                        table: `category_id0`,
+                        sql: `SELECT * FROM product_categories WHERE product_category_group_id=195 AND is_delete=0 ORDER BY sort_idx DESC`
+                    })
+                    let category_obj = await getMultipleQueryByWhen(category_sql_list);
+
+                    let seller_category = decode_user?.seller_category.split(',')
+
+                    let seller_categories = []
+
+                    if (Object.keys(category_obj).length > 0) {
+                        for (var i = 0; i < Object.keys(category_obj).length; i++) {
+                            let key = Object.keys(category_obj)[i];
+                            for (var j = 0; j < seller_category?.length; j++) {
+                                let category_ids = findChildIds(category_obj[key], seller_category[j]);
+                                category_ids.unshift(parseInt(seller_category[j]));
+                                seller_categories.unshift(category_ids.join())
+                            }
+                            sql += `AND category_id0 IN (${seller_categories.join()})`
+                            sql += ` AND category_id1 IN (${decode_user?.seller_brand}) `;
+                        }
+                    }
+                    //sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
                 }
             }
             if (manager_type == 'seller' && (decode_user?.seller_property != undefined)) {

@@ -144,7 +144,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, user_name, user_pw, user_salt, level, oper_id, seller_trx_fee, seller_point,
+                brand_id, name, phone_num, user_name, user_pw, user_salt, level, oper_id, seller_trx_fee, seller_point,
                 seller_range_u, seller_range_o, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
@@ -156,6 +156,8 @@ const sellerCtrl = {
                 return response(req, res, -100, "셀러추가중 에러", false)
             }
             let user_id = result?.insertId;
+
+            //console.log(result)
 
 
             if (product_ids.length > 0) {
@@ -220,10 +222,23 @@ const sellerCtrl = {
             obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj = { ...obj, ...files };
 
-            //console.log(obj)
+            let [sellerData] = await writePool.query(
+                `SELECT seller_brand, seller_category FROM ${table_name} WHERE id = ?`,
+                [id]
+            );
+
+            let isSellerBrandChanged = sellerData?.seller_brand !== seller_brand;
+            let isSellerCategoryChanged = sellerData?.seller_category !== seller_category;
+
+            if (isSellerBrandChanged || isSellerCategoryChanged) {
+                await writePool.query(
+                    `UPDATE seller_products SET is_delete = 1 WHERE seller_id = ?`,
+                    [id]
+                );
+            }
 
             let result = await updateQuery(`${table_name}`, obj, id);
-            let delete_connect = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${id}`);
+            //let delete_connect = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${id}`);
 
             if (product_ids.length > 0) {
                 let insert_products = [];
