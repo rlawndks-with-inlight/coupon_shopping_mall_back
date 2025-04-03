@@ -23,6 +23,8 @@ const sellerProductsCtrl = {
 
             let data = await getSelectQueryList(sql, columns, req.query);
 
+            console.log(sql)
+
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
