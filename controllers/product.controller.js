@@ -163,7 +163,7 @@ const productCtrl = {
                                 category_ids.unshift(parseInt(seller_category[j]));
                                 seller_categories.unshift(category_ids.join())
                             }
-                            sql += `AND category_id0 IN (${seller_categories.join()})`
+                            sql += ` AND category_id0 IN (${seller_categories.join()})`
                         }
                     }
 
@@ -188,7 +188,7 @@ const productCtrl = {
                                 category_ids.unshift(parseInt(seller_category[j]));
                                 seller_categories.unshift(category_ids.join())
                             }
-                            sql += `AND category_id0 IN (${seller_categories.join()})`
+                            sql += ` AND category_id0 IN (${seller_categories.join()})`
                             sql += ` AND category_id1 IN (${decode_user?.seller_brand}) `;
                         }
                     }
