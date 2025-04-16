@@ -184,6 +184,7 @@ const payCtrl = {
         let result = await axios.post(
           `https://api.fintree.kr/payment.keyin`, { ...req.body }
         );
+        console.log(result)
         if (result?.data?.resultCd == "9999") {
           return response(req, res, -100, result?.data?.resultMsg, false);
         } else {

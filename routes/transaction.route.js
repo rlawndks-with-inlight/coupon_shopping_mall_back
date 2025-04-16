@@ -19,5 +19,8 @@ router
 router
     .route('/:id/cancel-request')
     .post(transactionCtrl.cancelRequest)
+router
+    .route('/fintree')
+    .post(transactionCtrl.fintree)
 
 export default router;

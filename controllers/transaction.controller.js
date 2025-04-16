@@ -169,6 +169,69 @@ const transactionCtrl = {
 
             obj = { ...obj, ...files };
 
+            console.log(11)
+
+            let result = await insertQuery(`${table_name}`, obj);
+
+            return response(req, res, 100, "success", {})
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    fintree: async (req, res, next) => {
+        try {
+
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            const {
+                resultCd,
+                resultMsg,
+                payMethod,
+                tid,
+                appDtm,
+                appNo,
+                ordNo,
+                goodsName,
+                amt,
+                ordNm,
+                fnNm,
+                cancelYN,
+                appCardCd,
+                acqCardCd,
+                quota,
+                usePointAmt,
+                cardType,
+                authType,
+                //Mid,
+                mid,
+                ediDate,
+                //gid,
+                //oTid,
+                mbsReserved,
+                charSet,
+
+                ediNo,
+                ccDnt,
+                cardNo,
+                remainAmt,
+                buyerId,
+                catId,
+                Gid,
+                notiDnt
+            } = req.body;
+            let files = settingFiles(req.files);
+            let obj = {
+                brand_id, name, note, price, category_id
+            };
+
+            console.log(12)
+
+            obj = { ...obj, ...files };
+
             let result = await insertQuery(`${table_name}`, obj);
 
             return response(req, res, 100, "success", {})
