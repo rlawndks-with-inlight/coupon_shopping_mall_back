@@ -374,7 +374,7 @@ const payCtrl = {
         );
         console.log(fintree_cancel)
         fintree_cancel = fintree_cancel?.data ?? {};
-        if (fintree_cancel?.result_cd == "0000") {
+        if (fintree_cancel?.resultCd == "0000") {
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, fintree_cancel?.result_msg, false);
