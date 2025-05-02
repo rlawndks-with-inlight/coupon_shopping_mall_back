@@ -182,7 +182,7 @@ const transactionCtrl = {
 
         }
     },
-    fintree: async (req, res, next) => {
+    noti: async (req, res, next) => {
         try {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
@@ -228,17 +228,15 @@ const transactionCtrl = {
                 brand_id, name, note, price, category_id
             };
 
-            console.log(12)
-
             obj = { ...obj, ...files };
 
-            let result = await insertQuery(`${table_name}`, obj);
+            //let result = await insertQuery(`${table_name}`, obj);
 
-            return response(req, res, 100, "success", {})
+            return res.status(200).send("SUCCESS");
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return res.status(200).send("FAIL");
         } finally {
 
         }

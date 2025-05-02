@@ -20,7 +20,7 @@ router
     .route('/:id/cancel-request')
     .post(transactionCtrl.cancelRequest)
 router
-    .route('/fintree')
-    .post(transactionCtrl.fintree)
+    .route('/noti')
+    .post(transactionCtrl.noti)
 
 export default router;
