@@ -20,6 +20,7 @@ import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
 import { readPool, writePool } from "../config/db-pool.js";
 import crypto from 'crypto';
+import qs from 'qs';
 
 
 const table_name = "transactions";
@@ -123,8 +124,13 @@ const payCtrl = {
 
       let result = await insertQuery(`${table_name}`, obj);
 
+      console.log(result)
+
       let trans_id = result?.insertId;
       let insert_item_data = [];
+
+      products = Array.isArray(products) ? products : [products];
+
       let product_seller_ids = products.map((item) => {
         return item?.seller_id ?? 0;
       });
@@ -166,10 +172,12 @@ const payCtrl = {
       }
       //console.log(req.body)
 
-      let insert_item_result = await writePool.query(
-        `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
-        [insert_item_data]
-      );
+      if (insert_item_data.length > 0) {
+        let insert_item_result = await writePool.query(
+          `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
+          [insert_item_data]
+        );
+      }
       if (trx_method == 1) {
         let result = await axios.post(
           `${process.env.NOTI_URL}/api/v2/pay/hand`,
@@ -181,14 +189,41 @@ const payCtrl = {
       }
 
       if (trx_method == 3) {
+        const formData = qs.stringify({ ...req.body });
+
         let result = await axios.post(
-          `https://api.fintree.kr/payment.keyin`, { ...req.body }
+          `https://api.fintree.kr/payment.keyin`, formData, {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }
         );
         console.log(result)
         if (result?.data?.resultCd == "9999") {
           return response(req, res, -100, result?.data?.resultMsg, false);
         } else {
           return;
+        }
+      }
+
+      if (trx_method == 4) {
+        const { tid, ediDate, mid, goodsAmt, charSet, encData, signData } = req.body
+        const formData = qs.stringify({ tid, ediDate, mid, goodsAmt, charSet, encData, signData });
+        //console.log(formData)
+        let result = await axios.post(
+          `https://api.fintree.kr/payment.do`, formData, {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }
+        );
+        //console.log(result)
+        if (!["0000", "3001"].includes(result?.data?.resultCd)) {
+          return response(req, res, -100, result?.data?.resultMsg, false);
+        } else {
+          return response(req, res, 100, "success", {
+            id: trans_id,
+          });
         }
       }
 
@@ -324,24 +359,43 @@ const payCtrl = {
 
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
-      const { trx_id, pay_key, amount, mid, tid, id } = req.body;
+      const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate } = req.body;
       let files = settingFiles(req.files);
       let obj = {};
-      let payvery_cancel = await axios.post(
-        `${process.env.NOTI_URL}/api/v2/pay/cancel`,
-        {
-          trx_id,
-          pay_key,
-          amount,
-          mid,
-          tid,
+      const formData = qs.stringify({ trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate });
+      if (decode_dns.id == 74) {
+        let fintree_cancel = await axios.post(
+          `https://api.fintree.kr/payment.cancel`, formData,
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          }
+        );
+        console.log(fintree_cancel)
+        fintree_cancel = fintree_cancel?.data ?? {};
+        if (fintree_cancel?.result_cd == "0000") {
+          return response(req, res, 100, "success", {});
+        } else {
+          return response(req, res, -200, fintree_cancel?.result_msg, false);
         }
-      );
-      payvery_cancel = payvery_cancel?.data ?? {};
-      if (payvery_cancel?.result_cd == "0000") {
-        return response(req, res, 100, "success", {});
       } else {
-        return response(req, res, -200, payvery_cancel?.result_msg, false);
+        let payvery_cancel = await axios.post(
+          `${process.env.NOTI_URL}/api/v2/pay/cancel`,
+          {
+            trx_id,
+            pay_key,
+            amount,
+            mid,
+            tid,
+          }
+        );
+        payvery_cancel = payvery_cancel?.data ?? {};
+        if (payvery_cancel?.result_cd == "0000") {
+          return response(req, res, 100, "success", {});
+        } else {
+          return response(req, res, -200, payvery_cancel?.result_msg, false);
+        }
       }
     } catch (err) {
       console.log(err);
