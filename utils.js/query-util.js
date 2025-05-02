@@ -30,6 +30,7 @@ export const insertQuery = async (table, obj) => {
         }
         return result[0];
     } catch (err) {
+        console.log(err);
         return false;
     }
 }
