@@ -124,7 +124,7 @@ const payCtrl = {
 
       let result = await insertQuery(`${table_name}`, obj);
 
-      console.log(result)
+      //console.log(result)
 
       let trans_id = result?.insertId;
       let insert_item_data = [];
@@ -372,7 +372,7 @@ const payCtrl = {
             }
           }
         );
-        console.log(fintree_cancel)
+        //console.log(fintree_cancel)
         fintree_cancel = fintree_cancel?.data ?? {};
         if (fintree_cancel?.resultCd == "0000") {
           return response(req, res, 100, "success", {});
