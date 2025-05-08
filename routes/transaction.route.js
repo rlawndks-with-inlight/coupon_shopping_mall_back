@@ -9,6 +9,9 @@ router
     .get(transactionCtrl.list)
     .post(transactionCtrl.create);
 router
+    .route('/noti')
+    .post(transactionCtrl.noti)
+router
     .route('/:id')
     .get(transactionCtrl.get)
     .put(transactionCtrl.update)
@@ -19,8 +22,5 @@ router
 router
     .route('/:id/cancel-request')
     .post(transactionCtrl.cancelRequest)
-router
-    .route('/noti')
-    .post(transactionCtrl.noti)
 
 export default router;
