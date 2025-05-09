@@ -10,6 +10,7 @@ router
     .post(transactionCtrl.create);
 router
     .route('/noti')
+    .get(transactionCtrl.noti)
     .post(transactionCtrl.noti)
 router
     .route('/:id')
