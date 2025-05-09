@@ -118,6 +118,7 @@ const payCtrl = {
         bank_code,
         acct_num,
         use_point,
+        seller_id
       };
       obj = { ...obj, ...files };
       //console.log(req.body)
@@ -198,7 +199,7 @@ const payCtrl = {
           }
         }
         );
-        console.log(result)
+        //console.log(result)
         if (result?.data?.resultCd == "9999") {
           return response(req, res, -100, result?.data?.resultMsg, false);
         } else {
@@ -359,7 +360,7 @@ const payCtrl = {
 
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
-      const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate } = req.body;
+      const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate, id } = req.body;
       let files = settingFiles(req.files);
       let obj = {};
       const formData = qs.stringify({ trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate });
@@ -375,6 +376,7 @@ const payCtrl = {
         //console.log(fintree_cancel)
         fintree_cancel = fintree_cancel?.data ?? {};
         if (fintree_cancel?.resultCd == "0000") {
+          let update_transaction = await updateQuery('transactions', { is_cancel: 1 }, id)
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, fintree_cancel?.result_msg, false);

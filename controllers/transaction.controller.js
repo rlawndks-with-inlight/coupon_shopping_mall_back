@@ -51,7 +51,7 @@ const transactionCtrl = {
             if (cancel_status) {
                 if (cancel_status == 1) {
                     sql += ` AND trx_status=1 AND is_cancel=0  `;
-                } else if (cancel_status == 5) {
+                } else if (cancel_status == 2) {
                     sql += ` AND is_cancel=1 `;
                 } else if (cancel_status == 0) {
                     sql += ` AND is_cancel=0 AND is_cancel_trans=0 `;
