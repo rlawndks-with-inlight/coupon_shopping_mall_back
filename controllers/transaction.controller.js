@@ -29,8 +29,12 @@ const transactionCtrl = {
             //console.log(req.query)
 
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
-                columns.push(`sellers.user_name AS seller_user_name`)
-                sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id`
+                columns.push(`sellers.user_name AS seller_user_name`);
+                columns.push(`sellers.dns AS seller_dns`);
+                sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id `;
+
+                columns.push(`users.unipass AS user_unipass`);
+                sql += `LEFT JOIN users AS users ON ${table_name}.user_id=users.id `;
             } else {
 
             }
