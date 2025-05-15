@@ -9,9 +9,9 @@ const scheduleIndex = () => {
       return;
     }
     let return_moment = returnMoment();
-    langProcess();
+    //langProcess();
     if (return_moment.includes('00:00:')) {
-      getArfighterItems();
+      //getArfighterItems();
     }
   });
 };
