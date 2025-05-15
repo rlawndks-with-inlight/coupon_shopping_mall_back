@@ -9,14 +9,14 @@ router
     .get(transactionCtrl.list)
     .post(transactionCtrl.create);
 router
+    .route('/noti')
+    .get(transactionCtrl.noti)
+    .post(transactionCtrl.noti)
+router
     .route('/:id')
     .get(transactionCtrl.get)
     .put(transactionCtrl.update)
     .delete(transactionCtrl.remove)
-router
-    .route('/noti')
-    .get(transactionCtrl.noti)
-    .post(transactionCtrl.noti)
 router
     .route('/:id/invoice')
     .post(transactionCtrl.changeInvoice)
