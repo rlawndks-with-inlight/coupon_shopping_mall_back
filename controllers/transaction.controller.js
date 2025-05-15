@@ -130,6 +130,9 @@ const transactionCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { id, } = req.params;
             const { ord_num, password } = req.query;
+
+            console.log(req)
+
             let sql = `SELECT * FROM ${table_name} WHERE id=${id}`
             if (ord_num) {
                 sql = `SELECT * FROM ${table_name} WHERE ord_num='${ord_num}' AND password='${password}'`;
