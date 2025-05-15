@@ -131,8 +131,6 @@ const transactionCtrl = {
             const { id, } = req.params;
             const { ord_num, password } = req.query;
 
-            console.log(req)
-
             let sql = `SELECT * FROM ${table_name} WHERE id=${id}`
             if (ord_num) {
                 sql = `SELECT * FROM ${table_name} WHERE ord_num='${ord_num}' AND password='${password}'`;
@@ -195,7 +193,7 @@ const transactionCtrl = {
             //const decode_user = checkLevel(req.cookies.token, 0, res);
             //const decode_dns = checkDns(req.cookies.dns);
 
-            console.log(req)
+            //console.log(req)
 
             return res.status(200).send("SUCCESS");
         } catch (err) {
