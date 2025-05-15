@@ -13,6 +13,10 @@ router
     .get(transactionCtrl.noti)
     .post(transactionCtrl.noti)
 router
+    .route('/noti/')
+    .get(transactionCtrl.noti)
+    .post(transactionCtrl.noti);
+router
     .route('/:id')
     .get(transactionCtrl.get)
     .put(transactionCtrl.update)
