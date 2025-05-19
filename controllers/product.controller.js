@@ -267,6 +267,7 @@ const productCtrl = {
                 product_columns.push(`seller_products.id AS seller_product_id`)
                 product_columns.push(`seller_products.seller_id`)
                 product_columns.push(`seller_products.seller_price AS product_sale_price `)
+                product_columns.push(`seller_products.agent_price AS product_agent_price`)
             }
             let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
 

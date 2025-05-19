@@ -58,11 +58,11 @@ const sellerProductsCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                seller_id, product_id, seller_price
+                seller_id, product_id, seller_price, agent_price
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                seller_id, product_id, seller_price
+                seller_id, product_id, seller_price, agent_price
             };
 
             obj = { ...obj, ...files };
