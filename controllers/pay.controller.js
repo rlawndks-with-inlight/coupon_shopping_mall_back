@@ -56,6 +56,8 @@ const payCtrl = {
         acct_num = "",
         use_point = 0,
         seller_id = 0,
+        seller_amount,
+        agent_amount,
       } = req.body;
 
 
@@ -118,7 +120,9 @@ const payCtrl = {
         bank_code,
         acct_num,
         use_point,
-        seller_id
+        seller_id,
+        seller_amount,
+        agent_amount,
       };
       obj = { ...obj, ...files };
       //console.log(req.body)

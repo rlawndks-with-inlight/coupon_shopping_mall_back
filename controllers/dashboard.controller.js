@@ -27,10 +27,49 @@ const dashboardCtrl = {
             let trx_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(amount) AS total_amount FROM ${table_name} `;
             trx_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND brand_id=${decode_dns?.id} `;
 
-            if (decode_user?.level == 10) {
+            if (decode_user?.level == 10) { //셀러의 경우 영업자를 거친 차익을 계산해야 함
+                let trx_agent_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(agent_amount) AS total_agent_amount FROM ${table_name} `;
+                trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND brand_id=${decode_dns?.id} `;
+                trx_agent_amounts_sql += ` AND seller_id = ${decode_user?.id} `;
+                if (s_dt) {
+                    trx_agent_amounts_sql += ` AND ${table_name}.created_at >= '${s_dt} 00:00:00' `
+                }
+                if (e_dt) {
+                    trx_agent_amounts_sql += ` AND ${table_name}.created_at <= '${e_dt} 23:59:59' `
+                }
+                trx_agent_amounts_sql += ` GROUP BY DATE(created_at) `;
+                let trx_agent_amounts = await readPool.query(trx_agent_amounts_sql);
+                trx_agent_amounts = trx_agent_amounts[0];
+                data['trx_agent_amounts_sum'] = trx_agent_amounts;
+
+            }
+
+            if (decode_user?.level == 10) { //셀러
                 trx_counts_sql += ` AND seller_id = ${decode_user?.id} `;
                 trx_cancel_counts_sql += ` AND seller_id = ${decode_user?.id} `;
                 trx_amounts_sql += ` AND seller_id = ${decode_user?.id} `;
+            }
+
+            if (decode_user?.level == 20) { // 영업자
+
+                let trx_agent_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(agent_amount) AS total_agent_amount FROM ${table_name} `;
+                trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND brand_id=${decode_dns?.id} `;
+                trx_agent_amounts_sql += ` AND seller_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id}) `;
+                if (s_dt) {
+                    trx_agent_amounts_sql += ` AND ${table_name}.created_at >= '${s_dt} 00:00:00' `
+                }
+                if (e_dt) {
+                    trx_agent_amounts_sql += ` AND ${table_name}.created_at <= '${e_dt} 23:59:59' `
+                }
+                trx_agent_amounts_sql += ` GROUP BY DATE(created_at) `;
+                let trx_agent_amounts = await readPool.query(trx_agent_amounts_sql);
+                trx_agent_amounts = trx_agent_amounts[0];
+                data['trx_agent_amounts_sum'] = trx_agent_amounts;
+                //영업자의 경우 영업자 하위 셀러의 전체 매출을 표시, 그리고 셀러별 가져오는 수익의 퍼센트를 표시하는 것인지 아니면 전체 매출의 일정 퍼센트를 표시하는 것인지 알아봐야 함
+
+                trx_counts_sql += ` AND seller_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id}) `;
+                trx_cancel_counts_sql += ` AND seller_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id}) `;
+                trx_amounts_sql += ` AND seller_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id}) `;
             }
 
             if (s_dt) {

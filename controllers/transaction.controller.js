@@ -174,7 +174,7 @@ const transactionCtrl = {
 
             obj = { ...obj, ...files };
 
-            console.log(11)
+            //console.log(11)
 
             let result = await insertQuery(`${table_name}`, obj);
 
