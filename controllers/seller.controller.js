@@ -29,8 +29,12 @@ const sellerCtrl = {
                 sql += `AND users.id=${decode_user?.id}`;
             }
 
-            if (decode_user?.level == 20) {
+            if (decode_user?.level == 15) {
                 sql += `AND users.oper_id=${decode_user?.id}`
+            }
+
+            if (decode_user?.level == 20) {
+                sql += `AND (users.oper_id=${decode_user?.id} OR users.oper_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id})) `
             }
 
             //console.log(sql)

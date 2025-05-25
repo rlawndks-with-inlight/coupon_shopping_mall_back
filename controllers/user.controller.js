@@ -28,8 +28,12 @@ const userCtrl = {
                 sql += ` AND level=10 `
             }
 
-            if (is_agent) {
-                sql += ` AND level=20 `
+            if (is_agent == 1) {
+                sql += ` AND (level=20 OR level=15)`
+            }
+
+            if (is_agent == 2) {
+                sql += ` AND level=15 AND oper_id=${decode_user?.id}`
             }
 
             let data = await getSelectQueryList(sql, columns, req.query);
@@ -110,7 +114,8 @@ const userCtrl = {
                 brand_id, user_name, user_pw, name, nickname, level = 0, phone_num, note,
                 contract_img, bsin_lic_img, company_name, business_num,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point
+                seller_trx_fee, seller_point,
+                oper_id, oper_trx_fee
             } = req.body;
             let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND is_delete = 0`, [user_name]);
             if (is_exist_user[0].length > 0) {
@@ -134,7 +139,8 @@ const userCtrl = {
                 brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, note,
                 contract_img, bsin_lic_img, company_name, business_num,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point
+                seller_trx_fee, seller_point,
+                oper_id, oper_trx_fee
             };
             //console.log(obj)
             obj = { ...obj, ...files };
@@ -160,7 +166,8 @@ const userCtrl = {
                 brand_id, user_name, name, nickname, level, phone_num, note, id,
                 company_name, business_num, contract_img, bsin_lic_img,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point
+                seller_trx_fee, seller_point,
+                oper_id, oper_trx_fee
             } = req.body;
             let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND is_delete = 0 AND id!=?`, [user_name, id]);
             if (is_exist_user[0].length > 0) {
@@ -178,7 +185,8 @@ const userCtrl = {
                 brand_id, user_name, name, nickname, level, phone_num, note,
                 company_name, business_num, contract_img, bsin_lic_img,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point
+                seller_trx_fee, seller_point,
+                oper_id, oper_trx_fee
             };
             console.log('123')
             obj = { ...obj, ...files };
