@@ -50,7 +50,7 @@ const dashboardCtrl = {
                 trx_amounts_sql += ` AND seller_id = ${decode_user?.id} `;
             }
 
-            if (decode_user?.level == 20) { // 영업자
+            if (decode_user?.level == 15) { // 영업자 (총판이 아닌 영업자의 경우에도 총판을 거친 차익을 계산해야 함)
 
                 let trx_agent_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(agent_amount) AS total_agent_amount FROM ${table_name} `;
                 trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND brand_id=${decode_dns?.id} `;

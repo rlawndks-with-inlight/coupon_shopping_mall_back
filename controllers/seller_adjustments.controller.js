@@ -32,8 +32,10 @@ const sellerAdjustmentsCtrl = {
             sql += ` WHERE ${table_name}.state IN (${state})`
             if (decode_user?.level >= 40) {
                 sql += ` AND ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
-            } else if (decode_user?.level == 20) {
+            } else if (decode_user?.level == 15) {
                 sql += ` AND ${table_name}.oper_id=${decode_user?.id ?? 0} `;
+            } else if (decode_user?.level == 20) {
+                sql += ` AND (users.oper_id=${decode_user?.id} OR users.oper_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id})) `
             } else {
                 sql += ` AND ${table_name}.seller_id=${decode_user?.id ?? 0}`;
             }

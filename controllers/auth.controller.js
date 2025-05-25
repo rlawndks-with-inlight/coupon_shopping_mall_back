@@ -23,6 +23,12 @@ const authCtrl = {
             user = user[0][0];
 
             //console.log(decode_dns)
+            let agent = '';
+
+            if (user?.level == 10) {
+                agent = await readPool.query(`SELECT * FROM users WHERE id=${user?.oper_id}`);
+                agent = agent[0][0]
+            }
 
             if (!user || (is_manager && user.level <= 0)) {
                 return response(req, res, -100, "가입되지 않은 회원입니다.", {})
@@ -74,6 +80,8 @@ const authCtrl = {
                 seller_category: user.seller_category,
                 seller_property: user.seller_property,
                 seller_point: user.seller_point,
+
+                oper_trx_fee: user.level == 10 ? agent.oper_trx_fee : user.oper_trx_fee,
             })
             res.cookie("token", token, {
                 httpOnly: true,
