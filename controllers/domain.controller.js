@@ -74,8 +74,8 @@ const domainCtrl = {
 
       if (is_seller_mall[0].length == 0) {
         brand = await readPool.query(
-          //`SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
-          `SELECT ${columns.join()} FROM brands WHERE id=92`
+          `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
+          //`SELECT ${columns.join()} FROM brands WHERE id=92`
         );
         if (brand[0].length == 0) {
           return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
