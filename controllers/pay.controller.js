@@ -127,7 +127,7 @@ const payCtrl = {
       obj = { ...obj, ...files };
       //console.log(req.body)
 
-      if (trx_status == 4) {
+      if (trx_method == 4) {
         obj = { ...obj, trx_status: 5 }
       }
 
