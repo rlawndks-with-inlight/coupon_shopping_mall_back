@@ -127,6 +127,10 @@ const payCtrl = {
       obj = { ...obj, ...files };
       //console.log(req.body)
 
+      if (trx_status == 4) {
+        obj = { ...obj, trx_status: 5 }
+      }
+
       let result = await insertQuery(`${table_name}`, obj);
 
       //console.log(result)
