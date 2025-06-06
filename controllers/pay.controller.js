@@ -58,6 +58,7 @@ const payCtrl = {
         seller_id = 0,
         seller_amount,
         agent_amount,
+        have_brother
       } = req.body;
 
 
@@ -123,6 +124,7 @@ const payCtrl = {
         seller_id,
         seller_amount,
         agent_amount,
+        have_brother
       };
       obj = { ...obj, ...files };
       //console.log(req.body)
@@ -130,6 +132,8 @@ const payCtrl = {
       if (trx_method == 4) {
         obj = { ...obj, trx_status: 5 }
       }
+
+      //console.log(obj)
 
       let result = await insertQuery(`${table_name}`, obj);
 

@@ -29,11 +29,15 @@ const userCtrl = {
             }
 
             if (is_agent == 1) {
-                sql += ` AND (level=20 OR level=15)`
+                sql += ` AND level=15 `
             }
 
             if (is_agent == 2) {
-                sql += ` AND level=15 AND oper_id=${decode_user?.id}`
+                sql += ` AND level=15 AND oper_id=${decode_user?.id} `
+            }
+
+            if (is_agent == 3) {
+                sql += ` AND level=20 `
             }
 
             let data = await getSelectQueryList(sql, columns, req.query);
@@ -145,7 +149,9 @@ const userCtrl = {
             //console.log(obj)
             obj = { ...obj, ...files };
             let result = await insertQuery(`${table_name}`, obj);
-
+            if (!result) {
+                return response(req, res, -100, "추가중 에러", false)
+            }
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -188,7 +194,7 @@ const userCtrl = {
                 seller_trx_fee, seller_point,
                 oper_id, oper_trx_fee
             };
-            console.log('123')
+            //console.log('123')
             obj = { ...obj, ...files };
             let result = await updateQuery(`${table_name}`, obj, id);
             return response(req, res, 100, "success", {})

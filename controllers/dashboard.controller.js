@@ -129,13 +129,15 @@ const dashboardCtrl = {
                 request_counts_sql += ` WHERE category_id IN (${ids.join()}) `;
                 request_counts_sql += ` AND posts.is_reply=0`   //문의의 is_reply==0, 답변의 is_reply==1
                 request_counts_sql += ` AND posts.is_delete=0` //이미 지워진 문의는 포함x
+                request_counts_sql += ` AND NOT EXISTS (SELECT 1 FROM posts AS child WHERE child.parent_id = posts.id)`
 
-                if (s_dt) {
+                /*if (s_dt) {
                     request_counts_sql += ` AND posts.created_at >= '${s_dt} 00:00:00' `;
                 }
                 if (e_dt) {
                     request_counts_sql += ` AND posts.created_at <= '${e_dt} 23:59:59' `;
-                }
+                }*/
+                //console.log(request_counts_sql)
                 let request_counts = await readPool.query(request_counts_sql);
                 request_counts = request_counts[0][0];
                 data[`request_${request_post_categories[i]?.id}`] = request_counts?.cnt ?? 0;
