@@ -113,7 +113,7 @@ const transactionCtrl = {
                     data.content[i].orders = transactions_order_obj[data?.content[i]?.is_cancel == 1 ? data?.content[i]?.transaction_id : data?.content[i]?.id];
                 }
             }
-
+            //console.log(data)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)

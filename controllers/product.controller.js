@@ -132,7 +132,7 @@ const productCtrl = {
             if (is_consignment) {
                 where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
             }
-
+            //console.log(where_sql)
             sql += where_sql;
 
 
@@ -218,6 +218,8 @@ const productCtrl = {
             /*if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND products.status!=5 `
             }*/
+            //console.log({ ...req.query })
+            //console.log(sql)
             let data = await getSelectQueryList(sql, columns, { ...req.query, type: type });
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);

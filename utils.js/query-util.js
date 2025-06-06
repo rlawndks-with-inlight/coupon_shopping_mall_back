@@ -126,6 +126,10 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
             order = 'id';
         }
     }
+    //console.log(sql_)
+    //console.log(columns)
+    //console.log(query)
+    //console.log(table)
     if (table == 'products' && type == 'user') {
         content_sql += ` ORDER BY CASE WHEN (products.status = 2 OR products.status = 3 OR products.status = 4 OR products.status = 5) THEN 1 ELSE 0 END ASC, ${table}.${order} ${is_asc == 1 ? 'ASC' : 'DESC'} `;
     } else {
@@ -140,13 +144,15 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
         ...add_sql_list
     ]
 
+    //console.log(sql_list)
+
     for (var i = 0; i < sql_list.length; i++) {
         result_list.push({
             table: sql_list[i].table,
             content: (await readPool.query(sql_list[i].sql))
         });
     }
-
+    //console.log(result_list)
     for (var i = 0; i < result_list.length; i++) {
         await result_list[i];
     }
@@ -158,6 +164,8 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
     for (var i = 0; i < result.length; i++) {
         obj[result[i].table] = result[i]?.content[0]
     }
+
+    //console.log(obj)
     return settingSelectQueryObj(obj);
 }
 const settingSelectQueryWhere = (sql_, query, table, find_columns = []) => {

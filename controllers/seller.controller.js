@@ -231,8 +231,8 @@ const sellerCtrl = {
                 [id]
             );
 
-            let isSellerBrandChanged = sellerData?.seller_brand !== seller_brand;
-            let isSellerCategoryChanged = sellerData?.seller_category !== seller_category;
+            let isSellerBrandChanged = sellerData[0].seller_brand !== seller_brand;
+            let isSellerCategoryChanged = sellerData[0].seller_category !== seller_category;
 
             if (isSellerBrandChanged || isSellerCategoryChanged) {
                 await writePool.query(
