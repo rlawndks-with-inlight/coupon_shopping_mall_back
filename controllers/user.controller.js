@@ -172,8 +172,8 @@ const userCtrl = {
                 brand_id, user_name, name, nickname, level, phone_num, note, id,
                 company_name, business_num, contract_img, bsin_lic_img,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point,
-                oper_id, oper_trx_fee
+                seller_trx_fee = 0, seller_point,
+                oper_id, oper_trx_fee = 0
             } = req.body;
             let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND is_delete = 0 AND id!=?`, [user_name, id]);
             if (is_exist_user[0].length > 0) {
