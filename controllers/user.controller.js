@@ -40,6 +40,8 @@ const userCtrl = {
                 sql += ` AND level=20 `
             }
 
+            //console.log(sql)
+
             let data = await getSelectQueryList(sql, columns, req.query);
 
             return response(req, res, 100, "success", data);

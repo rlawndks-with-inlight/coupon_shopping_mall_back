@@ -199,15 +199,15 @@ const sellerProductsCtrl = {
                     //console.log(is_exist_product[0].length > 0)
                     if (is_exist_product[0].length > 0) { //이미 등록된 상품은 update
                         let seller_product_id = data[i].seller_product_id
-                        let agent_price = data[i].product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + decode_user?.seller_trx_fee ?? 0)
-                        let seller_price = (price_per != 0 ? Math.round(agent_price * (1 + (price_per / 100))) : agent_price)
+                        let agent_price = Math.round(Math.floor(Number((data[i].product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + (decode_user?.seller_trx_fee ?? 0))).toFixed(6))) / 1000) * 1000
+                        let seller_price = (price_per != 0 ? Math.round((agent_price * (1 + (price_per / 100))) / 1000) * 1000 : agent_price)
 
                         let obj = { seller_price };
                         let result = await updateQuery(`${table_name}`, obj, seller_product_id);
 
                     } else { //등록되지 않은 상품은 create
-                        let agent_price = data[i].product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + decode_user?.seller_trx_fee ?? 0)
-                        let seller_price = (price_per != 0 ? Math.round(agent_price * (1 + (price_per / 100))) : agent_price)
+                        let agent_price = Math.round(Math.floor(Number((data[i].product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + (decode_user?.seller_trx_fee ?? 0))).toFixed(6))) / 1000) * 1000
+                        let seller_price = (price_per != 0 ? Math.round((agent_price * (1 + (price_per / 100))) / 1000) * 1000 : agent_price)
 
                         let obj = { seller_id, product_id, seller_price, agent_price }
                         let result = await insertQuery(`${table_name}`, obj);

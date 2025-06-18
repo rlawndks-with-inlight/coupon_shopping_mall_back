@@ -39,8 +39,10 @@ const transactionCtrl = {
 
             }
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
-
-            if (decode_user?.level == 10) {
+            //console.log(decode_dns)
+            if (decode_dns?.seller_id > 0) {
+                sql += ` AND transactions.seller_id=${decode_dns?.seller_id} `;
+            } else if (decode_user?.level == 10) {
                 sql += ` AND transactions.seller_id=${decode_user?.id} `;
             }
             if (decode_user?.level == 0 || !decode_user || type == 'user') {
