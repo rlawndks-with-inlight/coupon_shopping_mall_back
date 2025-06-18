@@ -44,6 +44,17 @@ const postCtrl = {
             if (category_id) {
                 sql += ` AND ${table_name}.category_id IN (${category_ids.join()}) `
             }
+
+            if (category_id == 91) {
+                if (decode_user?.level < 20) {
+                    if (decode_user?.level == 15) {
+                        sql += ` AND ${table_name}.user_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id ?? 0})`
+                    } else if (decode_user?.level == 10) {
+                        sql += ` AND ${table_name}.user_id = ${decode_user?.id ?? 0}`
+                    }
+                }
+            }
+
             if (req.IS_RETURN) {
                 if (top_parent?.post_category_read_type == 1) {
                     sql += ` AND user_id=${decode_user?.id ?? 0} `;
