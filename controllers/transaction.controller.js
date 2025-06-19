@@ -45,7 +45,7 @@ const transactionCtrl = {
             } else if (decode_user?.level == 10) {
                 sql += ` AND transactions.seller_id=${decode_user?.id} `;
             }
-            if (decode_user?.level == 0 || !decode_user || type == 'user') {
+            if (decode_user?.level < 50 || !decode_user || type == 'user') {
                 sql += ` AND user_id=${decode_user?.id ?? -1} `;
             }
             if (trx_status) {
