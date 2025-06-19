@@ -149,7 +149,12 @@ const userCtrl = {
                 oper_id, oper_trx_fee
             };
             //console.log(obj)
-            obj = { ...obj, ...files };
+            if (level >= 15) {
+                const { oper_id, seller_point, ...rest } = obj;
+                obj = { ...rest, ...files }
+            } else {
+                obj = { ...obj, ...files };
+            }
             let result = await insertQuery(`${table_name}`, obj);
             if (!result) {
                 return response(req, res, -100, "추가중 에러", false)
@@ -198,8 +203,8 @@ const userCtrl = {
                 oper_id, oper_trx_fee
             };
 
-            if (level == 20) {
-                const { oper_id, ...rest } = obj;
+            if (level >= 15) {
+                const { oper_id, seller_point, ...rest } = obj;
                 obj = { ...rest, ...files }
             } else {
                 obj = { ...obj, ...files };
