@@ -40,6 +40,11 @@ const transactionCtrl = {
             }
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
             //console.log(decode_dns)
+
+            if (type != 'user' && decode_user?.level == 15) { //영업자 관리자
+                sql += ` AND transactions.seller_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id}) `
+            }
+
             if (decode_dns?.seller_id > 0) {
                 sql += ` AND transactions.seller_id=${decode_dns?.seller_id} `;
             } else if (decode_user?.level == 10) {
