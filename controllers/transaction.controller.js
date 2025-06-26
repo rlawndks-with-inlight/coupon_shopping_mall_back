@@ -26,7 +26,7 @@ const transactionCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
 
-            //console.log(req.query)
+            console.log(req.query)
 
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
                 columns.push(`sellers.user_name AS seller_user_name`);
