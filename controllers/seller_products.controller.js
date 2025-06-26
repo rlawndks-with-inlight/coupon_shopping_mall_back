@@ -197,6 +197,9 @@ const sellerProductsCtrl = {
 
                     let is_exist_product = await readPool.query(`SELECT * FROM seller_products WHERE seller_id=? AND product_id=? AND is_delete = 0 `, [seller_id, product_id]);
                     //console.log(is_exist_product[0].length > 0)
+
+                    if (data[i].product_sale_price == 0) continue;
+
                     if (is_exist_product[0].length > 0) { //이미 등록된 상품은 update
                         let seller_product_id = data[i].seller_product_id
                         let agent_price = Math.round(Math.floor(Number((data[i].product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + (decode_user?.seller_trx_fee ?? 0))).toFixed(6))) / 1000) * 1000
