@@ -31,7 +31,7 @@ const sellerAdjustmentsCtrl = {
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.agent_amount - (t.agent_amount * (1 / (1 + sl.seller_trx_fee)))) AS total_agent
+                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
                 FROM users tp
                 LEFT JOIN users ag 
                 ON ag.oper_id = tp.id AND ag.level = 15 
@@ -77,7 +77,7 @@ const sellerAdjustmentsCtrl = {
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.agent_amount - (t.agent_amount * (1 / (1 + sl.seller_trx_fee)))) AS total_agent
+                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
                 FROM users ag
                 LEFT JOIN users sl 
                 ON sl.oper_id = ag.id AND sl.level = 10
@@ -102,7 +102,7 @@ const sellerAdjustmentsCtrl = {
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.agent_amount - (t.agent_amount * (1 / (1 + sl.seller_trx_fee)))) AS total_agent
+                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
                 FROM users ag
                 LEFT JOIN users sl 
                 ON sl.oper_id = ag.id AND sl.level = 10
@@ -146,8 +146,7 @@ const sellerAdjustmentsCtrl = {
                 sl.name AS seller_name, 
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
-                SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.agent_amount - (t.agent_amount * (1 / (1 + sl.seller_trx_fee)))) AS total_agent
+                SUM((t.amount * 0.9) - t.agent_amount) AS total_seller
                 FROM users sl
                 LEFT JOIN (
                 SELECT *
@@ -169,8 +168,7 @@ const sellerAdjustmentsCtrl = {
                 sl.name AS seller_name, 
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
-                SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.agent_amount - (t.agent_amount * (1 / (1 + sl.seller_trx_fee)))) AS total_agent
+                SUM((t.amount * 0.9) - t.agent_amount) AS total_seller
                 FROM users sl
                 LEFT JOIN (
                 SELECT *
@@ -193,8 +191,7 @@ const sellerAdjustmentsCtrl = {
                 sl.name AS seller_name, 
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
-                SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.agent_amount - (t.agent_amount * (1 / (1 + sl.seller_trx_fee)))) AS total_agent
+                SUM((t.amount * 0.9) - t.agent_amount) AS total_seller
                 FROM users sl
                 LEFT JOIN (
                 SELECT *
