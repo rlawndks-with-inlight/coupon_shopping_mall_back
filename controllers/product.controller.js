@@ -68,10 +68,11 @@ const productCtrl = {
                     sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=${seller_id} AND seller_products.is_delete=0 `
                 } else if (manager_type == 'seller') {
                     columns.push(`seller_products.seller_price`)
-                    sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.is_delete=0 `
+                    sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.is_delete=0 AND seller_products.seller_id = ${decode_user?.id}`
                 }
             }
             //console.log(sql)
+            //console.log(manager_type)
 
             let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
 
@@ -162,7 +163,9 @@ const productCtrl = {
                                 let category_ids = findChildIds(category_obj[key], seller_category[j]);
                                 category_ids.unshift(parseInt(seller_category[j]));
                                 seller_categories.unshift(category_ids.join())
-                            }
+                            }//decode_user?.seller_category를 바로 사용하지 않는 이유는 하위 카테고리의 존재 때문임
+                            //console.log(1)
+                            //console.log(seller_categories.join())
                             sql += ` AND category_id0 IN (${seller_categories.join()})`
                         }
                     }
@@ -187,7 +190,10 @@ const productCtrl = {
                                 let category_ids = findChildIds(category_obj[key], seller_category[j]);
                                 category_ids.unshift(parseInt(seller_category[j]));
                                 seller_categories.unshift(category_ids.join())
-                            }
+                            }//decode_user?.seller_category를 바로 사용하지 않는 이유는 하위 카테고리의 존재 때문임
+                            //console.log(2)
+                            //console.log(seller_category)
+                            //console.log(seller_categories.join())
                             sql += ` AND category_id0 IN (${seller_categories.join()})`
                             sql += ` AND category_id1 IN (${decode_user?.seller_brand}) `;
                         }
@@ -241,6 +247,7 @@ const productCtrl = {
                 data.content[i].sub_images = images ?? [];
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
             }
+            //console.log(data)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
