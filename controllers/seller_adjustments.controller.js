@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -15,7 +15,7 @@ const sellerAdjustmentsCtrl = {
             const decode_user = checkLevel(req.cookies?.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            const { trx_status, cancel_status, is_confirm, cancel_type, type, state, s_dt, e_dt } = req.query;
+            const { trx_status, cancel_status, is_confirm, cancel_type, type, state, s_dt, e_dt, page, page_size } = req.query;
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
@@ -25,7 +25,7 @@ const sellerAdjustmentsCtrl = {
             };
 
             if (state == 0) {
-                const topBrandSql = `
+                let topBrandSql = `
                 SELECT tp.id AS top_id, 
                 tp.name AS top_name, 
                 SUM(t.amount) AS total_amount,
@@ -40,7 +40,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status = 5 AND is_cancel = 0
+                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
                 ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
                 ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
                 ) t
@@ -49,12 +49,19 @@ const sellerAdjustmentsCtrl = {
                  AND tp.brand_id = ${decode_dns?.id}
                  AND tp.is_delete = 0
                  GROUP BY tp.id, tp.name
-                 ORDER BY tp.id;
+                 `;
+
+                const countSql = `SELECT COUNT(*) AS total FROM (${topBrandSql}) AS data`
+                let count = await readPool.query(countSql);
+
+                topBrandSql += `
+                 ORDER BY tp.id
+                 LIMIT ${(page - 1) * page_size}, ${page_size};
                  `;
                 let topSales = await readPool.query(topBrandSql);
                 topSales = topSales[0];
 
-                // 결과를 총판별로 구성
+                // 결과를 유저별로 구성
                 const result = topSales.map(row => ({
                     id: row.top_id,
                     name: row.top_name,
@@ -64,12 +71,19 @@ const sellerAdjustmentsCtrl = {
                     total_agent: row.total_agent ? parseInt(row.total_agent) : 0
                 }));
 
+                data['page'] = page;
+                data['page_size'] = page_size;
+                data['total'] = count[0][0]['total']
                 data['content'] = result;
+
                 return response(req, res, 100, "success", data);
             }
 
             else if (state == 1) {
                 let agBrandSql = ``
+                let countSql = ``
+                let count = ''
+
                 if (decode_user?.level >= 20) {
                     agBrandSql = `
                 SELECT ag.id AS ag_id, 
@@ -84,7 +98,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status = 5 AND is_cancel = 0
+                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
                 ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
                 ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
                 ) t
@@ -93,8 +107,16 @@ const sellerAdjustmentsCtrl = {
                  AND ag.brand_id = ${decode_dns?.id}
                  AND ag.is_delete = 0
                  GROUP BY ag.id, ag.name
-                 ORDER BY ag.id;
                  `;
+
+                    countSql = `SELECT COUNT(*) AS total FROM (${agBrandSql}) AS data`
+                    count = await readPool.query(countSql);
+
+                    agBrandSql += `
+                ORDER BY ag.id
+                 LIMIT ${(page - 1) * page_size}, ${page_size};
+                `
+
                 } else if (decode_user?.level == 15) {
                     agBrandSql = `
                 SELECT ag.id AS ag_id, 
@@ -109,7 +131,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status = 5 AND is_cancel = 0
+                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
                 ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
                 ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
                 ) t
@@ -118,13 +140,21 @@ const sellerAdjustmentsCtrl = {
                  AND ag.brand_id = ${decode_dns?.id}
                  AND ag.is_delete = 0
                  GROUP BY ag.id, ag.name
-                 ORDER BY ag.id;
                  `;
+
+                    countSql = `SELECT COUNT(*) AS total FROM (${agBrandSql}) AS data`
+                    count = await readPool.query(countSql);
+
+                    agBrandSql += `
+                ORDER BY ag.id
+                 LIMIT ${(page - 1) * page_size}, ${page_size};
+                `
+
                 }
                 let agSales = await readPool.query(agBrandSql);
                 agSales = agSales[0];
 
-                // 결과를 총판별로 구성
+                // 결과를 유저별로 구성
                 const result = agSales.map(row => ({
                     id: row.ag_id,
                     name: row.ag_name,
@@ -134,12 +164,18 @@ const sellerAdjustmentsCtrl = {
                     total_agent: row.total_agent ? parseInt(row.total_agent) : 0
                 }));
 
+                data['page'] = page;
+                data['page_size'] = page_size;
+                data['total'] = count[0][0]['total']
                 data['content'] = result;
                 return response(req, res, 100, "success", data);
             }
 
             else if (state == 2) {
                 let sellerBrandSql = ``
+                let countSql = ``
+                let count = ''
+
                 if (decode_user?.level >= 20) {
                     sellerBrandSql = `
                 SELECT sl.id AS seller_id, 
@@ -151,7 +187,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status = 5 AND is_cancel = 0
+                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
                 ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
                 ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
                 ) t
@@ -160,8 +196,16 @@ const sellerAdjustmentsCtrl = {
                  AND sl.brand_id = ${decode_dns?.id}
                  AND sl.is_delete = 0
                  GROUP BY sl.id, sl.name
-                 ORDER BY sl.id;
                  `;
+
+                    countSql = `SELECT COUNT(*) AS total FROM (${sellerBrandSql}) AS data`
+                    count = await readPool.query(countSql);
+
+                    sellerBrandSql += `
+                ORDER BY sl.id
+                 LIMIT ${(page - 1) * page_size}, ${page_size};
+                 `
+
                 } else if (decode_user?.level == 15) {
                     sellerBrandSql = `
                 SELECT sl.id AS seller_id, 
@@ -173,7 +217,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status = 5 AND is_cancel = 0
+                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
                 ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
                 ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
                 ) t
@@ -183,8 +227,16 @@ const sellerAdjustmentsCtrl = {
                  AND sl.brand_id = ${decode_dns?.id}
                  AND sl.is_delete = 0
                  GROUP BY sl.id, sl.name
-                 ORDER BY sl.id;
                  `;
+
+                    countSql = `SELECT COUNT(*) AS total FROM (${sellerBrandSql}) AS data`
+                    count = await readPool.query(countSql);
+
+                    sellerBrandSql += `
+                ORDER BY sl.id
+                 LIMIT ${(page - 1) * page_size}, ${page_size};
+                 `
+
                 } else if (decode_user?.level == 10) {
                     sellerBrandSql = `
                 SELECT sl.id AS seller_id, 
@@ -196,7 +248,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status = 5 AND is_cancel = 0
+                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
                 ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
                 ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
                 ) t
@@ -206,13 +258,21 @@ const sellerAdjustmentsCtrl = {
                  AND sl.brand_id = ${decode_dns?.id}
                  AND sl.is_delete = 0
                  GROUP BY sl.id, sl.name
-                 ORDER BY sl.id;
                  `;
+
+                    countSql = `SELECT COUNT(*) AS total FROM (${sellerBrandSql}) AS data`
+                    count = await readPool.query(countSql);
+
+                    sellerBrandSql += `
+                ORDER BY sl.id
+                 LIMIT ${(page - 1) * page_size}, ${page_size};
+                 `
+
                 }
                 let sellerSales = await readPool.query(sellerBrandSql);
                 sellerSales = sellerSales[0];
 
-                // 결과를 총판별로 구성
+                // 결과를 유저별로 구성
                 const result = sellerSales.map(row => ({
                     id: row.seller_id,
                     name: row.seller_name,
@@ -222,6 +282,9 @@ const sellerAdjustmentsCtrl = {
                     total_agent: row.total_agent ? parseInt(row.total_agent) : 0
                 }));
 
+                data['page'] = page;
+                data['page_size'] = page_size;
+                data['total'] = count[0][0]['total']
                 data['content'] = result;
                 return response(req, res, 100, "success", data);
             }

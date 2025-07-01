@@ -191,50 +191,75 @@ const sellerProductsCtrl = {
             //console.log(data.total)
             data = data?.content
 
-            if (type == 'create') {
-                for (i = 0; i < data?.length; i++) {
-                    let product_id = data[i].id
+            const chunkSize = 50; // 동시에 처리할 개수 제한
 
-                    let is_exist_product = await readPool.query(`SELECT * FROM seller_products WHERE seller_id=? AND product_id=? AND is_delete = 0 `, [seller_id, product_id]);
-                    //console.log(is_exist_product[0].length > 0)
-                    //console.log(data[i])
-                    //console.log(data[i])
-                    if (data[i].product_sale_price == 0 || data[i].seller_price == 0) continue;
+            const processCreateItem = async (item) => {
+                try {
+                    const product_id = item.id;
+                    //console.log(item)
+                    if (item.product_sale_price == 0 || item.seller_price == 0) return;
 
-                    if (is_exist_product[0].length > 0) { //이미 등록된 상품은 update
-                        let seller_product_id = data[i].seller_product_id
-                        let agent_price = Math.round(Math.floor(Number((data[i].product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + (decode_user?.seller_trx_fee ?? 0))).toFixed(6))) / 1000) * 1000
-                        let seller_price = (price_per != 0 ? Math.round((agent_price * (1 + (price_per / 100))) / 1000) * 1000 : agent_price)
+                    const is_exist_product = await readPool.query(
+                        ` SELECT * FROM seller_products WHERE seller_id=? AND product_id=? AND is_delete = 0 `,
+                        [seller_id, product_id]
+                    );
 
-                        if (agent_price == 0 || seller_price == 0) continue; //0원 처리되면 등록 x
-                        let obj = { seller_price };
-                        let result = await updateQuery(`${table_name}`, obj, seller_product_id);
+                    const agent_price = Math.round(
+                        Math.floor(
+                            Number((item.product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + (decode_user?.seller_trx_fee ?? 0))).toFixed(6))
+                        ) / 1000
+                    ) * 1000;
 
-                    } else { //등록되지 않은 상품은 create
-                        let agent_price = Math.round(Math.floor(Number((data[i].product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + (decode_user?.seller_trx_fee ?? 0))).toFixed(6))) / 1000) * 1000
-                        let seller_price = (price_per != 0 ? Math.round((agent_price * (1 + (price_per / 100))) / 1000) * 1000 : agent_price)
+                    const seller_price = (price_per != 0
+                        ? Math.round((agent_price * (1 + price_per / 100)) / 1000) * 1000
+                        : agent_price);
 
-                        if (agent_price == 0 || seller_price == 0) continue; //0원 처리되면 등록 x
-                        let obj = { seller_id, product_id, seller_price, agent_price }
-                        let result = await insertQuery(`${table_name}`, obj);
+                    if (agent_price == 0 || seller_price == 0) return;
+
+                    if (is_exist_product[0].length > 0) {
+                        const seller_product_id = item.seller_product_id;
+                        const obj = { seller_price };
+                        await updateQuery(`${table_name}`, obj, seller_product_id);
+                    } else {
+                        const obj = { seller_id, product_id, seller_price, agent_price };
+                        //console.log(obj)
+                        await insertQuery(`${table_name}`, obj);
                     }
+                } catch (err) {
+                    console.error(`상품 처리중 에러 발생: ${item.id}`, err);
+                }
+            };
+
+            const processDeleteItem = async (item) => {
+                try {
+                    const product_id = item.seller_product_id;
+                    const is_exist_product = await readPool.query(
+                        ` SELECT * FROM seller_products WHERE seller_id=? AND id=? AND is_delete = 0 `,
+                        [seller_id, product_id]
+                    );
+
+                    if (is_exist_product[0].length > 0) {
+                        const id = item.seller_product_id;
+                        await deleteQuery(`${table_name}`, { id });
+                    }
+                } catch (err) {
+                    console.error(`상품 처리중 에러 발생: ${item.seller_product_id}`, err);
                 }
             }
 
-            if (type == 'delete') {
-                //console.log(1)
-                for (i = 0; i < data?.length; i++) {
-                    let product_id = data[i].seller_product_id
+            const processInChunks = async (data, type) => {
+                for (let i = 0; i < data.length; i += chunkSize) {
+                    const chunk = data.slice(i, i + chunkSize);
 
-                    let is_exist_product = await readPool.query(`SELECT * FROM seller_products WHERE seller_id=? AND id=? AND is_delete = 0 `, [seller_id, product_id]);
-                    //console.log(product_id)
-                    if (is_exist_product[0].length > 0) { //이미 등록된 상품만 제거
-                        //console.log(id)
-                        let id = data[i].seller_product_id
-                        let result = await deleteQuery(`${table_name}`, { id })
+                    if (type === 'create') {
+                        await Promise.all(chunk.map(item => processCreateItem(item)));
+                    } else if (type === 'delete') {
+                        await Promise.all(chunk.map(item => processDeleteItem(item)));
                     }
                 }
-            }
+            };
+
+            await processInChunks(data, type)
 
             return response(req, res, 100, "success", {})
         } catch (err) {
