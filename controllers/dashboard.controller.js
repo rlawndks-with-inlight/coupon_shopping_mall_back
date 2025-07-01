@@ -142,6 +142,7 @@ const dashboardCtrl = {
                 request_counts = request_counts[0][0];
                 data[`request_${request_post_categories[i]?.id}`] = request_counts?.cnt ?? 0;
             }
+            //console.log(data)
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
