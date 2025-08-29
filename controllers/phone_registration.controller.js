@@ -52,7 +52,7 @@ const phoneRegistrationCtrl = {
             let data = await readPool.query(`SELECT * FROM ${table_name} WHERE brand_id=${brand_id} AND seller_id=${seller_id} AND phone_number=${phone_num}`)
             data = data[0][0];
 
-            console.log(data)
+            //console.log(data)
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
