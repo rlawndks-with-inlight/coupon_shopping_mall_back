@@ -342,6 +342,12 @@ export const getPayType = (num) => {
             description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
             type: 'certification_fintree',
         }
+    } else if (num == 5) {
+        return {
+            title: `카드결제`,
+            description: 'Mastercard, Visa 등을 지원합니다.',
+            type: 'hand_oleuda',
+        }
     } else if (num == 10) {
         return {
             title: '무통장입금',

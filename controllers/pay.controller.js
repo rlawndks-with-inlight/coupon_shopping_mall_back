@@ -240,6 +240,24 @@ const payCtrl = {
         }
       }
 
+      if (trx_method == 5) {
+        let result = await axios.post(
+          `https://api.weroutefincorp.com/api/v2/pay/hand`,
+          { ...req.body, },
+          {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'Authorization': pay_key,
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36',
+            }
+          }
+        );
+        if (result?.data?.result_cd != "0000") {
+          return response(req, res, -100, result?.data?.result_msg, false);
+        }
+      }
+
       return response(req, res, 100, "success", {
         id: trans_id,
       });
@@ -392,6 +410,32 @@ const payCtrl = {
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, fintree_cancel?.result_msg, false);
+        }
+      } else if (decode_dns.id == 95) {
+        let pay_cancel = await axios.post(
+          `https://api.weroutefincorp.com/api/v2/pay/cancel`,
+          {
+            trx_id,
+            pay_key,
+            amount,
+            mid,
+            tid,
+          },
+          {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'Authorization': pay_key,
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36',
+            }
+          }
+        );
+        pay_cancel = pay_cancel?.data ?? {};
+        if (pay_cancel?.result_cd == "0000") {
+          let update_transaction = await updateQuery('transactions', { is_cancel_trans: 1 }, id)
+          return response(req, res, 100, "success", {});
+        } else {
+          return response(req, res, -200, pay_cancel?.result_msg, false);
         }
       } else {
         let payvery_cancel = await axios.post(
