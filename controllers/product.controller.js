@@ -257,115 +257,219 @@ const productCtrl = {
 
         }
     },
+    // 필요하면 위쪽 어딘가에 헬퍼 하나 추가해서 쿼리별 시간도 찍어볼 수 있음 (선택 사항)
+    /*
+    const timedQuery = async (pool, label, sql, params = []) => {
+      const start = Date.now();
+      const [rows] = await pool.query(sql, params);
+      const ms = Date.now() - start;
+      console.log(`[DB][${label}] ${ms}ms`);
+      return rows;
+    };
+    */
+
     get: async (req, res, next) => {
         try {
-
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+
             let { id = 0 } = req.params;
-            const { brand_id, seller_id } = req.query;
+            const { brand_id, seller_id = 0 } = req.query;
 
-            let product_columns = [
+            const brandIdNum = parseInt(brand_id, 10) || 0;
+            const sellerIdNum = parseInt(seller_id, 10) || 0;
+            const isNumericId = !isNaN(parseInt(id, 10));
+
+            if (!brandIdNum) {
+                return response(req, res, -400, '브랜드 정보가 올바르지 않습니다.', false);
+            }
+
+            // ─────────────────────────────
+            // 1. 상품 메인 쿼리
+            // ─────────────────────────────
+            const productColumns = [
                 `${table_name}.*`,
-                //`consignment_user.user_name AS consignment_user_name`,
-                //`consignment_user.name AS consignment_name`,
-                //`consignment_user.phone_num AS consignment_user_phone_num`,
-                ` (SELECT MAX(sort_idx) FROM ${table_name} where brand_id=${brand_id}) AS max_sort_idx `
-            ]
-            if (seller_id > 0) {
-                product_columns.push(`seller_products.id AS seller_product_id`)
-                product_columns.push(`seller_products.seller_id`)
-                product_columns.push(`seller_products.seller_price AS product_sale_price `)
-                product_columns.push(`seller_products.agent_price AS product_agent_price`)
-            }
-            let product_sql = ` SELECT ${product_columns.join()} FROM ${table_name} `;
+                // 브랜드 기준 최대 sort_idx (정렬용)
+                `(SELECT MAX(sort_idx) FROM ${table_name} WHERE brand_id = ?) AS max_sort_idx`,
+            ];
 
-            if (seller_id > 0) {
-                product_sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=${seller_id} AND seller_products.is_delete=0 `
+            if (sellerIdNum > 0) {
+                productColumns.push(
+                    `seller_products.id AS seller_product_id`,
+                    `seller_products.seller_id`,
+                    `seller_products.seller_price AS product_sale_price`,
+                    `seller_products.agent_price AS product_agent_price`
+                );
             }
-            //product_sql += ` LEFT JOIN users AS consignment_user ON ${table_name}.consignment_user_id=consignment_user.id `;
-            product_sql += ` WHERE ( ${table_name}.product_code='${id}' OR ${table_name}.id=${isNaN(parseInt(id)) ? 0 : id} ) AND ${table_name}.is_delete=0 ${req?.IS_RETURN ? `AND ${table_name}.status!=5` : ''} AND ${table_name}.brand_id=${brand_id} `;
 
-            //console.log(product_sql)
-            let data = await readPool.query(product_sql);
-            data = data[0][0];
+            let productSql = `
+      SELECT ${productColumns.join(', ')}
+      FROM ${table_name}
+      ${sellerIdNum > 0 ? `
+        LEFT JOIN seller_products
+          ON ${table_name}.id = seller_products.product_id
+         AND seller_products.seller_id = ?
+         AND seller_products.is_delete = 0
+      ` : ''}
+    `;
+
+            // id 숫자/코드 분리해서 OR 제거
+            let whereClause = '';
+            const whereParams = [];
+
+            if (isNumericId) {
+                whereClause = `
+        WHERE ${table_name}.id = ?
+          AND ${table_name}.is_delete = 0
+          ${req?.IS_RETURN ? `AND ${table_name}.status != 5` : ''}
+          AND ${table_name}.brand_id = ?
+      `;
+                whereParams.push(parseInt(id, 10) || 0, brandIdNum);
+            } else {
+                whereClause = `
+        WHERE ${table_name}.product_code = ?
+          AND ${table_name}.is_delete = 0
+          ${req?.IS_RETURN ? `AND ${table_name}.status != 5` : ''}
+          AND ${table_name}.brand_id = ?
+      `;
+                whereParams.push(id, brandIdNum);
+            }
+
+            productSql += whereClause + ' LIMIT 1';
+
+            // 파라미터 순서 맞추기:
+            // 1) max_sort_idx 서브쿼리 brand_id
+            // 2) (sellerIdNum > 0 이면) seller_id
+            // 3) where절 (id/product_code, brand_id)
+            const params = [brandIdNum];
+
+            if (sellerIdNum > 0) {
+                params.push(sellerIdNum);
+            }
+            params.push(...whereParams);
+
+            // 실제 쿼리 실행
+            // const productRows = await timedQuery(readPool, 'product_main', productSql, params);
+            const [productRows] = await readPool.query(productSql, params);
+
+            if (!productRows.length) {
+                return response(req, res, -404, '상품을 찾을 수 없습니다.', false);
+            }
+
+            let data = productRows[0];
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}');
 
-            id = data?.id;
+            // 이후 쿼리에서 사용할 product id
+            const productId = data.id;
 
-            let property_sql = `SELECT products_and_properties.*,product_properties.property_name,product_property_groups.property_group_name FROM products_and_properties `;
-            property_sql += ` LEFT JOIN product_properties ON products_and_properties.property_id=product_properties.id `;
-            property_sql += ` LEFT JOIN product_property_groups ON products_and_properties.property_group_id=product_property_groups.id `;
-            property_sql += ` WHERE products_and_properties.product_id=${id} ORDER BY product_properties.sort_idx DESC `;
+            // ─────────────────────────────
+            // 2. 속성(property) 쿼리
+            // ─────────────────────────────
+            let property_sql = `
+      SELECT
+        products_and_properties.*,
+        product_properties.property_name,
+        product_property_groups.property_group_name
+      FROM products_and_properties
+      LEFT JOIN product_properties
+        ON products_and_properties.property_id = product_properties.id
+      LEFT JOIN product_property_groups
+        ON products_and_properties.property_group_id = product_property_groups.id
+      WHERE products_and_properties.product_id = ${productId}
+      ORDER BY product_properties.sort_idx DESC
+    `;
 
+            // ─────────────────────────────
+            // 3. 여러 쿼리를 병렬 실행 (getMultipleQueryByWhen)
+            //    - 중복이었던 sub_images / description_images를 images 하나로 통합
+            // ─────────────────────────────
             let sql_list = [
                 {
                     table: 'groups',
-                    sql: `SELECT * FROM product_option_groups WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC`
+                    sql: `SELECT * FROM product_option_groups WHERE product_id=${productId} AND is_delete=0 ORDER BY id ASC`,
                 },
                 {
-                    table: 'sub_images',
-                    sql: `SELECT * FROM product_images WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC`
-                },
-                {
-                    table: 'description_images',
-                    sql: `SELECT * FROM product_images WHERE product_id=${id} AND is_delete=0 ORDER BY id ASC`
+                    table: 'images',
+                    sql: `SELECT * FROM product_images WHERE product_id=${productId} AND is_delete=0 ORDER BY id ASC`,
                 },
                 {
                     table: 'scope',
-                    sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=${id} `
+                    sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=${productId}`,
                 },
                 {
                     table: 'properties',
                     sql: property_sql,
                 },
             ];
+
             let when_data = await getMultipleQueryByWhen(sql_list);
+
+            //console.log(sql_list)
+
+            // 옵션 그룹 id 모으기
             let option_group_ids = [];
-            for (var i = 0; i < when_data?.groups.length; i++) {
-                option_group_ids.push(when_data?.groups[i]?.id);
+            const groups = when_data?.groups || [];
+            for (let i = 0; i < groups.length; i++) {
+                option_group_ids.push(groups[i]?.id);
             }
+
+            // ─────────────────────────────
+            // 4. 두 번째 배치 쿼리 (characters, brand_name, options)
+            // ─────────────────────────────
             let sql_list2 = [
                 {
                     table: 'characters',
-                    sql: `SELECT * FROM product_characters WHERE product_id=${id}`
+                    sql: `SELECT * FROM product_characters WHERE product_id=${productId}`,
                 },
                 {
                     table: 'brand_name',
-                    sql: `SELECT category_en_name FROM product_categories WHERE id=${data.category_id1}` //상품의 브랜드 이름 불러오기
-                }
-            ]
+                    // LIMIT 1 추가 (어차피 한 행만 필요)
+                    sql: `SELECT category_en_name FROM product_categories WHERE id=${data.category_id1} LIMIT 1`,
+                },
+            ];
+
             if (option_group_ids.length > 0) {
                 sql_list2.push({
                     table: 'options',
-                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 ORDER BY id ASC`
-                })
+                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 ORDER BY id ASC`,
+                });
             }
+
             let when_data2 = await getMultipleQueryByWhen(sql_list2);
-            let groups = when_data?.groups;
-            for (var i = 0; i < groups.length; i++) {
-                groups[i].options = when_data2.options.filter((item) => item?.group_id == groups[i]?.id);
+
+            // 옵션 그룹에 option 붙이기
+            const options = when_data2?.options || [];
+            for (let i = 0; i < groups.length; i++) {
+                groups[i].options = options.filter(
+                    (item) => item?.group_id === groups[i]?.id
+                );
             }
+
+            // 이미지: 한 번만 조회해서 sub/description 둘 다에 사용
+            const allImages = when_data?.images || [];
+
             data = {
                 ...data,
                 groups,
-                sub_images: when_data?.sub_images,
-                description_images: when_data?.description_images,
+                sub_images: allImages,
+                description_images: allImages,
                 properties: when_data?.properties,
                 characters: when_data2?.characters,
-                product_average_scope: when_data?.scope[0]?.product_average_scope,
+                product_average_scope: when_data?.scope?.[0]?.product_average_scope,
+                product_review_count: when_data?.scope?.[0]?.product_review_count,
                 brand_name: when_data2?.brand_name,
-            }
+            };
 
-            return response(req, res, 100, "success", data)
+            return response(req, res, 100, 'success', data);
         } catch (err) {
-            console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            console.log(err);
+            logger.error(JSON.stringify(err?.response?.data || err));
+            return response(req, res, -200, '서버 에러 발생', false);
         } finally {
-
+            // 필요 시 정리 작업
         }
     },
+
     create: async (req, res, next) => {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
