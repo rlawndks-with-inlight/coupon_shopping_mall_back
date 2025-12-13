@@ -47,8 +47,8 @@ const HTTPS_PORT = 8443;
 
 async function bootstrap() {
   try {
-    // 1) Redis 연결
-    await initRedis();        // ← 여기서 Redis 서버(127.0.0.1:6379)에 connect
+
+    await initRedis();
 
     let server;
 
