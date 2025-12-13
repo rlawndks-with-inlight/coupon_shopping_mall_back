@@ -73,6 +73,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.11.2",
+    "redis": "^5.10.0",
     "sequelize": "^6.32.1",
     "sequelize-auto": "^0.8.8",
     "serialize-javascript": "^6.0.1",

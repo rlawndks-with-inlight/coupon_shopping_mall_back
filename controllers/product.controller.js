@@ -5,6 +5,8 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 import { readPool, writePool } from "../config/db-pool.js";
+import { redisClient } from "../config/redis-client.js";
+
 const table_name = 'products';
 
 /*const productInserter = () => {
@@ -45,6 +47,41 @@ const productCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { /*seller_id,*/ property_id, is_consignment, status, product_type, manager_type } = req.query;
             const { type, seller_id } = req;
+
+            const brandId = decode_dns?.id ?? 0;
+            const userLevel = decode_user?.level ?? 0;
+            const isAdminLike = userLevel >= 40;
+
+            // ─────────────────────────────
+            // Redis 캐시 설정 (리스트용)
+            // 관리자(40 이상)는 항상 최신 데이터 보도록 캐시 제외
+            // 브랜드가 있고, Redis 연결돼 있으면 캐시 사용
+            // ─────────────────────────────
+            let listCacheKey = null;
+            const canUseListCache = !!redisClient?.isOpen && brandId > 0 && !isAdminLike;
+
+            if (canUseListCache) {
+                const keyPayload = {
+                    brandId,
+                    type: type ?? '',
+                    manager_type: manager_type ?? '',
+                    seller_id: seller_id ?? '',
+                    user_id: decode_user?.id ?? 0,
+                    query: req.query, // 필터/검색 조건 포함
+                };
+                listCacheKey = `product:list:${JSON.stringify(keyPayload)}`;
+
+                try {
+                    const cached = await redisClient.get(listCacheKey);
+                    if (cached) {
+                        const data = JSON.parse(cached);
+                        return response(req, res, 100, "success(cache)", data);
+                    }
+                } catch (e) {
+                    console.error("Redis get error (product list):", e);
+                    // 캐시 장애 시에도 서비스는 DB로 계속 진행
+                }
+            }
 
 
             let columns = [
@@ -248,6 +285,18 @@ const productCtrl = {
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
             }
             //console.log(data)
+
+            // ─────────────────────────────
+            // 리스트 캐시 저장 (예: 60초)
+            // ─────────────────────────────
+            if (canUseListCache && listCacheKey) {
+                try {
+                    await redisClient.set(listCacheKey, JSON.stringify(data), { EX: 60 });
+                } catch (e) {
+                    console.error("Redis set error (product list):", e);
+                }
+            }
+
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -257,7 +306,7 @@ const productCtrl = {
 
         }
     },
-    // 필요하면 위쪽 어딘가에 헬퍼 하나 추가해서 쿼리별 시간도 찍어볼 수 있음 (선택 사항)
+    // 쿼리별 시간 찍어보기용
     /*
     const timedQuery = async (pool, label, sql, params = []) => {
       const start = Date.now();
@@ -279,9 +328,34 @@ const productCtrl = {
             const brandIdNum = parseInt(brand_id, 10) || 0;
             const sellerIdNum = parseInt(seller_id, 10) || 0;
             const isNumericId = !isNaN(parseInt(id, 10));
+            const userLevel = decode_user?.level ?? 0;
+            const isAdminLike = userLevel >= 40;
 
             if (!brandIdNum) {
                 return response(req, res, -400, '브랜드 정보가 올바르지 않습니다.', false);
+            }
+
+            // ─────────────────────────────
+            // Redis 캐시 설정 (상세용)
+            // 관리자(40 이상)는 항상 최신 데이터 → 캐시 제외
+            // ─────────────────────────────
+            const canUseDetailCache = !!redisClient?.isOpen && !isAdminLike;
+
+            const detailCacheKey = canUseDetailCache
+                ? `product:detail:${brandIdNum}:${sellerIdNum}:${decode_user?.id ?? 0}:` +
+                `${req?.IS_RETURN ? 'ret' : 'nor'}:${isNumericId ? 'id' : 'code'}:${id}`
+                : null;
+
+            if (canUseDetailCache && detailCacheKey) {
+                try {
+                    const cached = await redisClient.get(detailCacheKey);
+                    if (cached) {
+                        const data = JSON.parse(cached);
+                        return response(req, res, 100, 'success(cache)', data);
+                    }
+                } catch (e) {
+                    console.error("Redis get error (product detail):", e);
+                }
             }
 
             // ─────────────────────────────
@@ -459,6 +533,17 @@ const productCtrl = {
                 product_review_count: when_data?.scope?.[0]?.product_review_count,
                 brand_name: when_data2?.brand_name,
             };
+
+            // ─────────────────────────────
+            // 상세 캐시 저장 (예: 300초)
+            // ─────────────────────────────
+            if (canUseDetailCache && detailCacheKey) {
+                try {
+                    await redisClient.set(detailCacheKey, JSON.stringify(data), { EX: 300 });
+                } catch (e) {
+                    console.error("Redis set error (product detail):", e);
+                }
+            }
 
             return response(req, res, 100, 'success', data);
         } catch (err) {

@@ -15,6 +15,7 @@ import { imageFieldList } from "./utils.js/util.js";
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { uploadMultipleFiles } from "./utils.js/api-util.js";
+import { initRedis } from "./config/redis-client.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,30 +37,47 @@ app.get('/', (req, res) => {
   res.send('back-end initialized')
 });
 
-app.use((req, res, next) => {
+/*app.use((req, res, next) => {
   const err = new APIError('API not found', httpStatus.NOT_FOUND);
   return next(err);
-});
-let server = undefined
+});*/
+
 const HTTP_PORT = 8000;
 const HTTPS_PORT = 8443;
-if (process.env.NODE_ENV == 'development') {
-  server = http.createServer(app).listen(HTTP_PORT, function () {
-    console.log("**-------------------------------------**");
-    console.log(`====      Server is On ${HTTP_PORT}...!!!    ====`);
-    console.log("**-------------------------------------**");
-    //scheduleIndex();
-  });
-} else {
-  const options = { // letsencrypt로 받은 인증서 경로를 입력해 줍니다.
-    ca: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/fullchain.pem"),
-    key: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/privkey.pem"),
-    cert: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/cert.pem")
-  };
-  server = https.createServer(options, app).listen(HTTPS_PORT, function () {
-    console.log("**-------------------------------------**");
-    console.log(`====      Server is On ${HTTPS_PORT}...!!!    ====`);
-    console.log("**-------------------------------------**");
-    scheduleIndex();
-  });
+
+async function bootstrap() {
+  try {
+    // 1) Redis 연결
+    await initRedis();        // ← 여기서 Redis 서버(127.0.0.1:6379)에 connect
+
+    let server;
+
+    if (process.env.NODE_ENV === 'development') {
+      server = http.createServer(app).listen(HTTP_PORT, function () {
+        console.log("**-------------------------------------**");
+        console.log(`====      Server is On ${HTTP_PORT}...!!!    ====`);
+        console.log("**-------------------------------------**");
+        // scheduleIndex();
+      });
+    } else {
+      const options = {
+        ca: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/fullchain.pem"),
+        key: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/privkey.pem"),
+        cert: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/cert.pem"),
+      };
+      server = https.createServer(options, app).listen(HTTPS_PORT, function () {
+        console.log("**-------------------------------------**");
+        console.log(`====      Server is On ${HTTPS_PORT}...!!!    ====`);
+        console.log("**-------------------------------------**");
+        scheduleIndex();
+      });
+    }
+
+    return server;
+  } catch (err) {
+    console.error("서버 시작 중 에러 발생:", err);
+    process.exit(1);
+  }
 }
+
+bootstrap();
