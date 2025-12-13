@@ -68,6 +68,7 @@ const shopCtrl = {
             product_sql += ` AND products.is_delete=0 `;
             product_sql += ` AND products.status!=5 `
             product_sql = product_sql.replaceAll(process.env.SELECT_COLUMN_SECRET, product_columns.join());
+
             //메인obj 에서 items-property-groups가 존재할시
             let product_and_property_columns = [
                 `products.id`,

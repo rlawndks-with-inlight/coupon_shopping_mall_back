@@ -4,9 +4,10 @@ import { checkLevel, makeUserToken, response } from "../utils.js/util.js";
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
+import { redisClient } from "../config/redis-client.js"; // ← 추가
+
 const domainCtrl = {
   get: async (req, res, next) => {
-
     try {
       const {
         dns,
@@ -15,7 +16,42 @@ const domainCtrl = {
         seller_id = -1,
       } = req.query;
 
-      let columns = [
+      if (!dns) {
+        return response(req, res, -400, "dns 값이 필요합니다.", false);
+      }
+
+      // product_id/post_id/seller_id가 없을 때만 "순수 도메인 정보"로 보고 캐시
+      const CACHEABLE =
+        Number(product_id) <= 0 &&
+        Number(post_id) <= 0 &&
+        Number(seller_id) <= 0;
+
+      const cacheKey = `domain:${dns}`;
+
+      // 1) 캐시 먼저 조회
+      if (CACHEABLE && redisClient?.isOpen) {
+        try {
+          const cached = await redisClient.get(cacheKey);
+          if (cached) {
+            const brand = JSON.parse(cached);
+
+            const token = await makeUserToken(brand);
+            await res.cookie("dns", token, {
+              httpOnly: true,
+              maxAge: 60 * 60 * 1000 * 3,
+            });
+
+            return response(req, res, 100, "success(cache)", brand);
+          }
+        } catch (e) {
+          console.error("Redis get error (domain):", e);
+          // 캐시 문제 나도 DB로 계속 진행
+        }
+      }
+
+      // ===== 기존 DB 로직 =====
+
+      const columns = [
         "id",
         "name",
         "dns",
@@ -25,7 +61,6 @@ const domainCtrl = {
         "og_img",
         "og_description",
         "theme_css",
-        //"slider_css",
         "setting_obj",
         "none_use_column_obj",
         "bonaeja_obj",
@@ -47,7 +82,7 @@ const domainCtrl = {
         "parent_id",
       ];
 
-      let columns_seller = [
+      const columns_seller = [
         "id",
         "brand_id",
         "is_delete",
@@ -62,92 +97,128 @@ const domainCtrl = {
         "seller_point",
         "seller_logo_img",
         "seller_color",
-        "seller_demo_num"
+        "seller_demo_num",
       ];
 
-
-      let is_seller_mall = await readPool.query(
-        `SELECT ${columns_seller.join()} FROM users WHERE (dns='${dns}') AND is_delete=0`
+      // 셀러몰인지 확인 (users.dns)
+      const [sellerRows] = await readPool.query(
+        `SELECT ${columns_seller.join()} FROM users WHERE dns = ? AND is_delete = 0`,
+        [dns]
       );
 
-      let brand = [];
+      let brandRows;
 
-      if (is_seller_mall[0].length == 0) {
-        brand = await readPool.query(
-          `SELECT ${columns.join()} FROM brands WHERE (dns='${dns}' OR admin_dns='${dns}') AND is_delete=0`
-          //`SELECT ${columns.join()} FROM brands WHERE id=74`
+      if (sellerRows.length === 0) {
+        // 일반 브랜드 도메인
+        [brandRows] = await readPool.query(
+          //`SELECT ${columns.join()} FROM brands WHERE (dns = ? OR admin_dns = ?) AND is_delete = 0`, [dns, dns]
+          `SELECT ${columns.join()} FROM brands WHERE id=74`
         );
-        if (brand[0].length == 0) {
+        if (brandRows.length === 0) {
           return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
         }
       } else {
-        brand = await readPool.query(
-          `SELECT ${columns.join()} FROM brands WHERE id=${is_seller_mall[0][0].brand_id} AND is_delete=0`
+        // 셀러몰 도메인
+        const sellerBrandId = sellerRows[0].brand_id;
+        [brandRows] = await readPool.query(
+          `SELECT ${columns.join()} FROM brands WHERE id = ? AND is_delete = 0`,
+          [sellerBrandId]
         );
-      }
-
-      brand = brand[0][0]
-
-      brand["theme_css"] = JSON.parse(brand?.theme_css ?? "{}");
-      //brand["slider_css"] = JSON.parse(brand?.slider_css ?? "{}");
-      brand["setting_obj"] = JSON.parse(brand?.setting_obj ?? "{}");
-      brand["none_use_column_obj"] = JSON.parse(brand?.none_use_column_obj ?? "{}");
-      brand["bonaeja_obj"] = JSON.parse(brand?.bonaeja_obj ?? "{}");
-      brand["seo_obj"] = JSON.parse(brand?.seo_obj ?? "{}");
-
-      if (is_seller_mall[0].length > 0) {
-        brand['seller_id'] = is_seller_mall[0][0].id
-        brand['oper_id'] = is_seller_mall[0][0].oper_id
-        brand['seller_point'] = is_seller_mall[0][0].seller_point
-
-        if (is_seller_mall[0][0].seller_logo_img) {
-          brand['logo_img'] = is_seller_mall[0][0].seller_logo_img
-        }
-        if (is_seller_mall[0][0].seller_color) {
-          brand['theme_css']['main_color'] = is_seller_mall[0][0].seller_color
-        }
-        if (is_seller_mall[0][0].seller_demo_num) {
-          if (is_seller_mall[0][0].seller_demo_num == 1) {
-            brand['setting_obj']['shop_demo_num'] = 4
-          }
-          if (is_seller_mall[0][0].seller_demo_num == 2) {
-            brand['setting_obj']['shop_demo_num'] = 9
-          }
+        if (brandRows.length === 0) {
+          return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
         }
       }
 
-      //console.log(brand)
+      let brand = brandRows[0];
 
+      // JSON 파싱
+      brand.theme_css = JSON.parse(brand?.theme_css ?? "{}");
+      brand.setting_obj = JSON.parse(brand?.setting_obj ?? "{}");
+      brand.none_use_column_obj = JSON.parse(brand?.none_use_column_obj ?? "{}");
+      brand.bonaeja_obj = JSON.parse(brand?.bonaeja_obj ?? "{}");
+      brand.seo_obj = JSON.parse(brand?.seo_obj ?? "{}");
+
+      // 셀러몰인 경우 셀러 정보 반영
+      if (sellerRows.length > 0) {
+        const seller = sellerRows[0];
+
+        brand.seller_id = seller.id;
+        brand.oper_id = seller.oper_id;
+        brand.seller_point = seller.seller_point;
+
+        if (seller.seller_logo_img) {
+          brand.logo_img = seller.seller_logo_img;
+        }
+        if (seller.seller_color) {
+          brand.theme_css.main_color = seller.seller_color;
+        }
+        if (seller.seller_demo_num) {
+          brand.setting_obj = brand.setting_obj || {};
+          if (seller.seller_demo_num == 1) {
+            brand.setting_obj.shop_demo_num = 4;
+          }
+          if (seller.seller_demo_num == 2) {
+            brand.setting_obj.shop_demo_num = 9;
+          }
+        }
+      }
+
+      // ssr_content 및 product/post/seller에 따른 타이틀/OG 수정
+      brand.ssr_content = {};
+
+      if (product_id > 0) {
+        const [productRows] = await readPool.query(
+          `SELECT * FROM products WHERE id = ? AND brand_id = ?`,
+          [product_id, brand.id]
+        );
+        const product = productRows[0];
+        if (product) {
+          brand.name = `${brand.name} - ${product.product_name}`;
+          brand.og_img = `${product.product_img}`;
+          brand.og_description = `${product.product_comment}`;
+        }
+      } else if (post_id > 0) {
+        const [postRows] = await readPool.query(
+          `SELECT posts.* 
+           FROM posts 
+           LEFT JOIN post_categories ON posts.category_id = post_categories.id 
+           WHERE posts.id = ? AND post_categories.brand_id = ?`,
+          [post_id, brand.id]
+        );
+        const post = postRows[0];
+        if (post) {
+          brand.name = `${brand.name} - ${post.post_title}`;
+        }
+      } else if (seller_id > 0) {
+        const [sellerDetailRows] = await readPool.query(
+          `SELECT * FROM users WHERE id = ? AND brand_id = ? AND level >= 10`,
+          [seller_id, brand.id]
+        );
+        const sellerDetail = sellerDetailRows[0];
+        if (sellerDetail) {
+          brand.name = `${brand.name} - ${sellerDetail.nickname}`;
+          brand.og_img = `${sellerDetail.profile_img}`;
+          brand.og_description = `${sellerDetail.seller_name}`;
+        }
+      }
+
+      // 쿠키 세팅
       const token = await makeUserToken(brand);
       await res.cookie("dns", token, {
         httpOnly: true,
         maxAge: 60 * 60 * 1000 * 3,
-        //sameSite: 'none',
-        //secure: true
       });
-      brand.ssr_content = {};
-      if (product_id > 0) {
-        let product = await readPool.query(`SELECT * FROM products WHERE id=${product_id} AND brand_id=${brand?.id}`);
-        product = product[0][0];
-        if (product) {
-          brand.name = `${brand?.name} - ${product?.product_name}`;
-          brand.og_img = `${product?.product_img}`;
-          brand.og_description = `${product?.product_comment}`;
+
+      // 3) 캐시 가능한 경우 Redis에 저장
+      if (CACHEABLE && redisClient?.isOpen) {
+        try {
+          await redisClient.set(cacheKey, JSON.stringify(brand), {
+            EX: 300, // 5분
+          });
+        } catch (e) {
+          console.error("Redis set error (domain):", e);
         }
-      } else if (post_id > 0) {
-        let post = await readPool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE posts.id=${post_id} AND post_categories.brand_id=${brand?.id}`);
-        post = post[0][0];
-        brand.name = `${brand?.name} - ${post?.post_title}`;
-      } else if (seller_id > 0) {
-        let seller = await readPool.query(`SELECT * FROM users WHERE id=${seller_id} AND brand_id=${brand?.id} AND level>=10`);
-        seller = seller[0][0];
-
-        brand.name = `${brand?.name} - ${seller?.nickname}`;
-        brand.og_img = `${seller?.profile_img}`;
-        brand.og_description = `${seller?.seller_name}`;
       }
-
-      //console.log(brand)
 
       return response(req, res, 100, "success", brand);
     } catch (err) {
