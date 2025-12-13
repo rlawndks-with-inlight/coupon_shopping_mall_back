@@ -111,8 +111,8 @@ const domainCtrl = {
       if (sellerRows.length === 0) {
         // 일반 브랜드 도메인
         [brandRows] = await readPool.query(
-          //`SELECT ${columns.join()} FROM brands WHERE (dns = ? OR admin_dns = ?) AND is_delete = 0`, [dns, dns]
-          `SELECT ${columns.join()} FROM brands WHERE id=74`
+          `SELECT ${columns.join()} FROM brands WHERE (dns = ? OR admin_dns = ?) AND is_delete = 0`, [dns, dns]
+          //`SELECT ${columns.join()} FROM brands WHERE id=74`
         );
         if (brandRows.length === 0) {
           return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
