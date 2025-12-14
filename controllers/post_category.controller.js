@@ -25,7 +25,7 @@ const postCategoryCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
 
-            let data = await getSelectQueryList(sql, columns, { ...req.query, page_size: 10000 });
+            let data = await getSelectQueryList(sql, columns, { ...req.query, page_size: 100 });
 
             data.content = await makeTree(data?.content);
             data.total = data?.content.length ?? 0;
