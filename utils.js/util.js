@@ -384,7 +384,13 @@ export const getPayType = (num) => {
             description: '휴대폰결제창으로 이동합니다.',
             type: 'phone_hecto',
         }
-    }
+    } /*else if (num == 41) {
+        return {
+            title: `인증결제`,
+            description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
+            type: 'certification_wayup',
+        }
+    }*/
 
     return {
         title: '',

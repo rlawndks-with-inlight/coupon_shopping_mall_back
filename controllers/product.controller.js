@@ -88,11 +88,18 @@ const productCtrl = {
                 `${table_name}.*`,
                 `sellers.user_name`,
                 `sellers.seller_name`,
-                `(SELECT COUNT(*) FROM transaction_orders LEFT JOIN transactions ON transactions.id=transaction_orders.trans_id WHERE transaction_orders.product_id=${table_name}.id AND transactions.is_cancel=0 AND transactions.trx_status >=5 AND transactions.is_delete=0) AS order_count`,
-                `(SELECT COUNT(*) FROM product_reviews WHERE product_id=${table_name}.id AND is_delete=0) AS review_count`,
                 //`consignment_users.user_name AS consignment_user_name`,
                 //`consignment_users.phone_num AS consignment_phone_num`,
             ]
+            // 관리자(level 40 이상)만 order_count, review_count 서브쿼리 실행
+            // 일반 사용자는 이 값을 사용하지 않으므로 성능 최적화를 위해 제외
+            if (isAdminLike) {
+                columns.push(`(SELECT COUNT(*) FROM transaction_orders LEFT JOIN transactions ON transactions.id=transaction_orders.trans_id WHERE transaction_orders.product_id=${table_name}.id AND transactions.is_cancel=0 AND transactions.trx_status >=5 AND transactions.is_delete=0) AS order_count`);
+                columns.push(`(SELECT COUNT(*) FROM product_reviews WHERE product_id=${table_name}.id AND is_delete=0) AS review_count`);
+            } else {
+                columns.push(`0 AS order_count`);
+                columns.push(`0 AS review_count`);
+            }
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
             //sql += ` LEFT JOIN users AS consignment_users ON ${table_name}.consignment_user_id=consignment_users.id `;
@@ -978,6 +985,34 @@ const productCtrl = {
             if (insert_property_list.length > 0) {
                 let property_result = await writePool.query(`INSERT INTO products_and_properties (product_id, property_group_id, property_id) VALUES ?`, [insert_property_list]);
             }
+
+            // ─────────────────────────────
+            // 캐시 무효화: 상품 수정 시 관련 캐시 삭제
+            // ─────────────────────────────
+            if (redisClient?.isOpen) {
+                try {
+                    // 상세 캐시 패턴 삭제 (product:detail:brandId:*:*:*:*:productId)
+                    const detailPattern = `product:detail:${brand_id}:*`;
+
+                    // SCAN으로 패턴 매칭 키 찾아서 삭제
+                    for await (const key of redisClient.scanIterator({ MATCH: detailPattern, COUNT: 100 })) {
+                        if (key.includes(`:${id}`) || key.includes(`:id:${id}`)) {
+                            await redisClient.del(key);
+                        }
+                    }
+                    // 목록 캐시는 브랜드별로 전체 삭제 (필터 조합이 많아서)
+                    for await (const key of redisClient.scanIterator({ MATCH: `product:list:*`, COUNT: 100 })) {
+                        if (key.includes(`"brandId":${brand_id}`) || key.includes(`"brandId": ${brand_id}`)) {
+                            await redisClient.del(key);
+                        }
+                    }
+                    console.log(`[Cache] Product ${id} cache invalidated (brand: ${brand_id})`);
+                } catch (e) {
+                    console.error("Redis cache invalidation error:", e);
+                    // 캐시 삭제 실패해도 서비스는 계속 진행 (TTL로 자연 만료됨)
+                }
+            }
+
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -993,12 +1028,37 @@ const productCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            const brand_id = decode_dns?.id ?? 0;
+
             if (decode_user?.level >= 40) {
                 let result = await deleteQuery(`${table_name}`, {
                     id
                 })
             } else {
                 let result = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${decode_user?.id} AND product_id=${id}`);
+            }
+
+            // ─────────────────────────────
+            // 캐시 무효화: 상품 삭제 시 관련 캐시 삭제
+            // ─────────────────────────────
+            if (redisClient?.isOpen && brand_id > 0) {
+                try {
+                    const detailPattern = `product:detail:${brand_id}:*`;
+
+                    for await (const key of redisClient.scanIterator({ MATCH: detailPattern, COUNT: 100 })) {
+                        if (key.includes(`:${id}`) || key.includes(`:id:${id}`)) {
+                            await redisClient.del(key);
+                        }
+                    }
+                    for await (const key of redisClient.scanIterator({ MATCH: `product:list:*`, COUNT: 100 })) {
+                        if (key.includes(`"brandId":${brand_id}`) || key.includes(`"brandId": ${brand_id}`)) {
+                            await redisClient.del(key);
+                        }
+                    }
+                    console.log(`[Cache] Product ${id} cache invalidated on remove (brand: ${brand_id})`);
+                } catch (e) {
+                    console.error("Redis cache invalidation error:", e);
+                }
             }
 
             return response(req, res, 100, "success", {})
