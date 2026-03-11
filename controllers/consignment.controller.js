@@ -30,12 +30,15 @@ const consignmentCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN products ON ${table_name}.product_id=products.id `;
             sql += ` LEFT JOIN users ON products.consignment_user_id=users.id `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
             if (type >= 0) {
-                sql += ` AND ${table_name}.type=${type}`
+                sql += ` AND ${table_name}.type=?`;
+                params.push(type);
             }
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -51,7 +54,7 @@ const consignmentCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
@@ -82,12 +85,12 @@ const consignmentCtrl = {
                 request_price,
                 type,
             };
-            let product = await readPool.query(`SELECT * FROM products WHERE id=${product_id}`);
+            let product = await readPool.query(`SELECT * FROM products WHERE id=?`, [product_id]);
             product = product[0][0];
             if (product?.consignment_user_id != decode_user?.id && decode_user?.level < 10) {
                 return lowLevelException(req, res);
             }
-            let is_exist_consignment = await readPool.query(`SELECT * FROM ${table_name} WHERE product_id=${product_id} AND type=${type} AND is_confirm=0 `);
+            let is_exist_consignment = await readPool.query(`SELECT * FROM ${table_name} WHERE product_id=? AND type=? AND is_confirm=0 `, [product_id, type]);
             is_exist_consignment = is_exist_consignment[0];
             if (is_exist_consignment.length > 0) {
                 return response(req, res, -100, "아직 처리중인 요청입니다.", false)

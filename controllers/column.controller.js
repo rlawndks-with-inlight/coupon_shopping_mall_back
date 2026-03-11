@@ -33,7 +33,11 @@ const columnCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { table } = req.params;
-            let data = await readPool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='comagain_shop' AND TABLE_NAME='${table}' `);
+            const allowedTables = ['products', 'users', 'transactions', 'brands', 'seller_products', 'posts', 'product_categories', 'product_category_groups', 'product_reviews', 'product_properties', 'product_property_groups', 'popups', 'points', 'payment_modules', 'phone_registration', 'user_wishs', 'user_address', 'consignments', 'product_images', 'product_faqs', 'post_categories', 'sellers', 'transaction_orders', 'seller_adjustments', 'logs'];
+            if (!allowedTables.includes(table)) {
+                return response(req, res, -100, "허용되지 않는 테이블입니다.", false);
+            }
+            let data = await readPool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='comagain_shop' AND TABLE_NAME=? `, [table]);
             data = data[0];
             data = data.map(item => {
                 return item?.COLUMN_NAME
@@ -62,7 +66,7 @@ const columnCtrl = {
             const { table } = req.params;
             const { column, is_not_use = 0 } = req.body;
 
-            let brand_data = await readPool.query(`SELECT * FROM brands WHERE id=${decode_dns?.id}`);
+            let brand_data = await readPool.query(`SELECT * FROM brands WHERE id=?`, [decode_dns?.id]);
             brand_data = brand_data[0][0];
             brand_data['none_use_column_obj'] = JSON.parse(brand_data?.none_use_column_obj ?? '{}');
             if (!brand_data['none_use_column_obj'][table]) {
@@ -77,8 +81,9 @@ const columnCtrl = {
                 }
             }
 
-            let result = await writePool.query(`UPDATE brands SET none_use_column_obj=? WHERE id=${decode_dns?.id}`, [
+            let result = await writePool.query(`UPDATE brands SET none_use_column_obj=? WHERE id=?`, [
                 JSON.stringify(brand_data?.none_use_column_obj),
+                decode_dns?.id,
             ])
             return response(req, res, 100, "success", {})
         } catch (err) {

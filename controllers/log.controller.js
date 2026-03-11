@@ -20,9 +20,11 @@ const logCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON users.id=${table_name}.user_id `
+            let params = [];
             sql += ` WHERE 1=1 `
             if (decode_dns?.is_main_dns != 1) {
-                sql += ` AND ${table_name}.brand_id=${decode_dns?.id ?? 0}`
+                sql += ` AND ${table_name}.brand_id=?`
+                params.push(decode_dns?.id ?? 0);
             }
             let sql_list = [
                 { table: 'success', sql: (sql + ` ${sql.includes('WHERE') ? 'AND' : 'WHERE'} response_result > 0 `).replaceAll(process.env.SELECT_COLUMN_SECRET, 'COUNT(*) AS success') },
@@ -32,7 +34,7 @@ const logCtrl = {
                 sql += ` AND ${table_name}.response_result ${response_result_type == 1 ? '>=' : '<'} 0 `
             }
 
-            let data = await getSelectQueryList(sql, columns, req.query, sql_list);
+            let data = await getSelectQueryList(sql, columns, req.query, sql_list, params);
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -48,7 +50,7 @@ const logCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);

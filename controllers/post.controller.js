@@ -19,8 +19,8 @@ const postCtrl = {
             const { category_id } = req.query;
 
             let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-            category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-            let category_list = await readPool.query(category_sql);
+            category_sql += ` WHERE post_categories.brand_id=? `;
+            let category_list = await readPool.query(category_sql, [decode_dns?.id ?? 0]);
             category_list = category_list[0];
 
             let category = _.find(category_list, { id: parseInt(category_id) });
@@ -41,32 +41,37 @@ const postCtrl = {
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `
             sql += ` LEFT JOIN post_categories ON ${table_name}.category_id=post_categories.id `
             sql += ` WHERE ${table_name}.parent_id=-1 `
+            let params = [];
             if (category_id) {
-                sql += ` AND ${table_name}.category_id IN (${category_ids.join()}) `
+                sql += ` AND ${table_name}.category_id IN (${category_ids.map(() => '?').join(',')}) `
+                params.push(...category_ids);
             }
 
             if (category_id == 91) {
                 if (decode_user?.level < 20) {
                     if (decode_user?.level == 15) {
-                        sql += ` AND ${table_name}.user_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id ?? 0})`
+                        sql += ` AND ${table_name}.user_id IN (SELECT id FROM users WHERE oper_id=?)`
+                        params.push(decode_user?.id ?? 0);
                     } else if (decode_user?.level == 10) {
-                        sql += ` AND ${table_name}.user_id = ${decode_user?.id ?? 0}`
+                        sql += ` AND ${table_name}.user_id = ?`
+                        params.push(decode_user?.id ?? 0);
                     }
                 }
             }
 
             if (req.IS_RETURN) {
                 if (top_parent?.post_category_read_type == 1) {
-                    sql += ` AND user_id=${decode_user?.id ?? 0} `;
+                    sql += ` AND user_id=? `;
+                    params.push(decode_user?.id ?? 0);
                 }
             }
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             let post_ids = data.content.map(item => {
                 return item?.id
             });
             post_ids.unshift(0);
-            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id IN (${post_ids.join()}) ORDER BY id DESC`);
+            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id IN (${post_ids.map(() => '?').join(',')}) ORDER BY id DESC`, post_ids);
             child_posts = child_posts[0];
             data.content = data.content.map((item) => {
                 return {
@@ -96,11 +101,11 @@ const postCtrl = {
             ]
             let sql = ` SELECT ${columns.join()} FROM ${table_name} `
             sql += ` LEFT JOIN post_categories ON ${table_name}.category_id=post_categories.id `;
-            sql += ` WHERE ${table_name}.id=${id} `
-            let data = await readPool.query(sql);
+            sql += ` WHERE ${table_name}.id=? `
+            let data = await readPool.query(sql, [id]);
             data = data[0][0];
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
-            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id=${id} ORDER BY id DESC`);
+            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id=? ORDER BY id DESC`, [id]);
             child_posts = child_posts[0];
             data.replies = child_posts;
             return response(req, res, 100, "success", data)

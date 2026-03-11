@@ -22,18 +22,22 @@ const phoneRegistrationCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.seller_id=users.id `
 
+            let whereParams = [];
             if (type == 'manager') {
                 if (decode_user?.level >= 20) {
-                    sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+                    sql += ` WHERE ${table_name}.brand_id=? `;
+                    whereParams.push(decode_dns?.id ?? 0);
                 } else {
-                    sql += ` WHERE ${table_name}.seller_id=${decode_user?.id ?? 0} `
+                    sql += ` WHERE ${table_name}.seller_id=? `;
+                    whereParams.push(decode_user?.id ?? 0);
                 }
             } else {
-                sql += ` WHERE ${table_name}.brand_id=${brand_id} AND ${table_name}.seller_id=${seller_id} AND ${table_name}.phone_number=${phone_number} `
+                sql += ` WHERE ${table_name}.brand_id=? AND ${table_name}.seller_id=? AND ${table_name}.phone_number=? `;
+                whereParams.push(brand_id, seller_id, phone_number);
             }
             //console.log(sql)
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], whereParams);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -49,7 +53,7 @@ const phoneRegistrationCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { brand_id, seller_id, phone_num } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE brand_id=${brand_id} AND seller_id=${seller_id} AND phone_number=${phone_num}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE brand_id=? AND seller_id=? AND phone_number=?`, [brand_id, seller_id, phone_num])
             data = data[0][0];
 
             //console.log(data)
@@ -74,7 +78,7 @@ const phoneRegistrationCtrl = {
             } = req.body;
             let files = settingFiles(req.files);
 
-            let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE phone_number=? AND brand_id=${brand_id} AND seller_id=${seller_id} AND is_delete=0`, [phone_number]);
+            let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE phone_number=? AND brand_id=? AND seller_id=? AND is_delete=0`, [phone_number, brand_id, seller_id]);
             if (is_exist_number[0].length > 0) {
                 return response(req, res, -100, "등록된 번호가 이미 존재합니다.", false)
             }
@@ -107,7 +111,7 @@ const phoneRegistrationCtrl = {
             } = req.body;
             let files = settingFiles(req.files);
 
-            let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE phone_number=? AND brand_id=${brand_id}`, [phone_number]);
+            let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE phone_number=? AND brand_id=?`, [phone_number, brand_id]);
             if (is_exist_number[0].length > 0) {
                 return response(req, res, -100, "등록된 번호가 이미 존재합니다.", false)
             }

@@ -24,11 +24,14 @@ const pointCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
             sql += ` LEFT JOIN users AS sender ON ${table_name}.sender_id=sender.id `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
             if (decode_user.level < 10) {
-                sql += ` AND ${table_name}.user_id=${decode_user.id} `;
+                sql += ` AND ${table_name}.user_id=? `;
+                params.push(decode_user.id);
             }
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -47,8 +50,8 @@ const pointCtrl = {
             const { id } = req.params;
             let sql = `SELECT ${table_name}.*, users.user_name FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
-            sql += ` WHERE ${table_name}.id=${id} `
-            let data = await readPool.query(sql);
+            sql += ` WHERE ${table_name}.id=? `
+            let data = await readPool.query(sql, [id]);
             data = data[0][0];
             return response(req, res, 100, "success", data)
         } catch (err) {
@@ -76,7 +79,7 @@ const pointCtrl = {
                 note,
                 brand_id
             } = req.body;
-            let user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0}`, [user_name]);
+            let user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=?`, [user_name, decode_dns?.id ?? 0]);
             user = user[0][0];
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)
@@ -117,7 +120,7 @@ const pointCtrl = {
                 note,
                 id
             } = req.body;
-            let user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0} `, [user_name]);
+            let user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=? `, [user_name, decode_dns?.id ?? 0]);
             user = user[0][0];
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)
@@ -149,7 +152,7 @@ const pointCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
 
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (decode_user.level < 10) {
                 if (data?.user_id != id) {

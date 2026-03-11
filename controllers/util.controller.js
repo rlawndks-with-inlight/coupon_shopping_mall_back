@@ -17,17 +17,21 @@ const utilCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             let { source_id, source_sort_idx, dest_id, dest_sort_idx } = req.body;
             const { table } = req.params;
+            const ALLOWED_SORT_TABLES = ['products', 'product_categories', 'product_category_groups', 'post_categories', 'posts', 'brands', 'users'];
+            if (!ALLOWED_SORT_TABLES.includes(table)) {
+                return response(req, res, -200, "허용되지 않은 테이블입니다.", false);
+            }
             let update_sql = ` UPDATE ${table} SET `
             source_id = parseInt(source_id);
             source_sort_idx = parseInt(source_sort_idx);
             dest_id = parseInt(dest_id);
             dest_sort_idx = parseInt(dest_sort_idx);
             if (source_sort_idx >= dest_sort_idx) {//드래그한게 더 클때
-                update_sql += ` sort_idx=sort_idx+1 WHERE sort_idx < ${source_sort_idx} AND sort_idx >= ${dest_sort_idx} AND id!=${source_id} `;
+                update_sql += ` sort_idx=sort_idx+1 WHERE sort_idx < ? AND sort_idx >= ? AND id!=? `;
             } else {//드래그한게 더 작을때
-                update_sql += ` sort_idx=sort_idx-1 WHERE sort_idx > ${source_sort_idx} AND sort_idx <= ${dest_sort_idx} AND id!=${source_id} `;
+                update_sql += ` sort_idx=sort_idx-1 WHERE sort_idx > ? AND sort_idx <= ? AND id!=? `;
             }
-            let update_result = await writePool.query(update_sql);
+            let update_result = await writePool.query(update_sql, [source_sort_idx, dest_sort_idx, source_id]);
 
             let result = await writePool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [dest_sort_idx, source_id]);
 
@@ -49,6 +53,14 @@ const utilCtrl = {
             const { value, id } = req.body;
             if (!decode_user) {
                 return lowLevelException(req, res);
+            }
+            const ALLOWED_STATUS_TABLES = ['products', 'product_categories', 'product_category_groups', 'post_categories', 'posts', 'brands', 'users'];
+            const ALLOWED_COLUMNS = ['status', 'is_delete', 'is_show', 'is_active'];
+            if (!ALLOWED_STATUS_TABLES.includes(table)) {
+                return response(req, res, -200, "허용되지 않은 테이블입니다.", false);
+            }
+            if (!ALLOWED_COLUMNS.includes(column_name)) {
+                return response(req, res, -200, "허용되지 않은 컬럼입니다.", false);
             }
             let result = await writePool.query(`UPDATE ${table} SET ${column_name}=? WHERE id=?`, [value, id]);
             return response(req, res, 100, "success", {});
@@ -126,7 +138,7 @@ const utilCtrl = {
             if (!dns_data) {
                 return response(req, res, -100, "받을 도메인이 존재하지 않습니다.", false)
             }
-            let sender_brand = await readPool.query(`SELECT * FROM brands WHERE id=${sender_brand_id}`)
+            let sender_brand = await readPool.query(`SELECT * FROM brands WHERE id=?`, [sender_brand_id])
             sender_brand = sender_brand[0][0];
             if (!sender_brand) {
                 return response(req, res, -100, "복사할 도메인이 존재하지 않습니다.", false)
@@ -134,7 +146,7 @@ const utilCtrl = {
             if (dns_data?.id == sender_brand?.id) {
                 return response(req, res, -100, "같은 도메인은 복사할 수 없습니다.", false)
             }
-            let manager = await readPool.query(`SELECT * FROM users WHERE brand_id=${dns_data?.id} AND level=40`);
+            let manager = await readPool.query(`SELECT * FROM users WHERE brand_id=? AND level=40`, [dns_data?.id]);
             manager = manager[0][0];
             if (!manager) {
                 return response(req, res, -100, "관리자 계정이 없는 브랜드입니다.", false);
@@ -157,7 +169,7 @@ const utilCtrl = {
             if (is_copy_product == 1) {//상품 복사 원할시
 
                 let product_category_group_columns = ['category_group_name', 'max_depth', 'id'];
-                let product_category_groups = await readPool.query(`SELECT ${product_category_group_columns.join()} FROM product_category_groups WHERE brand_id=${sender_brand?.id} AND is_delete=0`);
+                let product_category_groups = await readPool.query(`SELECT ${product_category_group_columns.join()} FROM product_category_groups WHERE brand_id=? AND is_delete=0`, [sender_brand?.id]);
                 product_category_groups = product_category_groups[0];
                 let product_category_group_connect_ids = {};
                 for (var i = product_category_groups.length; i >= 1; i--) {
@@ -172,7 +184,8 @@ const utilCtrl = {
                 //console.log(product_category_groups)
 
                 let product_category_columns = ['product_category_group_id', 'parent_id', 'category_type', 'category_name', 'category_img', 'category_description', 'id'];
-                let product_categories = await readPool.query(`SELECT ${product_category_columns.join()} FROM product_categories WHERE product_category_group_id IN (${product_category_groups.map(item => { return item?.id }).join()})`);
+                let product_category_group_ids = product_category_groups.map(item => item?.id);
+                let product_categories = await readPool.query(`SELECT ${product_category_columns.join()} FROM product_categories WHERE product_category_group_id IN (${product_category_group_ids.map(() => '?').join(',')})`, product_category_group_ids);
                 product_categories = product_categories[0];
                 let product_category_connect_ids = {};
                 for (var i = product_categories.length; i >= 1; i--) {
@@ -203,7 +216,7 @@ const utilCtrl = {
                 let product_columns = ['category_id0', 'category_id1', 'category_id2', 'product_name', 'product_price', 'product_sale_price', 'product_img', 'product_comment', 'product_description', 'another_id', 'id',];
                 let product_sub_img_columns = ['product_sub_img'];
 
-                let products = await readPool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 ORDER BY id DESC`);
+                let products = await readPool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=? AND is_delete=0 ORDER BY id DESC`, [sender_brand?.id]);
                 products = products[0];
                 let product_connect_ids = {};
                 let first_insert_product_idx = 0;
@@ -247,7 +260,7 @@ const utilCtrl = {
                         }
                     }
                     for (var j = 0; j < product_list.length; j++) {
-                        let sub_images = await readPool.query(`SELECT ${product_sub_img_columns.join()} FROM product_images WHERE product_id=${product_list[j]?.id} AND is_delete=0 ORDER BY id DESC`);
+                        let sub_images = await readPool.query(`SELECT ${product_sub_img_columns.join()} FROM product_images WHERE product_id=? AND is_delete=0 ORDER BY id DESC`, [product_list[j]?.id]);
                         sub_images = sub_images[0];
 
                         for (var k = sub_images.length; k >= 1; k--) {
@@ -264,8 +277,8 @@ const utilCtrl = {
                         }
                     }
                 }
-                let update_sort_idx = await writePool.query(`UPDATE products SET sort_idx=id WHERE brand_id=${dns_data?.id} AND id>=${first_insert_product_idx}`);
-                let new_products = await readPool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=${sender_brand?.id} AND is_delete=0 AND id>=${first_insert_product_idx} ORDER BY id DESC`);
+                let update_sort_idx = await writePool.query(`UPDATE products SET sort_idx=id WHERE brand_id=? AND id>=?`, [dns_data?.id, first_insert_product_idx]);
+                let new_products = await readPool.query(`SELECT ${product_columns.join()} FROM products WHERE brand_id=? AND is_delete=0 AND id>=? ORDER BY id DESC`, [sender_brand?.id, first_insert_product_idx]);
                 new_products = new_products[0];
 
                 for (var i = 0; i < products.length; i++) {
@@ -286,7 +299,7 @@ const utilCtrl = {
             }
             if (is_copy_post == 1) {//게시글 복사 원할시
                 let post_category_columns = ['id', 'parent_id', 'post_category_title', 'post_category_type', 'post_category_read_type', 'is_able_user_add'];
-                let post_categories = await readPool.query(`SELECT ${post_category_columns.join()} FROM post_categories WHERE brand_id=${sender_brand?.id} AND is_delete=0`);
+                let post_categories = await readPool.query(`SELECT ${post_category_columns.join()} FROM post_categories WHERE brand_id=? AND is_delete=0`, [sender_brand?.id]);
                 post_categories = post_categories[0];
                 let post_category_connect_ids = {};
                 for (var i = 0; i < post_categories.length; i++) {
@@ -311,7 +324,7 @@ const utilCtrl = {
                 }
 
                 let first_insert_post_idx = 0;
-                let posts = await readPool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE post_categories.brand_id=${sender_brand?.id} AND post_categories.is_delete=0 AND posts.is_delete=0 AND posts.parent_id=-1`);
+                let posts = await readPool.query(`SELECT posts.* FROM posts LEFT JOIN post_categories ON posts.category_id=post_categories.id WHERE post_categories.brand_id=? AND post_categories.is_delete=0 AND posts.is_delete=0 AND posts.parent_id=-1`, [sender_brand?.id]);
                 posts = posts[0];
                 for (var i = 0; i < parseInt(posts.length / 1000) + 1; i++) {
                     let insert_data = [];

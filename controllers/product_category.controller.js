@@ -18,22 +18,25 @@ const productCategoryCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { product_category_group_id, page, page_size } = req.query;
 
-            let category_groups = await readPool.query(`SELECT sort_type FROM product_category_groups WHERE id=${product_category_group_id}`);
+            let category_groups = await readPool.query(`SELECT sort_type FROM product_category_groups WHERE id=?`, [product_category_group_id]);
             category_groups = category_groups[0][0];
 
             let columns = [
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
-            sql += ` AND product_category_group_id=${product_category_group_id} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
+            sql += ` AND product_category_group_id=? `;
+            params.push(product_category_group_id);
 
             let req_query = req.query;
             if (category_groups?.sort_type == 1) {
                 req_query.order = 'category_name';
                 req_query.is_asc = 1;
             }
-            let data = await getSelectQueryList(sql, columns, req_query);
+            let data = await getSelectQueryList(sql, columns, req_query, [], params);
             data.content = await makeTree(data?.content ?? []);
             data.total = data?.content.length ?? 0;
             data.content = (data?.content ?? []).slice((page - 1) * (page_size), page * page_size);
@@ -53,7 +56,7 @@ const productCategoryCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);

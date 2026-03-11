@@ -29,10 +29,12 @@ const brandCtrl = {
       const { } = req.query;
       let columns = [`${table_name}.*`];
       let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+      let params = [];
       if (decode_dns?.is_main_dns != 1) {
-        sql += `WHERE id=${decode_dns?.id ?? 0}`;
+        sql += `WHERE id=?`;
+        params.push(decode_dns?.id ?? 0);
       }
-      let data = await getSelectQueryList(sql, columns, req.query);
+      let data = await getSelectQueryList(sql, columns, req.query, [], params);
       /*
       let setting_list = await axios.get(`${process.env.SETTING_SITEMAP_URL}/api/setting-check-list`);
       setting_list = setting_list?.data?.data
@@ -60,7 +62,7 @@ const brandCtrl = {
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { id } = req.params;
-      let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
+      let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
       data = data[0][0];
       data["theme_css"] = JSON.parse(data?.theme_css ?? "{}");
       //data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
@@ -312,7 +314,7 @@ const brandCtrl = {
       const decode_user = await checkLevel(req.cookies.token, 0, req);
       const decode_dns = checkDns(req.cookies.dns);
       const { brand_id } = req.body;
-      let dns_data = await readPool.query(`SELECT ${table_name}.* FROM ${table_name} WHERE id=${brand_id}`);
+      let dns_data = await readPool.query(`SELECT ${table_name}.* FROM ${table_name} WHERE id=?`, [brand_id]);
       dns_data = dns_data[0][0];
       const secret = speakeasy.generateSecret({
         length: 20, // 비밀키의 길이를 설정 (20자리)

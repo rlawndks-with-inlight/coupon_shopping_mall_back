@@ -79,8 +79,11 @@ const productReviewCtrl = {
 
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
-            sql += ` WHERE ${table_name}.brand_id=${brandId} `;
-            sql += ` AND ${table_name}.product_id=${productIdNum} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(brandId);
+            sql += ` AND ${table_name}.product_id=? `;
+            params.push(productIdNum);
 
             // ✅ Redis 캐시 사용
             const canUseCache = !!redisClient?.isOpen;
@@ -100,7 +103,7 @@ const productReviewCtrl = {
                 }
             }
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             // ✅ 캐시 저장 (예: 60초)
             if (canUseCache && cacheKey) {
@@ -361,9 +364,9 @@ const sadsadasdasd = async () => {
         const brand_id = 70;
         let { data: categories } = await axios.get(`https://www.cumamarket.co.kr/_next/data/eb38b54477fe79382b5b37cb4cb5706e84e3f0ad/category-list.json`);
         categories = categories?.pageProps?.ssrCategoryList ?? [];
-        let db_products = await readPool.query(`SELECT * FROM products WHERE brand_id=${brand_id}`);
+        let db_products = await readPool.query(`SELECT * FROM products WHERE brand_id=?`, [brand_id]);
         db_products = db_products[0];
-        let db_users = await readPool.query(`SELECT * FROM users WHERE brand_id=${brand_id}`);
+        let db_users = await readPool.query(`SELECT * FROM users WHERE brand_id=?`, [brand_id]);
         db_users = db_users[0];
         let review_list = [];
         let products = [];

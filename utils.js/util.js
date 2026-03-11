@@ -299,7 +299,7 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
     } else {
         try {
             let delete_result = await deleteQuery('lang_processes', {
-                table_name: `'${table_name}'`,
+                table_name: table_name,
                 item_id,
             }, true)
             let result = await insertQuery('lang_processes', {

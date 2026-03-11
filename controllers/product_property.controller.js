@@ -20,10 +20,13 @@ const productPropertyCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN product_property_groups ON ${table_name}.product_property_group_id=product_property_groups.id `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
-            sql += ` AND ${table_name}.product_property_group_id=${product_property_group_id} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
+            sql += ` AND ${table_name}.product_property_group_id=? `;
+            params.push(product_property_group_id);
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             return response(req, res, 100, "success", data);
 
@@ -41,7 +44,7 @@ const productPropertyCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);

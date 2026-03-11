@@ -25,7 +25,7 @@ const shopCtrl = {
                 'basic_info',
             ]
 
-            let brand_data = await readPool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=${decode_dns?.id ?? 0}`);
+            let brand_data = await readPool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=?`, [decode_dns?.id ?? 0]);
             brand_data = brand_data[0][0];
             brand_data['shop_obj'] = JSON.parse(brand_data?.shop_obj ?? '[]');
             brand_data['blog_obj'] = JSON.parse(brand_data?.blog_obj ?? '[]');
@@ -64,7 +64,7 @@ const shopCtrl = {
 
             }
             product_sql += product_category_left_join_sql;
-            product_sql += ` WHERE products.id IN(${product_ids.join()}) `;
+            product_sql += ` WHERE products.id IN(${product_ids.map(() => '?').join(',')}) `;
             product_sql += ` AND products.is_delete=0 `;
             product_sql += ` AND products.status!=5 `
             product_sql = product_sql.replaceAll(process.env.SELECT_COLUMN_SECRET, product_columns.join());
@@ -99,7 +99,7 @@ const shopCtrl = {
                     LEFT JOIN products ON products_and_properties.product_id=products.id
                     WHERE products.is_delete=0
                     AND (products.status=0 OR products.status=1 OR products.status=6 OR products.status=7)
-                    AND products.brand_id=${decode_dns?.id}
+                    AND products.brand_id=?
             )
             SELECT
                 ${product_and_property_columns.join()}
@@ -109,8 +109,8 @@ const shopCtrl = {
                 ${product_category_left_join_sql}
             WHERE
                 row_num <= 50
-                AND RankedProperties.property_id IN (${product_property_ids.join()})
-                AND products.brand_id=${decode_dns?.id}
+                AND RankedProperties.property_id IN (${product_property_ids.map(() => '?').join(',')})
+                AND products.brand_id=?
                 ORDER BY products.sort_idx DESC
             `;
             //상품카테고리그룹
@@ -118,7 +118,7 @@ const shopCtrl = {
                 `product_category_groups.*`,
             ]
             let product_category_group_sql = `SELECT ${product_category_group_columns.join()} FROM product_category_groups `;
-            product_category_group_sql += ` WHERE product_category_groups.brand_id=${decode_dns?.id ?? 0} `;
+            product_category_group_sql += ` WHERE product_category_groups.brand_id=? `;
             product_category_group_sql += ` AND product_category_groups.is_delete=0 ORDER BY sort_idx DESC`;
 
             //상품카테고리  
@@ -126,7 +126,7 @@ const shopCtrl = {
                 `product_categories.*`,
             ]
             let product_category_sql = `SELECT ${product_category_columns.join()} FROM product_categories `;
-            product_category_sql += ` WHERE product_categories.brand_id=${decode_dns?.id ?? 0} `;
+            product_category_sql += ` WHERE product_categories.brand_id=? `;
             if (is_manager != 1) {
                 product_category_sql += ` AND product_categories.status=0 `
             }
@@ -137,7 +137,7 @@ const shopCtrl = {
                 `product_property_groups.*`,
             ]
             let product_property_group_sql = `SELECT ${product_property_group_columns.join()} FROM product_property_groups `;
-            product_property_group_sql += ` WHERE product_property_groups.brand_id=${decode_dns?.id ?? 0} `;
+            product_property_group_sql += ` WHERE product_property_groups.brand_id=? `;
             product_property_group_sql += ` AND product_property_groups.is_delete=0 ORDER BY sort_idx DESC`;
 
             //상품특성 
@@ -145,7 +145,7 @@ const shopCtrl = {
                 `product_properties.*`,
             ]
             let product_property_sql = `SELECT ${product_property_columns.join()} FROM product_properties `;
-            product_property_sql += ` WHERE product_properties.brand_id=${decode_dns?.id ?? 0} `;
+            product_property_sql += ` WHERE product_properties.brand_id=? `;
             if (is_manager != 1) {
                 product_property_sql += ` AND product_properties.status=0 `
             }
@@ -158,7 +158,7 @@ const shopCtrl = {
             ]
             let product_review_sql = `SELECT ${product_review_columns.join()} FROM product_reviews `;
             product_review_sql += ` LEFT JOIN products ON product_reviews.product_id=products.id `;
-            product_review_sql += ` WHERE product_reviews.brand_id=${decode_dns?.id ?? 0} `;
+            product_review_sql += ` WHERE product_reviews.brand_id=? `;
             product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY id DESC LIMIT 0, 10`;
 
             //상품문의
@@ -167,7 +167,7 @@ const shopCtrl = {
             ]
             let product_faq_sql = ` SELECT ${product_faq_columns.join()} FROM product_faq `;
             product_faq_sql += ` LEFT JOIN products ON product_faq.product_id=products.id `;
-            product_faq_sql += ` WHERE product_faq.brand_id=${decode_dns?.id ?? 0} `;
+            product_faq_sql += ` WHERE product_faq.brand_id=? `;
             product_faq_sql += ` AND product_faq.is_delete=0 ORDER BY id DESC LIMIT 0, 10`;
 
             //게시물카테고리
@@ -175,7 +175,7 @@ const shopCtrl = {
                 `post_categories.*`,
             ]
             let post_category_sql = `SELECT ${post_category_columns.join()} FROM post_categories `;
-            post_category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
+            post_category_sql += ` WHERE post_categories.brand_id=? `;
             post_category_sql += ` AND post_categories.is_delete=0 ORDER BY sort_idx DESC`;
 
             //셀러
@@ -183,7 +183,7 @@ const shopCtrl = {
                 `users.*`,
             ]
             let seller_sql = `SELECT ${seller_columns.join()} FROM users `;
-            seller_sql += ` WHERE users.brand_id=${decode_dns?.id ?? 0} `;
+            seller_sql += ` WHERE users.brand_id=? `;
             seller_sql += ` AND level=10 `;
             seller_sql += ` AND is_delete=0 `;
             seller_sql += ` ORDER BY id DESC`;
@@ -193,7 +193,7 @@ const shopCtrl = {
                 `payment_modules.*`,
             ]
             let payment_module_sql = `SELECT ${payment_module_columns.join()} FROM payment_modules `;
-            payment_module_sql += ` WHERE payment_modules.brand_id=${decode_dns?.id ?? 0} `;
+            payment_module_sql += ` WHERE payment_modules.brand_id=? `;
             payment_module_sql += ` ORDER BY sort_idx DESC`;
 
             //유저찜
@@ -201,7 +201,7 @@ const shopCtrl = {
                 `user_wishs.*`,
             ]
             let user_wish_sql = `SELECT ${user_wish_columns.join()} FROM user_wishs `;
-            user_wish_sql += ` WHERE user_wishs.brand_id=${decode_dns?.id ?? 0} AND user_wishs.user_id=${decode_user?.id ?? 0} `;
+            user_wish_sql += ` WHERE user_wishs.brand_id=? AND user_wishs.user_id=? `;
             user_wish_sql += ` ORDER BY id DESC`;
 
             //팝업
@@ -210,24 +210,24 @@ const shopCtrl = {
 
             ]
             let popup_sql = `SELECT ${popup_columns.join()} FROM popups `;
-            popup_sql += ` WHERE popups.brand_id=${decode_dns?.id ?? 0} AND popups.is_delete=0 AND popups.open_s_dt <= '${return_moment.substring(0, 10)}' AND popups.open_e_dt >= '${return_moment.substring(0, 10)}' `;
+            popup_sql += ` WHERE popups.brand_id=? AND popups.is_delete=0 AND popups.open_s_dt <= ? AND popups.open_e_dt >= ? `;
             popup_sql += ` ORDER BY id DESC`;
 
             //when
             let sql_list = [
-                { table: 'products', sql: product_sql },
-                { table: 'product_categories', sql: product_category_sql },
-                { table: 'product_category_groups', sql: product_category_group_sql },
-                { table: 'product_and_properties', sql: product_and_property_sql },
-                { table: 'product_properties', sql: product_property_sql },
-                { table: 'product_property_groups', sql: product_property_group_sql },
-                { table: 'post_categories', sql: post_category_sql },
-                { table: 'product_reviews', sql: product_review_sql },
-                { table: 'product_faq', sql: product_faq_sql },
-                { table: 'sellers', sql: seller_sql },
-                { table: 'payment_modules', sql: payment_module_sql },
-                { table: 'user_wishs', sql: user_wish_sql },
-                { table: 'popups', sql: popup_sql },
+                { table: 'products', sql: product_sql, data: [...product_ids] },
+                { table: 'product_categories', sql: product_category_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'product_category_groups', sql: product_category_group_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'product_and_properties', sql: product_and_property_sql, data: [decode_dns?.id, ...product_property_ids, decode_dns?.id] },
+                { table: 'product_properties', sql: product_property_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'product_property_groups', sql: product_property_group_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'post_categories', sql: post_category_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'product_reviews', sql: product_review_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'product_faq', sql: product_faq_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'sellers', sql: seller_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'payment_modules', sql: payment_module_sql, data: [decode_dns?.id ?? 0] },
+                { table: 'user_wishs', sql: user_wish_sql, data: [decode_dns?.id ?? 0, decode_user?.id ?? 0] },
+                { table: 'popups', sql: popup_sql, data: [decode_dns?.id ?? 0, return_moment.substring(0, 10), return_moment.substring(0, 10)] },
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
@@ -239,14 +239,14 @@ const shopCtrl = {
                 }
             }
             //상품이미지처리
-            let sub_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
+            let sub_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY id ASC`, [...product_ids])
             sub_images = sub_images[0];
             for (var i = 0; i < data?.products.length; i++) {
                 let images = sub_images.filter(item => item?.product_id == data?.products[i]?.id);
                 data.products[i].sub_images = images ?? [];
             }
             //상품설명이미지처리
-            let description_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
+            let description_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY id ASC`, [...product_ids])
             description_images = description_images[0];
             for (var i = 0; i < data?.products.length; i++) {
                 let images = description_images.filter(item => item?.product_id == data?.products[i]?.id);
@@ -303,8 +303,8 @@ const shopCtrl = {
                 return item?.id
             })
             post_category_ids.unshift(0);
-            let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.join()}) AND is_delete=0 GROUP BY category_id, id HAVING COUNT(*) <= 10`;
-            let recent_post_data = await readPool.query(recent_post_sql)
+            let recent_post_sql = `SELECT id, category_id, post_title FROM posts WHERE category_id IN (${post_category_ids.map(() => '?').join(',')}) AND is_delete=0 GROUP BY category_id, id HAVING COUNT(*) <= 10`;
+            let recent_post_data = await readPool.query(recent_post_sql, [...post_category_ids])
             recent_post_data = recent_post_data[0];
             for (var i = 0; i < data?.post_categories.length; i++) {
                 if (!(data?.post_categories[i]?.parent_id > 0)) {
@@ -338,9 +338,9 @@ const shopCtrl = {
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
-            let order_sql = `SELECT * FROM transactions WHERE user_id=${decode_user?.id} AND is_cancel=0 ORDER BY id DESC LIMIT 0, 10`;
+            let order_sql = `SELECT * FROM transactions WHERE user_id=? AND is_cancel=0 ORDER BY id DESC LIMIT 0, 10`;
             let sql_list = [
-                { table: 'orders', sql: order_sql },
+                { table: 'orders', sql: order_sql, data: [decode_user?.id] },
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);
@@ -425,21 +425,22 @@ const shopCtrl = {
             let data = {
                 user: decode_user,
             }
-            let point_sql = `SELECT SUM(point) FROM points WHERE user_id=${decode_user?.id}`;
-            let order_sql = `SELECT * FROM transactions WHERE user_id=${decode_user?.id} AND trx_status>=5 ORDER BY id DESC LIMIT 0, 5`;
+            let point_sql = `SELECT SUM(point) FROM points WHERE user_id=?`;
+            let order_sql = `SELECT * FROM transactions WHERE user_id=? AND trx_status>=5 ORDER BY id DESC LIMIT 0, 5`;
             let product_view_sql = `SELECT product_views.*, products.product_name, products.product_img, products.product_comment, products.status, products.product_price, products.product_sale_price FROM product_views `;
             product_view_sql += ` LEFT JOIN products ON product_views.product_id=products.id `;
-            product_view_sql += ` WHERE product_views.user_id=${decode_user?.id} AND product_views.brand_id=${decode_dns?.id} ORDER BY id DESC `;
+            product_view_sql += ` WHERE product_views.user_id=? AND product_views.brand_id=? ORDER BY id DESC `;
 
             let sql_list = [
-                { table: 'point', sql: point_sql },
-                { table: 'orders', sql: order_sql },
-                { table: 'product_views', sql: product_view_sql },
+                { table: 'point', sql: point_sql, data: [decode_user?.id] },
+                { table: 'orders', sql: order_sql, data: [decode_user?.id] },
+                { table: 'product_views', sql: product_view_sql, data: [decode_user?.id, decode_dns?.id] },
             ]
             if (decode_dns?.setting_obj?.is_use_consignment == 1) {
                 sql_list.push({
                     table: `consignment_products`,
-                    sql: `SELECT * FROM products WHERE consignment_user_id=${decode_user?.id} ORDER BY id DESC LIMIT 0, 5`
+                    sql: `SELECT * FROM products WHERE consignment_user_id=? ORDER BY id DESC LIMIT 0, 5`,
+                    data: [decode_user?.id]
                 })
             }
 
@@ -458,9 +459,9 @@ const shopCtrl = {
                 let order_sql = `SELECT ${transaction_orders_column.join()} FROM transaction_orders `
                 order_sql += ` LEFT JOIN products ON transaction_orders.product_id=products.id `
                 order_sql += ` LEFT JOIN users AS sellers ON transaction_orders.seller_id=sellers.id `
-                order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.join()}) `
+                order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.map(() => '?').join(',')}) `
                 order_sql += ` ORDER BY transaction_orders.id DESC `
-                let order_data = await readPool.query(order_sql);
+                let order_data = await readPool.query(order_sql, [...trx_ids]);
                 order_data = order_data[0];
                 for (var i = 0; i < order_data.length; i++) {
                     order_data[i].groups = JSON.parse(order_data[i]?.order_groups ?? "[]");
@@ -529,8 +530,8 @@ const shopCtrl = {
                 const { category_id } = req.body;
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-                let category_list = await readPool.query(category_sql);
+                category_sql += ` WHERE post_categories.brand_id=? `;
+                let category_list = await readPool.query(category_sql, [decode_dns?.id ?? 0]);
                 category_list = category_list[0];
 
                 let category = _.find(category_list, { id: parseInt(category_id) });
@@ -557,8 +558,8 @@ const shopCtrl = {
                 const { category_id, id } = req.body;
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-                let category_list = await readPool.query(category_sql);
+                category_sql += ` WHERE post_categories.brand_id=? `;
+                let category_list = await readPool.query(category_sql, [decode_dns?.id ?? 0]);
                 category_list = category_list[0];
 
                 let category = _.find(category_list, { id: parseInt(category_id) });
@@ -567,7 +568,7 @@ const shopCtrl = {
                 if (top_parent?.is_able_user_add != 1) {
                     return lowLevelException(req, res);
                 }
-                let post = await readPool.query(`SELECT * FROM posts WHERE id=${id}`);
+                let post = await readPool.query(`SELECT * FROM posts WHERE id=?`, [id]);
                 post = post[0][0];
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
@@ -589,7 +590,7 @@ const shopCtrl = {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
-                let post = await readPool.query(`SELECT * FROM posts WHERE id=${id}`);
+                let post = await readPool.query(`SELECT * FROM posts WHERE id=?`, [id]);
                 post = post[0][0];
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
@@ -647,8 +648,8 @@ const shopCtrl = {
                 const { category_id } = req.body;
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-                let category_list = await readPool.query(category_sql);
+                category_sql += ` WHERE post_categories.brand_id=? `;
+                let category_list = await readPool.query(category_sql, [decode_dns?.id ?? 0]);
                 category_list = category_list[0];
 
                 let category = _.find(category_list, { id: parseInt(category_id) });
@@ -675,8 +676,8 @@ const shopCtrl = {
                 const { category_id, id } = req.body;
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
-                category_sql += ` WHERE post_categories.brand_id=${decode_dns?.id ?? 0} `;
-                let category_list = await readPool.query(category_sql);
+                category_sql += ` WHERE post_categories.brand_id=? `;
+                let category_list = await readPool.query(category_sql, [decode_dns?.id ?? 0]);
                 category_list = category_list[0];
 
                 let category = _.find(category_list, { id: parseInt(category_id) });
@@ -685,7 +686,7 @@ const shopCtrl = {
                 if (top_parent?.is_able_user_add != 1) {
                     return lowLevelException(req, res);
                 }
-                let post = await readPool.query(`SELECT * FROM posts WHERE id=${id}`);
+                let post = await readPool.query(`SELECT * FROM posts WHERE id=?`, [id]);
                 post = post[0][0];
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
@@ -707,7 +708,7 @@ const shopCtrl = {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
-                let post = await readPool.query(`SELECT * FROM posts WHERE id=${id}`);
+                let post = await readPool.query(`SELECT * FROM posts WHERE id=?`, [id]);
                 post = post[0][0];
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);

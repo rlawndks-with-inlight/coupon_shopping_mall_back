@@ -38,23 +38,30 @@ const transactionCtrl = {
             } else {
 
             }
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
             //console.log(decode_dns)
 
             if (type != 'user' && decode_user?.level == 15) { //영업자 관리자
-                sql += ` AND transactions.seller_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id}) `
+                sql += ` AND transactions.seller_id IN (SELECT id FROM users WHERE oper_id=?) `;
+                params.push(decode_user?.id);
             }
 
             if (decode_dns?.seller_id > 0) {
-                sql += ` AND transactions.seller_id=${decode_dns?.seller_id} `;
+                sql += ` AND transactions.seller_id=? `;
+                params.push(decode_dns?.seller_id);
             } else if (decode_user?.level == 10) {
-                sql += ` AND transactions.seller_id=${decode_user?.id} `;
+                sql += ` AND transactions.seller_id=? `;
+                params.push(decode_user?.id);
             }
             if ((type == 'user' && decode_dns?.id != 84 && decode_user?.level < 50) || !decode_user || type == 'user') {
-                sql += ` AND user_id=${decode_user?.id ?? -1} `;
+                sql += ` AND user_id=? `;
+                params.push(decode_user?.id ?? -1);
             }
             if (trx_status) {
-                sql += ` AND trx_status=${trx_status} `;
+                sql += ` AND trx_status=? `;
+                params.push(trx_status);
             }
             if (is_confirm) {
                 sql += ` AND trx_status>=1 `;
@@ -71,12 +78,13 @@ const transactionCtrl = {
                 sql += ` AND is_cancel=0 AND is_cancel_trans=0 `;
             }
             if (cancel_type) {
-                sql += ` AND cancel_type=${cancel_type} `;
+                sql += ` AND cancel_type=? `;
+                params.push(cancel_type);
             }
 
             //console.log(sql)
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
             let trx_ids = data?.content.map(trx => {
                 return trx?.is_cancel == 1 ? (trx?.transaction_id ?? 0) : trx?.id
             })
@@ -93,9 +101,10 @@ const transactionCtrl = {
                 let order_sql = `SELECT ${transaction_orders_column.join()} FROM transaction_orders `
                 order_sql += ` LEFT JOIN products ON transaction_orders.product_id=products.id `
                 order_sql += ` LEFT JOIN users AS sellers ON transaction_orders.seller_id=sellers.id `
-                order_sql += ` WHERE transaction_orders.trans_id IN (${trx_ids.join()}) `
+                let trx_placeholders = trx_ids.map(() => '?').join(',');
+                order_sql += ` WHERE transaction_orders.trans_id IN (${trx_placeholders}) `;
                 order_sql += ` ORDER BY transaction_orders.id DESC `
-                let order_data = await readPool.query(order_sql);
+                let order_data = await readPool.query(order_sql, trx_ids);
 
                 order_data = order_data[0];
 
@@ -138,20 +147,22 @@ const transactionCtrl = {
             const { id, } = req.params;
             const { ord_num, password } = req.query;
 
-            let sql = `SELECT * FROM ${table_name} WHERE id=${id}`
+            let sql = `SELECT * FROM ${table_name} WHERE id=?`;
+            let queryParams = [id];
             if (ord_num) {
-                sql = `SELECT * FROM ${table_name} WHERE ord_num='${ord_num}' AND password='${password}'`;
+                sql = `SELECT * FROM ${table_name} WHERE ord_num=? AND password=?`;
+                queryParams = [ord_num, password];
             } else {
                 if (!id) {
                     return response(req, res, -100, "존재하지 않는 주문입니다.", false)
                 }
             }
-            let data = await readPool.query(sql)
+            let data = await readPool.query(sql, queryParams)
             data = data[0][0];
             if (!data) {
                 return response(req, res, -100, "존재하지 않는 주문번호 입니다.", {})
             }
-            let order_data = await readPool.query(`SELECT * FROM transaction_orders WHERE trans_id=${data?.id ?? 0} ORDER BY id DESC`);
+            let order_data = await readPool.query(`SELECT * FROM transaction_orders WHERE trans_id=? ORDER BY id DESC`, [data?.id ?? 0]);
             order_data = order_data[0];
             for (var i = 0; i < order_data.length; i++) {
                 order_data[i].groups = JSON.parse(order_data[i]?.groups ?? "[]");
@@ -289,7 +300,7 @@ const transactionCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
             data = data[0][0];
             if (data?.user_id != decode_user?.id) {
                 return lowLevelException(req, res);
