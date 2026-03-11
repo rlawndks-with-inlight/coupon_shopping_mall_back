@@ -18,28 +18,33 @@ const sellerCtrl = {
                 `${table_name}.*`,
                 `agent.name AS agent_name`
             ]
+            let params = [];
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN ${table_name} AS agent ON ${table_name}.oper_id=agent.id `
-            sql += ` WHERE users.brand_id=${decode_dns?.id ?? 0} `
+            sql += ` WHERE users.brand_id=? `
+            params.push(decode_dns?.id ?? 0);
             if (is_seller == 1) {
                 sql += ` AND users.level=10 `
             }
 
             if (decode_user?.level <= 10) {
-                sql += `AND users.id=${decode_user?.id}`;
+                sql += `AND users.id=?`;
+                params.push(decode_user?.id);
             }
 
             if (decode_user?.level == 15) {
-                sql += `AND users.oper_id=${decode_user?.id}`
+                sql += `AND users.oper_id=?`
+                params.push(decode_user?.id);
             }
 
             /*if (decode_user?.level == 20) {
-                sql += `AND (users.oper_id=${decode_user?.id} OR users.oper_id IN (SELECT id FROM users WHERE oper_id=${decode_user?.id})) `
+                sql += `AND (users.oper_id=? OR users.oper_id IN (SELECT id FROM users WHERE oper_id=?)) `
+                params.push(decode_user?.id, decode_user?.id);
             }*/
 
             //console.log(sql)
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -56,7 +61,7 @@ const sellerCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} AND ${table_name}.is_delete=0 `);
+            let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
             let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -73,12 +78,12 @@ const sellerCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
             }
-            let products = await readPool.query(`SELECT * FROM products WHERE id IN (SELECT product_id FROM products_and_sellers WHERE seller_id=${id} ORDER BY id DESC)`);
+            let products = await readPool.query(`SELECT * FROM products WHERE id IN (SELECT product_id FROM products_and_sellers WHERE seller_id=? ORDER BY id DESC)`, [id]);
             products = products[0];
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
@@ -127,7 +132,7 @@ const sellerCtrl = {
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
             } = req.body;
-            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND is_delete = 0`, [user_name]);
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0`, [user_name, brand_id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }

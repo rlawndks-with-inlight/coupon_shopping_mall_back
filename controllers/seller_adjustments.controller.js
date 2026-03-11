@@ -25,40 +25,45 @@ const sellerAdjustmentsCtrl = {
             };
 
             if (state == 0) {
+                let topParams = [];
                 let topBrandSql = `
-                SELECT tp.id AS top_id, 
-                tp.name AS top_name, 
+                SELECT tp.id AS top_id,
+                tp.name AS top_name,
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
                 SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
                 FROM users tp
-                LEFT JOIN users ag 
-                ON ag.oper_id = tp.id AND ag.level = 15 
-                LEFT JOIN users sl 
+                LEFT JOIN users ag
+                ON ag.oper_id = tp.id AND ag.level = 15
+                LEFT JOIN users sl
                 ON sl.oper_id = ag.id AND sl.level = 10
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
                 WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
-                ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
-                ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
+                ${s_dt ? ` AND created_at >= ?` : ''}
+                ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
                  ON t.seller_id = sl.id
-                 WHERE tp.level = 20 
-                 AND tp.brand_id = ${decode_dns?.id}
+                 WHERE tp.level = 20
+                 AND tp.brand_id = ?
                  AND tp.is_delete = 0
                  GROUP BY tp.id, tp.name
                  `;
+                if (s_dt) topParams.push(`${s_dt} 00:00:00`);
+                if (e_dt) topParams.push(`${e_dt} 23:59:59`);
+                topParams.push(decode_dns?.id);
 
                 const countSql = `SELECT COUNT(*) AS total FROM (${topBrandSql}) AS data`
-                let count = await readPool.query(countSql);
+                let count = await readPool.query(countSql, [...topParams]);
 
                 topBrandSql += `
                  ORDER BY tp.id
-                 LIMIT ${(page - 1) * page_size}, ${page_size};
+                 LIMIT ?, ?;
                  `;
-                let topSales = await readPool.query(topBrandSql);
+                topParams.push((page - 1) * page_size, parseInt(page_size));
+                let topSales = await readPool.query(topBrandSql, topParams);
                 topSales = topSales[0];
 
                 // 결과를 유저별로 구성
@@ -83,75 +88,85 @@ const sellerAdjustmentsCtrl = {
                 let agBrandSql = ``
                 let countSql = ``
                 let count = ''
+                let agParams = [];
 
                 if (decode_user?.level >= 20) {
                     agBrandSql = `
-                SELECT ag.id AS ag_id, 
-                ag.name AS ag_name, 
+                SELECT ag.id AS ag_id,
+                ag.name AS ag_name,
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
                 SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
                 FROM users ag
-                LEFT JOIN users sl 
+                LEFT JOIN users sl
                 ON sl.oper_id = ag.id AND sl.level = 10
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
                 WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
-                ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
-                ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
+                ${s_dt ? ` AND created_at >= ?` : ''}
+                ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
                  ON t.seller_id = sl.id
-                 WHERE ag.level = 15 
-                 AND ag.brand_id = ${decode_dns?.id}
+                 WHERE ag.level = 15
+                 AND ag.brand_id = ?
                  AND ag.is_delete = 0
                  GROUP BY ag.id, ag.name
                  `;
+                    if (s_dt) agParams.push(`${s_dt} 00:00:00`);
+                    if (e_dt) agParams.push(`${e_dt} 23:59:59`);
+                    agParams.push(decode_dns?.id);
 
                     countSql = `SELECT COUNT(*) AS total FROM (${agBrandSql}) AS data`
-                    count = await readPool.query(countSql);
+                    count = await readPool.query(countSql, [...agParams]);
 
                     agBrandSql += `
                 ORDER BY ag.id
-                 LIMIT ${(page - 1) * page_size}, ${page_size};
-                `
+                 LIMIT ?, ?;
+                `;
+                    agParams.push((page - 1) * page_size, parseInt(page_size));
 
                 } else if (decode_user?.level == 15) {
                     agBrandSql = `
-                SELECT ag.id AS ag_id, 
-                ag.name AS ag_name, 
+                SELECT ag.id AS ag_id,
+                ag.name AS ag_name,
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
                 SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
                 FROM users ag
-                LEFT JOIN users sl 
+                LEFT JOIN users sl
                 ON sl.oper_id = ag.id AND sl.level = 10
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
                 WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
-                ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
-                ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
+                ${s_dt ? ` AND created_at >= ?` : ''}
+                ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
                  ON t.seller_id = sl.id
-                 WHERE ag.id = ${decode_user?.id} 
-                 AND ag.brand_id = ${decode_dns?.id}
+                 WHERE ag.id = ?
+                 AND ag.brand_id = ?
                  AND ag.is_delete = 0
                  GROUP BY ag.id, ag.name
                  `;
+                    if (s_dt) agParams.push(`${s_dt} 00:00:00`);
+                    if (e_dt) agParams.push(`${e_dt} 23:59:59`);
+                    agParams.push(decode_user?.id);
+                    agParams.push(decode_dns?.id);
 
                     countSql = `SELECT COUNT(*) AS total FROM (${agBrandSql}) AS data`
-                    count = await readPool.query(countSql);
+                    count = await readPool.query(countSql, [...agParams]);
 
                     agBrandSql += `
                 ORDER BY ag.id
-                 LIMIT ${(page - 1) * page_size}, ${page_size};
-                `
+                 LIMIT ?, ?;
+                `;
+                    agParams.push((page - 1) * page_size, parseInt(page_size));
 
                 }
-                let agSales = await readPool.query(agBrandSql);
+                let agSales = await readPool.query(agBrandSql, agParams);
                 agSales = agSales[0];
 
                 // 결과를 유저별로 구성
@@ -175,11 +190,12 @@ const sellerAdjustmentsCtrl = {
                 let sellerBrandSql = ``
                 let countSql = ``
                 let count = ''
+                let slParams = [];
 
                 if (decode_user?.level >= 20) {
                     sellerBrandSql = `
-                SELECT sl.id AS seller_id, 
-                sl.name AS seller_name, 
+                SELECT sl.id AS seller_id,
+                sl.name AS seller_name,
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller
@@ -188,28 +204,32 @@ const sellerAdjustmentsCtrl = {
                 SELECT *
                 FROM ${table_name}
                 WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
-                ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
-                ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
+                ${s_dt ? ` AND created_at >= ?` : ''}
+                ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
                  ON t.seller_id = sl.id
-                 WHERE sl.level = 10 
-                 AND sl.brand_id = ${decode_dns?.id}
+                 WHERE sl.level = 10
+                 AND sl.brand_id = ?
                  AND sl.is_delete = 0
                  GROUP BY sl.id, sl.name
                  `;
+                    if (s_dt) slParams.push(`${s_dt} 00:00:00`);
+                    if (e_dt) slParams.push(`${e_dt} 23:59:59`);
+                    slParams.push(decode_dns?.id);
 
                     countSql = `SELECT COUNT(*) AS total FROM (${sellerBrandSql}) AS data`
-                    count = await readPool.query(countSql);
+                    count = await readPool.query(countSql, [...slParams]);
 
                     sellerBrandSql += `
                 ORDER BY sl.id
-                 LIMIT ${(page - 1) * page_size}, ${page_size};
-                 `
+                 LIMIT ?, ?;
+                 `;
+                    slParams.push((page - 1) * page_size, parseInt(page_size));
 
                 } else if (decode_user?.level == 15) {
                     sellerBrandSql = `
-                SELECT sl.id AS seller_id, 
-                sl.name AS seller_name, 
+                SELECT sl.id AS seller_id,
+                sl.name AS seller_name,
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller
@@ -218,29 +238,34 @@ const sellerAdjustmentsCtrl = {
                 SELECT *
                 FROM ${table_name}
                 WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
-                ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
-                ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
+                ${s_dt ? ` AND created_at >= ?` : ''}
+                ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
                  ON t.seller_id = sl.id
-                 WHERE sl.level = 10 
-                 AND sl.oper_id = ${decode_user?.id}
-                 AND sl.brand_id = ${decode_dns?.id}
+                 WHERE sl.level = 10
+                 AND sl.oper_id = ?
+                 AND sl.brand_id = ?
                  AND sl.is_delete = 0
                  GROUP BY sl.id, sl.name
                  `;
+                    if (s_dt) slParams.push(`${s_dt} 00:00:00`);
+                    if (e_dt) slParams.push(`${e_dt} 23:59:59`);
+                    slParams.push(decode_user?.id);
+                    slParams.push(decode_dns?.id);
 
                     countSql = `SELECT COUNT(*) AS total FROM (${sellerBrandSql}) AS data`
-                    count = await readPool.query(countSql);
+                    count = await readPool.query(countSql, [...slParams]);
 
                     sellerBrandSql += `
                 ORDER BY sl.id
-                 LIMIT ${(page - 1) * page_size}, ${page_size};
-                 `
+                 LIMIT ?, ?;
+                 `;
+                    slParams.push((page - 1) * page_size, parseInt(page_size));
 
                 } else if (decode_user?.level == 10) {
                     sellerBrandSql = `
-                SELECT sl.id AS seller_id, 
-                sl.name AS seller_name, 
+                SELECT sl.id AS seller_id,
+                sl.name AS seller_name,
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller
@@ -249,27 +274,32 @@ const sellerAdjustmentsCtrl = {
                 SELECT *
                 FROM ${table_name}
                 WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0
-                ${s_dt ? ` AND created_at >= '${s_dt} 00:00:00'` : ''}
-                ${e_dt ? ` AND created_at <= '${e_dt} 23:59:59'` : ''}
+                ${s_dt ? ` AND created_at >= ?` : ''}
+                ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
                  ON t.seller_id = sl.id
-                 WHERE sl.level = 10 
-                 AND sl.id = ${decode_user?.id}
-                 AND sl.brand_id = ${decode_dns?.id}
+                 WHERE sl.level = 10
+                 AND sl.id = ?
+                 AND sl.brand_id = ?
                  AND sl.is_delete = 0
                  GROUP BY sl.id, sl.name
                  `;
+                    if (s_dt) slParams.push(`${s_dt} 00:00:00`);
+                    if (e_dt) slParams.push(`${e_dt} 23:59:59`);
+                    slParams.push(decode_user?.id);
+                    slParams.push(decode_dns?.id);
 
                     countSql = `SELECT COUNT(*) AS total FROM (${sellerBrandSql}) AS data`
-                    count = await readPool.query(countSql);
+                    count = await readPool.query(countSql, [...slParams]);
 
                     sellerBrandSql += `
                 ORDER BY sl.id
-                 LIMIT ${(page - 1) * page_size}, ${page_size};
-                 `
+                 LIMIT ?, ?;
+                 `;
+                    slParams.push((page - 1) * page_size, parseInt(page_size));
 
                 }
-                let sellerSales = await readPool.query(sellerBrandSql);
+                let sellerSales = await readPool.query(sellerBrandSql, slParams);
                 sellerSales = sellerSales[0];
 
                 // 결과를 유저별로 구성

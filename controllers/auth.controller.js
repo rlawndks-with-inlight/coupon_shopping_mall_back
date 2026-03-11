@@ -16,9 +16,9 @@ const authCtrl = {
             let { user_name, user_pw, is_manager, otp_num } = req.body;
             let user = '';
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
-                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ((seller_id=${decode_dns?.seller_id ?? 0} AND brand_id=${decode_dns?.id ?? 0}) OR level >= 10 ) LIMIT 1`, user_name);
+                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ((seller_id=? AND brand_id=?) OR level >= 10 ) LIMIT 1`, [user_name, decode_dns?.seller_id ?? 0, decode_dns?.id ?? 0]);
             } else {
-                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=${decode_dns?.id ?? 0} OR level >= 50 ) LIMIT 1`, user_name);
+                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=? OR level >= 50 ) LIMIT 1`, [user_name, decode_dns?.id ?? 0]);
             }
             user = user[0][0];
 
@@ -26,7 +26,7 @@ const authCtrl = {
             let agent = '';
 
             if (user?.level == 10) {
-                agent = await readPool.query(`SELECT * FROM users WHERE id=${user?.oper_id}`);
+                agent = await readPool.query(`SELECT * FROM users WHERE id=?`, [user?.oper_id]);
                 agent = agent[0][0]
             }
 
@@ -86,8 +86,8 @@ const authCtrl = {
             res.cookie("token", token, {
                 httpOnly: true,
                 maxAge: (60 * 60 * 1000) * 12 * 2,
-                //sameSite: 'none', 
-                //secure: true 
+                sameSite: 'lax',
+                secure: process.env.NODE_ENV !== 'development',
             });
             let check_last_login_time = await updateQuery('users', {
                 last_login_time: returnMoment()
@@ -96,8 +96,8 @@ const authCtrl = {
                 `user_wishs.*`,
             ]
             let wish_sql = `SELECT ${wish_columns.join()} FROM user_wishs `;
-            wish_sql += ` WHERE user_wishs.user_id=${user?.id ?? 0} `;
-            let wish_data = await readPool.query(wish_sql);
+            wish_sql += ` WHERE user_wishs.user_id=? `;
+            let wish_data = await readPool.query(wish_sql, [user?.id ?? 0]);
             wish_data = wish_data[0];
 
             user = {
@@ -143,7 +143,13 @@ const authCtrl = {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
             }
             let pw_data = await createHashedPassword(user_pw);
-            let is_exist_user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=${decode_dns?.id ?? 0} AND is_delete = 0 ${seller_id > 0 ? `AND seller_id=${seller_id}` : ``}`, [user_name]);
+            let is_exist_user_params = [user_name, decode_dns?.id ?? 0];
+            let is_exist_user_sql = `SELECT * FROM users WHERE user_name=? AND brand_id=? AND is_delete = 0`;
+            if (seller_id > 0) {
+                is_exist_user_sql += ` AND seller_id=?`;
+                is_exist_user_params.push(seller_id);
+            }
+            let is_exist_user = await readPool.query(is_exist_user_sql, is_exist_user_params);
 
             //console.log(decode_dns?.seller_id)
             //console.log(is_exist_user[0])
@@ -159,7 +165,7 @@ const authCtrl = {
             }
 
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
-                let is_exist_phone = await readPool.query(`SELECT * FROM phone_registration WHERE phone_number=? AND brand_id=${decode_dns?.id ?? 0} AND is_delete = 0`, [phone_num]);
+                let is_exist_phone = await readPool.query(`SELECT * FROM phone_registration WHERE phone_number=? AND brand_id=? AND is_delete = 0`, [phone_num, decode_dns?.id ?? 0]);
                 if (is_exist_phone[0].length <= 0) {
                     //console.log(is_exist_phone[0])
                     return response(req, res, -100, "가입 허락된 전화번호가 아닙니다. 관리자에 문의하세요.", false)
@@ -220,7 +226,7 @@ const authCtrl = {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            let point_data = await readPool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=${decode_user?.id ?? 0}`);
+            let point_data = await readPool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=?`, [decode_user?.id ?? 0]);
             let point = point_data[0][0]?.point;
             return response(req, res, 100, "success", { ...decode_user, point })
         } catch (err) {
@@ -296,7 +302,7 @@ const authCtrl = {
                 phone_num,
             } = req.body;
             let return_moment = returnMoment();
-            let already_phone_send_list = await readPool.query(`SELECT * FROM phone_check_tokens WHERE phone_num=? AND brand_id=${decode_dns?.id ?? 0} ORDER BY id DESC LIMIT 0, 5 `, [phone_num]);
+            let already_phone_send_list = await readPool.query(`SELECT * FROM phone_check_tokens WHERE phone_num=? AND brand_id=? ORDER BY id DESC LIMIT 0, 5 `, [phone_num, decode_dns?.id ?? 0]);
             already_phone_send_list = already_phone_send_list[0];
             if (already_phone_send_list.length >= 5 && differenceTwoDate(return_moment, already_phone_send_list[4]?.created_at).second < 60) {
                 return response(req, res, -100, "너무 많은 문자를 발송했습니다. 1분뒤에 시도해 주세요.", false)
@@ -371,12 +377,12 @@ const authCtrl = {
             }
             let data = {};
             if (find_user_name) {
-                let users = await readPool.query(`SELECT * FROM users WHERE phone_num=? AND brand_id=${decode_dns?.id} AND status=0 `, [send_log?.phone_num]);
+                let users = await readPool.query(`SELECT * FROM users WHERE phone_num=? AND brand_id=? AND status=0 `, [send_log?.phone_num, decode_dns?.id]);
                 users = users[0];
                 data['users'] = users;
             }
             if (find_password) {
-                let user = await readPool.query(`SELECT * FROM users WHERE phone_num=? AND user_name=? AND brand_id=${decode_dns?.id} AND status=0 `, [send_log?.phone_num, user_name]);
+                let user = await readPool.query(`SELECT * FROM users WHERE phone_num=? AND user_name=? AND brand_id=? AND status=0 `, [send_log?.phone_num, user_name, decode_dns?.id]);
                 user = user[0][0];
                 if (user?.status == 1) {
                     return response(req, res, -100, "승인 대기중입니다.", {})
@@ -414,7 +420,7 @@ const authCtrl = {
             } = req.body;
 
             let return_moment = returnMoment();
-            let user = await readPool.query(`SELECT * FROM users WHERE (phone_num=? AND user_name=? AND brand_id=${decode_dns?.id} AND status=0) OR (id=${decode_user?.id ?? 0}) `, [phone_num, user_name,]);
+            let user = await readPool.query(`SELECT * FROM users WHERE (phone_num=? AND user_name=? AND brand_id=? AND status=0) OR (id=?) `, [phone_num, user_name, decode_dns?.id, decode_user?.id ?? 0]);
             user = user[0][0];
             if (decode_user?.id == user?.id) {//개인정보 변경일때
                 let user_pw = (await createHashedPassword(password, user.user_salt)).hashedPassword;
@@ -466,7 +472,7 @@ const authCtrl = {
             const {
                 password
             } = req.body;
-            let user = await readPool.query(`SELECT * FROM users WHERE id=${decode_user?.id ?? 0} `);
+            let user = await readPool.query(`SELECT * FROM users WHERE id=? `, [decode_user?.id ?? 0]);
             user = user[0][0];
             let user_pw = (await createHashedPassword(password, user.user_salt)).hashedPassword;
             if (user_pw != user.user_pw) {

@@ -94,7 +94,7 @@ const payCtrl = {
           `id`,
           `id`,
         ]
-        let seller = await readPool.query(`SELECT ${seller_columns.join()} FROM users WHERE id=${seller_id} AND level=10`);
+        let seller = await readPool.query(`SELECT ${seller_columns.join()} FROM users WHERE id=? AND level=10`, [seller_id]);
         seller = seller[0][0];
         if (!seller) {
           return response(req, res, -100, "셀러값이 잘못 되었습니다.", false)
@@ -148,9 +148,10 @@ const payCtrl = {
         return item?.seller_id ?? 0;
       });
       product_seller_ids.unshift(0);
+      const sellerPlaceholders = product_seller_ids.map(() => '?').join(',');
       let seller_data = await readPool.query(
-        `SELECT * FROM users WHERE brand_id=${brand_id ?? 0
-        } AND id IN (${product_seller_ids.join()})`
+        `SELECT * FROM users WHERE brand_id=? AND id IN (${sellerPlaceholders})`,
+        [brand_id ?? 0, ...product_seller_ids]
       );
       seller_data = seller_data[0];
 

@@ -72,8 +72,11 @@ const userAddressCtrl = {
             ];
 
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${brandId} `;
-            sql += ` AND user_id=${targetUserId} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(brandId);
+            sql += ` AND user_id=? `;
+            params.push(targetUserId);
 
             // ✅ Redis 캐시 키 생성
             const canUseCache = !!redisClient?.isOpen && brandId > 0 && targetUserId > 0;
@@ -93,7 +96,7 @@ const userAddressCtrl = {
             }
 
             // 실제 DB 조회
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             // ✅ 캐시 저장 (예: 60초)
             if (canUseCache) {
@@ -143,7 +146,7 @@ const userAddressCtrl = {
                 }
             }
 
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`);
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
             data = data[0][0];
 
             if (!data) {

@@ -27,12 +27,15 @@ const userWishCtrl = {
                 sql += ` LEFT JOIN products ON ${table_name}.product_id=products.id `;
             }
 
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
             if (!(decode_user?.level >= 40)) {
-                sql += ` AND ${table_name}.user_id=${decode_user?.id ?? 0} `;
+                sql += ` AND ${table_name}.user_id=? `;
+                params.push(decode_user?.id ?? 0);
             }
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
             for (var i = 0; i < data?.content.length; i++) {
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
             }
@@ -54,16 +57,17 @@ const userWishCtrl = {
             const { } = req.query;
 
             let sql = `SELECT * FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.user_id=${decode_user?.id ?? 0} AND brand_id=${decode_dns?.id ?? 0} ORDER BY id DESC `;
+            sql += ` WHERE ${table_name}.user_id=? AND brand_id=? ORDER BY id DESC `;
 
-            let data = await readPool.query(sql);
+            let data = await readPool.query(sql, [decode_user?.id ?? 0, decode_dns?.id ?? 0]);
             data = data[0];
             //console.log(data)
             data = data.map(item => {
                 return item?.product_id
             })
             data.unshift(0);
-            let items = await readPool.query(`SELECT * FROM products WHERE id IN (${data.join()}) `);
+            const placeholders = data.map(() => '?').join(',');
+            let items = await readPool.query(`SELECT * FROM products WHERE id IN (${placeholders}) `, data);
             items = items[0];
             for (var i = 0; i < items?.length; i++) {
                 items[i].lang_obj = JSON.parse(items[i].lang_obj ?? '{}')
@@ -84,7 +88,7 @@ const userWishCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);

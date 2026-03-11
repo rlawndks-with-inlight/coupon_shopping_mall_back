@@ -19,9 +19,10 @@ const paymentModuleCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            let params = [decode_dns?.id ?? 0];
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -38,7 +39,7 @@ const paymentModuleCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
@@ -68,9 +69,9 @@ const paymentModuleCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            sql += ` WHERE ${table_name}.brand_id=? `;
             obj = { ...obj, ...files };
-            let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id ?? 0}`);
+            let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=? AND brand_id=?`, [trx_type, decode_dns?.id ?? 0]);
             is_exist_trx_type = is_exist_trx_type[0];
             if (is_exist_trx_type.length > 0) {
                 return response(req, res, -100, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)
@@ -101,7 +102,7 @@ const paymentModuleCtrl = {
                 pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url
             };
             obj = { ...obj, ...files };
-            let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=${trx_type} AND brand_id=${decode_dns?.id ?? 0} AND id!=${id}`);
+            let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=? AND brand_id=? AND id!=?`, [trx_type, decode_dns?.id ?? 0, id]);
             is_exist_trx_type = is_exist_trx_type[0];
             if (is_exist_trx_type.length > 0) {
                 return response(req, res, -200, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)

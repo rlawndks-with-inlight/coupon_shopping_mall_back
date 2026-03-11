@@ -84,6 +84,7 @@ const productCtrl = {
             }
 
 
+            let params = [];
             let columns = [
                 `${table_name}.*`,
                 `sellers.user_name`,
@@ -109,19 +110,23 @@ const productCtrl = {
                 columns.push(`seller_products.seller_id`)
                 if (type == 'seller') {
                     columns.push(`seller_products.seller_price AS product_sale_price `)
-                    sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=${seller_id} AND seller_products.is_delete=0 `
+                    sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=? AND seller_products.is_delete=0 `
+                    params.push(seller_id);
                 } else if (manager_type == 'seller') {
                     columns.push(`seller_products.seller_price`)
-                    sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.is_delete=0 AND seller_products.seller_id = ${decode_user?.id}`
+                    sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.is_delete=0 AND seller_products.seller_id = ?`
+                    params.push(decode_user?.id);
                 }
             }
             //console.log(sql)
             //console.log(manager_type)
 
-            let where_sql = ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            let where_sql = ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
 
             if (seller_id > 0) {
-                where_sql += ` AND seller_products.seller_id=${seller_id} `;
+                where_sql += ` AND seller_products.seller_id=? `;
+                params.push(seller_id);
             }
 
             /*
@@ -134,8 +139,8 @@ const productCtrl = {
                 where_sql += ` AND (${table_name}.id IN (${connect_data.join()})) `;
             }
             */
-            let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id ?? 0} AND is_delete=0 ORDER BY sort_idx DESC `;
-            let category_groups = await readPool.query(category_group_sql);
+            let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=? AND is_delete=0 ORDER BY sort_idx DESC `;
+            let category_groups = await readPool.query(category_group_sql, [decode_dns?.id ?? 0]);
             category_groups = category_groups[0];
 
             let category_sql_list = [];
@@ -145,7 +150,8 @@ const productCtrl = {
                 if (req.query[`category_id${i}`]) {
                     category_sql_list.push({
                         table: `category_id${i}`,
-                        sql: `SELECT * FROM product_categories WHERE product_category_group_id=${category_groups[i]?.id} AND is_delete=0 ORDER BY sort_idx DESC`
+                        sql: `SELECT * FROM product_categories WHERE product_category_group_id=? AND is_delete=0 ORDER BY sort_idx DESC`,
+                        params: [category_groups[i]?.id]
                     })
                 }
             }
@@ -156,38 +162,57 @@ const productCtrl = {
                     let key = Object.keys(category_obj)[i];
                     let category_ids = findChildIds(category_obj[key], req.query[key]);
                     category_ids.unshift(parseInt(req.query[key]));
-                    where_sql += ` AND ${key} IN (${category_ids.join()}) `;
+                    where_sql += ` AND ${key} IN (${category_ids.map(() => '?').join(',')}) `;
+                    params.push(...category_ids);
                 }
             }
 
             for (var i = 0; i < 20; i++) {
                 if (req.query[`property_ids${i}`]) {
-                    where_sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (${req.query[`property_ids${i}`]}) ) `
+                    let propIds = req.query[`property_ids${i}`].split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
+                    if (propIds.length > 0) {
+                        where_sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (${propIds.map(() => '?').join(',')}) ) `
+                        params.push(...propIds);
+                    }
                 }
             }
 
             if (status) {
-                where_sql += ` AND ${table_name}.id IN (SELECT products.id FROM products WHERE status IN (${status}) ) `
+                let statusIds = String(status).split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
+                if (statusIds.length > 0) {
+                    where_sql += ` AND ${table_name}.id IN (SELECT products.id FROM products WHERE status IN (${statusIds.map(() => '?').join(',')}) ) `
+                    params.push(...statusIds);
+                }
             }
 
             if (product_type) {
-                where_sql += ` AND ${table_name}.id IN (SELECT products.id FROM products WHERE product_type IN (${product_type}) ) `
+                let productTypeIds = String(product_type).split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
+                if (productTypeIds.length > 0) {
+                    where_sql += ` AND ${table_name}.id IN (SELECT products.id FROM products WHERE product_type IN (${productTypeIds.map(() => '?').join(',')}) ) `
+                    params.push(...productTypeIds);
+                }
             }
 
             if (is_consignment) {
-                where_sql += ` AND products.consignment_user_id=${decode_user?.id ?? 0} `;
+                where_sql += ` AND products.consignment_user_id=? `;
+                params.push(decode_user?.id ?? 0);
             }
             //console.log(where_sql)
             sql += where_sql;
 
 
             if (manager_type == 'seller' && decode_user?.seller_range_o != 0) {
-                sql += ` AND product_sale_price BETWEEN ${decode_user?.seller_range_u} AND ${decode_user?.seller_range_o}`
+                sql += ` AND product_sale_price BETWEEN ? AND ?`
+                params.push(decode_user?.seller_range_u, decode_user?.seller_range_o);
             }
 
             if (manager_type == 'seller' && (decode_user?.seller_brand != undefined || decode_user?.seller_category != undefined)) {
                 if (decode_user?.seller_brand && !decode_user?.seller_category) {
-                    sql += ` AND category_id1 IN (${decode_user?.seller_brand})`
+                    let sellerBrandIds = String(decode_user?.seller_brand).split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
+                    if (sellerBrandIds.length > 0) {
+                        sql += ` AND category_id1 IN (${sellerBrandIds.map(() => '?').join(',')})`;
+                        params.push(...sellerBrandIds);
+                    }
                 } else if (!decode_user?.seller_brand && decode_user?.seller_category) {
                     let category_sql_list = [];
                     category_sql_list.push({
@@ -210,7 +235,11 @@ const productCtrl = {
                             }//decode_user?.seller_category를 바로 사용하지 않는 이유는 하위 카테고리의 존재 때문임
                             //console.log(1)
                             //console.log(seller_categories.join())
-                            sql += ` AND category_id0 IN (${seller_categories.join()})`
+                            let allSellerCatIds = seller_categories.join().split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
+                            if (allSellerCatIds.length > 0) {
+                                sql += ` AND category_id0 IN (${allSellerCatIds.map(() => '?').join(',')})`;
+                                params.push(...allSellerCatIds);
+                            }
                         }
                     }
 
@@ -238,8 +267,16 @@ const productCtrl = {
                             //console.log(2)
                             //console.log(seller_category)
                             //console.log(seller_categories.join())
-                            sql += ` AND category_id0 IN (${seller_categories.join()})`
-                            sql += ` AND category_id1 IN (${decode_user?.seller_brand}) `;
+                            let allSellerCatIds2 = seller_categories.join().split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
+                            if (allSellerCatIds2.length > 0) {
+                                sql += ` AND category_id0 IN (${allSellerCatIds2.map(() => '?').join(',')})`;
+                                params.push(...allSellerCatIds2);
+                            }
+                            let sellerBrandIds2 = String(decode_user?.seller_brand).split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
+                            if (sellerBrandIds2.length > 0) {
+                                sql += ` AND category_id1 IN (${sellerBrandIds2.map(() => '?').join(',')}) `;
+                                params.push(...sellerBrandIds2);
+                            }
                         }
                     }
                     //sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
@@ -270,7 +307,7 @@ const productCtrl = {
             }*/
             //console.log({ ...req.query })
             //console.log(sql)
-            let data = await getSelectQueryList(sql, columns, { ...req.query, type: type });
+            let data = await getSelectQueryList(sql, columns, { ...req.query, type: type }, [], params);
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
             /*sql_list = [
@@ -284,7 +321,7 @@ const productCtrl = {
                 ...data,
                 brand_name: brand_data?.brand_name,
             }*/
-            let sub_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.join()}) AND is_delete=0 ORDER BY id ASC`)
+            let sub_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY id ASC`, product_ids)
             sub_images = sub_images[0];
             for (var i = 0; i < data?.content.length; i++) {
                 let images = sub_images.filter(item => item?.product_id == data?.content[i]?.id);
@@ -456,7 +493,7 @@ const productCtrl = {
         ON products_and_properties.property_id = product_properties.id
       LEFT JOIN product_property_groups
         ON products_and_properties.property_group_id = product_property_groups.id
-      WHERE products_and_properties.product_id = ${productId}
+      WHERE products_and_properties.product_id = ?
       ORDER BY product_properties.sort_idx DESC
     `;
 
@@ -467,19 +504,23 @@ const productCtrl = {
             let sql_list = [
                 {
                     table: 'groups',
-                    sql: `SELECT * FROM product_option_groups WHERE product_id=${productId} AND is_delete=0 ORDER BY id ASC`,
+                    sql: `SELECT * FROM product_option_groups WHERE product_id=? AND is_delete=0 ORDER BY id ASC`,
+                    params: [productId],
                 },
                 {
                     table: 'images',
-                    sql: `SELECT * FROM product_images WHERE product_id=${productId} AND is_delete=0 ORDER BY id ASC`,
+                    sql: `SELECT * FROM product_images WHERE product_id=? AND is_delete=0 ORDER BY id ASC`,
+                    params: [productId],
                 },
                 {
                     table: 'scope',
-                    sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=${productId}`,
+                    sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=?`,
+                    params: [productId],
                 },
                 {
                     table: 'properties',
                     sql: property_sql,
+                    params: [productId],
                 },
             ];
 
@@ -500,19 +541,22 @@ const productCtrl = {
             let sql_list2 = [
                 {
                     table: 'characters',
-                    sql: `SELECT * FROM product_characters WHERE product_id=${productId}`,
+                    sql: `SELECT * FROM product_characters WHERE product_id=?`,
+                    params: [productId],
                 },
                 {
                     table: 'brand_name',
                     // LIMIT 1 추가 (어차피 한 행만 필요)
-                    sql: `SELECT category_en_name FROM product_categories WHERE id=${data.category_id1} LIMIT 1`,
+                    sql: `SELECT category_en_name FROM product_categories WHERE id=? LIMIT 1`,
+                    params: [data.category_id1],
                 },
             ];
 
             if (option_group_ids.length > 0) {
                 sql_list2.push({
                     table: 'options',
-                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.join()}) AND is_delete=0 ORDER BY id ASC`,
+                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY id ASC`,
+                    params: [...option_group_ids],
                 });
             }
 
@@ -604,7 +648,7 @@ const productCtrl = {
                 }
             }
             if (consignment_user_name) {
-                let consignment_user = await readPool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
+                let consignment_user = await readPool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=? `, [consignment_user_name, brand_id]);
                 consignment_user = consignment_user[0][0];
                 if (!consignment_user) {
                     return response(req, res, -100, "위탁할 회원정보를 찾을 수 없습니다.", false);
@@ -615,7 +659,7 @@ const productCtrl = {
 
             let result = await insertQuery(`${table_name}`, obj);
 
-            let dns_data = await readPool.query(`SELECT id, setting_obj FROM brands WHERE id=${brand_id}`);
+            let dns_data = await readPool.query(`SELECT id, setting_obj FROM brands WHERE id=?`, [brand_id]);
             dns_data = dns_data[0][0];
             dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
 
@@ -815,7 +859,7 @@ const productCtrl = {
             }
 
             if (consignment_user_name) {
-                let consignment_user = await readPool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=${brand_id} `, [consignment_user_name]);
+                let consignment_user = await readPool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=? `, [consignment_user_name, brand_id]);
                 consignment_user = consignment_user[0][0];
                 if (!consignment_user) {
                     return response(req, res, -100, "위탁할 회원정보를 찾을 수 없습니다.", false);
@@ -825,7 +869,7 @@ const productCtrl = {
             obj = { ...obj, ...files, };
             let result = await updateQuery(`${table_name}`, obj, id);
 
-            let dns_data = await readPool.query(`SELECT id, setting_obj FROM brands WHERE id=${brand_id}`);
+            let dns_data = await readPool.query(`SELECT id, setting_obj FROM brands WHERE id=?`, [brand_id]);
             dns_data = dns_data[0][0];
             dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
 
@@ -886,10 +930,10 @@ const productCtrl = {
                 let option_result = await writePool.query(`INSERT INTO product_options (group_id, option_name, option_price, option_description) VALUES ?`, [insert_option_list]);
             }
             if (delete_group_list.length > 0) {
-                let option_result = await writePool.query(`UPDATE product_option_groups SET is_delete=1 WHERE id IN (${delete_group_list.join()}) `);
+                let option_result = await writePool.query(`UPDATE product_option_groups SET is_delete=1 WHERE id IN (${delete_group_list.map(() => '?').join(',')}) `, delete_group_list);
             }
             if (delete_option_list.length > 0) {
-                let option_result = await writePool.query(`UPDATE product_options SET is_delete=1 WHERE id IN (${delete_option_list.join()}) OR group_id IN (${delete_group_list.join()})`);
+                let option_result = await writePool.query(`UPDATE product_options SET is_delete=1 WHERE id IN (${delete_option_list.map(() => '?').join(',')}) OR group_id IN (${delete_group_list.map(() => '?').join(',')})`, [...delete_option_list, ...delete_group_list]);
             }
             //character
             let insert_character_list = [];
@@ -917,7 +961,7 @@ const productCtrl = {
                 let option_result = await writePool.query(`INSERT INTO product_characters (product_id, character_name, character_value) VALUES ?`, [insert_character_list]);
             }
             if (delete_character_list.length > 0) {
-                let option_result = await writePool.query(`DELETE FROM product_characters WHERE id IN (${delete_character_list.join()})`);
+                let option_result = await writePool.query(`DELETE FROM product_characters WHERE id IN (${delete_character_list.map(() => '?').join(',')})`, delete_character_list);
             }
             //sub image
             let insert_sub_image_list = [];
@@ -940,7 +984,7 @@ const productCtrl = {
                 let sub_image_result = await writePool.query(`INSERT INTO product_images (product_id, product_sub_img) VALUES ?`, [insert_sub_image_list]);
             }
             if (delete_sub_image_list.length > 0) {
-                let sub_image_result = await writePool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_sub_image_list.join()})`);
+                let sub_image_result = await writePool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_sub_image_list.map(() => '?').join(',')})`, delete_sub_image_list);
             }
 
             //description image
@@ -963,12 +1007,12 @@ const productCtrl = {
             if (insert_description_image_list.length > 0) {
                 let description_image_result = await writePool.query(`INSERT INTO product_images (product_id, product_description_img) VALUES ?`, [insert_description_image_list]);
             }
-            if (delete_sub_image_list.length > 0) {
-                let description_image_result = await writePool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_description_image_list.join()})`);
+            if (delete_description_image_list.length > 0) {
+                let description_image_result = await writePool.query(`UPDATE product_images SET is_delete=1 WHERE id IN (${delete_description_image_list.map(() => '?').join(',')})`, delete_description_image_list);
             }
 
             //property
-            let delete_property_result = await writePool.query(`DELETE FROM products_and_properties WHERE product_id=${product_id}`);
+            let delete_property_result = await writePool.query(`DELETE FROM products_and_properties WHERE product_id=?`, [product_id]);
 
             let insert_property_list = [];
             properties = JSON.parse(properties);
@@ -1035,7 +1079,7 @@ const productCtrl = {
                     id
                 })
             } else {
-                let result = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${decode_user?.id} AND product_id=${id}`);
+                let result = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=? AND product_id=?`, [decode_user?.id, id]);
             }
 
             // ─────────────────────────────

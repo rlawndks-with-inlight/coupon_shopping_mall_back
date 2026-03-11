@@ -18,9 +18,11 @@ const userCtrl = {
                 `${table_name}.*`,
                 `(SELECT SUM(point) FROM points WHERE user_id=${table_name}.id) AS point`
             ]
+            let params = [];
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
 
-            sql += ` WHERE brand_id=${decode_dns?.id ?? 0} `
+            sql += ` WHERE brand_id=? `
+            params.push(decode_dns?.id ?? 0);
             if (is_user) {
                 sql += ` AND level=0 `
             }
@@ -33,7 +35,8 @@ const userCtrl = {
             }
 
             if (is_agent == 2) {
-                sql += ` AND level=15 AND oper_id=${decode_user?.id} `
+                sql += ` AND level=15 AND oper_id=? `
+                params.push(decode_user?.id);
             }
 
             if (is_agent == 3) {
@@ -42,7 +45,7 @@ const userCtrl = {
 
             //console.log(sql)
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -59,7 +62,7 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} AND ${table_name}.is_delete=0 `);
+            let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
             let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -76,7 +79,7 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
@@ -123,7 +126,7 @@ const userCtrl = {
                 seller_trx_fee, seller_point,
                 oper_id, oper_trx_fee
             } = req.body;
-            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND is_delete = 0`, [user_name]);
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0`, [user_name, brand_id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
@@ -182,7 +185,7 @@ const userCtrl = {
                 seller_trx_fee, seller_point,
                 oper_id, oper_trx_fee,
             } = req.body;
-            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=${brand_id} AND is_delete = 0 AND id!=?`, [user_name, id]);
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0 AND id!=?`, [user_name, brand_id, id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }

@@ -23,9 +23,11 @@ const postCategoryCtrl = {
                 `${table_name}.*`,
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            let params = [];
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
 
-            let data = await getSelectQueryList(sql, columns, { ...req.query, page_size: 100 });
+            let data = await getSelectQueryList(sql, columns, { ...req.query, page_size: 100 }, [], params);
 
             data.content = await makeTree(data?.content);
             data.total = data?.content.length ?? 0;
@@ -45,7 +47,7 @@ const postCategoryCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE brand_id=${decode_dns?.id ?? 0}`);
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE brand_id=?`, [decode_dns?.id ?? 0]);
             data = data[0];
             let category = _.find(data, { id: id });
             data = await makeTree(data, category);

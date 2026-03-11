@@ -18,10 +18,12 @@ const sellerProductsCtrl = {
             let columns = [
                 `${table_name}.*`,
             ]
+            let params = [];
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} AND is_delete=0 `;
-            sql += ` WHERE ${table_name}.brand_id=${decode_dns?.id ?? 0} `;
+            sql += ` WHERE ${table_name}.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
 
-            let data = await getSelectQueryList(sql, columns, req.query);
+            let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             console.log(sql)
 
@@ -39,7 +41,7 @@ const sellerProductsCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
-            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=${id}`)
+            let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
                 return lowLevelException(req, res);
@@ -86,6 +88,7 @@ const sellerProductsCtrl = {
                 seller_id, type, price_per
             } = req.body;
 
+            let params = [];
             let columns = [
                 `products.*`,
                 `sellers.user_name`,
@@ -100,11 +103,12 @@ const sellerProductsCtrl = {
             sql += ` LEFT JOIN users AS sellers ON products.user_id=sellers.id `;
             sql += ` LEFT JOIN seller_products ON products.id=seller_products.product_id AND seller_products.is_delete=0 `
 
-            let where_sql = ` WHERE products.brand_id=${decode_dns?.id ?? 0} `;
+            let where_sql = ` WHERE products.brand_id=? `;
+            params.push(decode_dns?.id ?? 0);
             //where_sql += ` AND seller_products.seller_id=${seller_id} `;
 
-            let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=${decode_dns?.id ?? 0} AND is_delete=0 ORDER BY sort_idx DESC `;
-            let category_groups = await readPool.query(category_group_sql);
+            let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=? AND is_delete=0 ORDER BY sort_idx DESC `;
+            let category_groups = await readPool.query(category_group_sql, [decode_dns?.id ?? 0]);
             category_groups = category_groups[0];
 
             let category_sql_list = [];
@@ -116,11 +120,14 @@ const sellerProductsCtrl = {
             sql += where_sql;
 
             if (decode_user?.seller_range_o != 0) {
-                sql += ` AND product_sale_price BETWEEN ${decode_user?.seller_range_u} AND ${decode_user?.seller_range_o}`
+                sql += ` AND product_sale_price BETWEEN ? AND ?`;
+                params.push(decode_user?.seller_range_u, decode_user?.seller_range_o);
             }
             if ((decode_user?.seller_brand != undefined || decode_user?.seller_category != undefined)) {
                 if (decode_user?.seller_brand && !decode_user?.seller_category) {
-                    sql += ` AND category_id1 IN (${decode_user?.seller_brand})`
+                    let brandIds = String(decode_user?.seller_brand).split(',');
+                    sql += ` AND category_id1 IN (${brandIds.map(() => '?').join(',')})`;
+                    params.push(...brandIds);
                 } else if (!decode_user?.seller_brand && decode_user?.seller_category) {
                     let category_sql_list = [];
                     category_sql_list.push({
@@ -141,7 +148,9 @@ const sellerProductsCtrl = {
                                 category_ids.unshift(parseInt(seller_category[j]));
                                 seller_categories.unshift(category_ids.join())
                             }
-                            sql += ` AND category_id0 IN (${seller_categories.join()})`
+                            let catIds = seller_categories.join().split(',');
+                            sql += ` AND category_id0 IN (${catIds.map(() => '?').join(',')})`;
+                            params.push(...catIds);
                         }
                     }
 
@@ -166,8 +175,12 @@ const sellerProductsCtrl = {
                                 category_ids.unshift(parseInt(seller_category[j]));
                                 seller_categories.unshift(category_ids.join())
                             }
-                            sql += ` AND category_id0 IN (${seller_categories.join()})`
-                            sql += ` AND category_id1 IN (${decode_user?.seller_brand}) `;
+                            let catIds2 = seller_categories.join().split(',');
+                            sql += ` AND category_id0 IN (${catIds2.map(() => '?').join(',')})`;
+                            params.push(...catIds2);
+                            let brandIds2 = String(decode_user?.seller_brand).split(',');
+                            sql += ` AND category_id1 IN (${brandIds2.map(() => '?').join(',')}) `;
+                            params.push(...brandIds2);
                         }
                     }
                     //sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
@@ -186,12 +199,12 @@ const sellerProductsCtrl = {
                 manager_type: 'seller',
                 brand_id: '74',
                 root_id: '1'
-            });
+            }, [], params);
 
             //console.log(data.total)
             data = data?.content
 
-            const chunkSize = 50; // 동시에 처리할 개수 제한
+            const chunkSize = 5; // 동시에 처리할 개수 제한 (Too many connections 방지)
 
             const processCreateItem = async (item) => {
                 try {

@@ -39,6 +39,8 @@ const domainCtrl = {
             await res.cookie("dns", token, {
               httpOnly: true,
               maxAge: 60 * 60 * 1000 * 3,
+              sameSite: 'lax',
+              secure: process.env.NODE_ENV !== 'development',
             });
 
             return response(req, res, 100, "success(cache)", brand);
@@ -207,6 +209,8 @@ const domainCtrl = {
       await res.cookie("dns", token, {
         httpOnly: true,
         maxAge: 60 * 60 * 1000 * 3,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV !== 'development',
       });
 
       // 3) 캐시 가능한 경우 Redis에 저장
