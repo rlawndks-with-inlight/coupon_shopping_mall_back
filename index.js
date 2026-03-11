@@ -10,7 +10,7 @@ import bodyParser from "body-parser";
 import http from 'http';
 import https from 'https';
 import scheduleIndex from "./utils.js/schedules/index.js";
-import upload from "./config/multerConfig.js";
+import upload, { sanitizeSvgMiddleware } from "./config/multerConfig.js";
 import { imageFieldList } from "./utils.js/util.js";
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -27,10 +27,19 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '100mb' }));
 app.use(express.json());
 
 app.use(cookieParser());
+
+// SVG 파일을 브라우저에서 직접 실행하지 못하도록 Content-Security-Policy 적용
+app.use('/files', (req, res, next) => {
+  if (req.path.toLowerCase().endsWith('.svg')) {
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  }
+  next();
+});
 app.use('/files', express.static(__dirname + '/files'));
 //app.post('/api/upload/multiple', upload.array('post_file'), uploadMultipleFiles);
 
-app.use('/api', upload.fields(imageFieldList), routes);
+app.use('/api', upload.fields(imageFieldList), sanitizeSvgMiddleware, routes);
 
 app.get('/', (req, res) => {
   console.log("back-end initialized")

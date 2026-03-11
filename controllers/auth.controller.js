@@ -86,8 +86,8 @@ const authCtrl = {
             res.cookie("token", token, {
                 httpOnly: true,
                 maxAge: (60 * 60 * 1000) * 12 * 2,
-                //sameSite: 'none', 
-                //secure: true 
+                sameSite: 'lax',
+                secure: process.env.NODE_ENV !== 'development',
             });
             let check_last_login_time = await updateQuery('users', {
                 last_login_time: returnMoment()
