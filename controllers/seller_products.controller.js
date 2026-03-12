@@ -63,13 +63,12 @@ const sellerProductsCtrl = {
                 seller_id, product_id, seller_price, agent_price
             } = req.body;
             let files = settingFiles(req.files);
-            let obj = {
-                seller_id, product_id, seller_price, agent_price
-            };
-
-            obj = { ...obj, ...files };
-
-            let result = await insertQuery(`${table_name}`, obj);
+            await writePool.query(
+                `INSERT INTO seller_products (seller_id, product_id, seller_price, agent_price, is_delete)
+                 VALUES (?, ?, ?, ?, 0)
+                 ON DUPLICATE KEY UPDATE seller_price=VALUES(seller_price), agent_price=VALUES(agent_price), is_delete=0`,
+                [seller_id, product_id, seller_price, agent_price]
+            );
 
             return response(req, res, 100, "success", {})
         } catch (err) {
