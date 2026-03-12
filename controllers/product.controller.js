@@ -50,7 +50,7 @@ const productCtrl = {
 
             const brandId = decode_dns?.id ?? 0;
             const userLevel = decode_user?.level ?? 0;
-            const isAdminLike = userLevel >= 40;
+            const isAdminLike = userLevel >= 10;
 
             // ─────────────────────────────
             // Redis 캐시 설정 (리스트용)
@@ -373,7 +373,7 @@ const productCtrl = {
             const sellerIdNum = parseInt(seller_id, 10) || 0;
             const isNumericId = !isNaN(parseInt(id, 10));
             const userLevel = decode_user?.level ?? 0;
-            const isAdminLike = userLevel >= 40;
+            const isAdminLike = userLevel >= 10;
 
             if (!brandIdNum) {
                 return response(req, res, -400, '브랜드 정보가 올바르지 않습니다.', false);

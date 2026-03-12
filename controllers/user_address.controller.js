@@ -78,8 +78,8 @@ const userAddressCtrl = {
             sql += ` AND user_id=? `;
             params.push(targetUserId);
 
-            // ✅ Redis 캐시 키 생성
-            const canUseCache = !!redisClient?.isOpen && brandId > 0 && targetUserId > 0;
+            // ✅ Redis 캐시 키 생성 (관리자/셀러는 제외)
+            const canUseCache = !!redisClient?.isOpen && brandId > 0 && targetUserId > 0 && loginLevel < 10;
             const baseKey = `user_addresses:list:${brandId}:${targetUserId}`;
             const cacheKey = `${baseKey}:${JSON.stringify(req.query || {})}`;
 
@@ -125,7 +125,8 @@ const userAddressCtrl = {
 
             const brandId = decode_dns?.id ?? 0;
 
-            const canUseCache = !!redisClient?.isOpen && brandId > 0;
+            const userLevel = decode_user?.level ?? 0;
+            const canUseCache = !!redisClient?.isOpen && brandId > 0 && userLevel < 10;
             const cacheKey = `user_addresses:get:${brandId}:${id}`;
 
             if (canUseCache) {

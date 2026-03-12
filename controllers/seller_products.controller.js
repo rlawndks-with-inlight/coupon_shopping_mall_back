@@ -4,7 +4,7 @@ import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, s
 import { checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-import { readPool } from "../config/db-pool.js";
+import { readPool, writePool } from "../config/db-pool.js";
 
 const table_name = 'seller_products';
 
@@ -213,11 +213,6 @@ const sellerProductsCtrl = {
                     const product_id = item.id;
                     if (!item.product_sale_price || item.product_sale_price == 0) return;
 
-                    const is_exist_product = await readPool.query(
-                        ` SELECT * FROM seller_products WHERE seller_id=? AND product_id=? `,
-                        [seller_id, product_id]
-                    );
-
                     const agent_price = Math.round(
                         Math.floor(
                             Number((item.product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + (decode_user?.seller_trx_fee ?? 0))).toFixed(6))
@@ -230,14 +225,12 @@ const sellerProductsCtrl = {
 
                     if (agent_price == 0 || seller_price == 0) return;
 
-                    if (is_exist_product[0].length > 0) {
-                        const seller_product_id = is_exist_product[0][0].id;
-                        const obj = { seller_price, agent_price, is_delete: 0 };
-                        await updateQuery(`${table_name}`, obj, seller_product_id);
-                    } else {
-                        const obj = { seller_id, product_id, seller_price, agent_price };
-                        await insertQuery(`${table_name}`, obj);
-                    }
+                    await writePool.query(
+                        `INSERT INTO seller_products (seller_id, product_id, seller_price, agent_price, is_delete)
+                         VALUES (?, ?, ?, ?, 0)
+                         ON DUPLICATE KEY UPDATE seller_price=VALUES(seller_price), agent_price=VALUES(agent_price), is_delete=0`,
+                        [seller_id, product_id, seller_price, agent_price]
+                    );
                 } catch (err) {
                     console.error(`상품 처리중 에러 발생: ${item.id}`, err);
                 }

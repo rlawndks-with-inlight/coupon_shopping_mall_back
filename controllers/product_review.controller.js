@@ -85,8 +85,9 @@ const productReviewCtrl = {
             sql += ` AND ${table_name}.product_id=? `;
             params.push(productIdNum);
 
-            // ✅ Redis 캐시 사용
-            const canUseCache = !!redisClient?.isOpen;
+            // ✅ Redis 캐시 사용 (관리자/셀러는 제외)
+            const userLevel = decode_user?.level ?? 0;
+            const canUseCache = !!redisClient?.isOpen && userLevel < 10;
             const cacheKey = canUseCache
                 ? `product_reviews:list:${brandId}:${productIdNum}:${JSON.stringify(req.query || {})}`
                 : null;
@@ -137,7 +138,8 @@ const productReviewCtrl = {
                 return response(req, res, -400, "리뷰 id가 올바르지 않습니다.", false);
             }
 
-            const canUseCache = !!redisClient?.isOpen && brandId > 0;
+            const userLevel2 = decode_user?.level ?? 0;
+            const canUseCache = !!redisClient?.isOpen && brandId > 0 && userLevel2 < 10;
             const cacheKey = canUseCache
                 ? `product_reviews:get:${brandId}:${reviewId}`
                 : null;
