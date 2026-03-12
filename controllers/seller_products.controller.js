@@ -204,16 +204,17 @@ const sellerProductsCtrl = {
             //console.log(data.total)
             data = data?.content
 
+            console.log(`[일괄판매] seller_id=${seller_id}, type=${type}, price_per=${price_per}, 상품수=${data?.length ?? 0}`);
+
             const chunkSize = 5; // 동시에 처리할 개수 제한 (Too many connections 방지)
 
             const processCreateItem = async (item) => {
                 try {
                     const product_id = item.id;
-                    //console.log(item)
                     if (!item.product_sale_price || item.product_sale_price == 0) return;
 
                     const is_exist_product = await readPool.query(
-                        ` SELECT * FROM seller_products WHERE seller_id=? AND product_id=? AND is_delete = 0 `,
+                        ` SELECT * FROM seller_products WHERE seller_id=? AND product_id=? `,
                         [seller_id, product_id]
                     );
 
@@ -230,12 +231,11 @@ const sellerProductsCtrl = {
                     if (agent_price == 0 || seller_price == 0) return;
 
                     if (is_exist_product[0].length > 0) {
-                        const seller_product_id = item.seller_product_id;
-                        const obj = { seller_price };
+                        const seller_product_id = is_exist_product[0][0].id;
+                        const obj = { seller_price, agent_price, is_delete: 0 };
                         await updateQuery(`${table_name}`, obj, seller_product_id);
                     } else {
                         const obj = { seller_id, product_id, seller_price, agent_price };
-                        //console.log(obj)
                         await insertQuery(`${table_name}`, obj);
                     }
                 } catch (err) {
