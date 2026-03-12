@@ -101,11 +101,11 @@ const sellerProductsCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM products `;
             sql += ` LEFT JOIN users AS sellers ON products.user_id=sellers.id `;
-            sql += ` LEFT JOIN seller_products ON products.id=seller_products.product_id AND seller_products.is_delete=0 `
+            sql += ` LEFT JOIN seller_products ON products.id=seller_products.product_id AND seller_products.is_delete=0 AND seller_products.seller_id=? `
+            params.push(seller_id);
 
             let where_sql = ` WHERE products.brand_id=? `;
             params.push(decode_dns?.id ?? 0);
-            //where_sql += ` AND seller_products.seller_id=${seller_id} `;
 
             let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=? AND is_delete=0 ORDER BY sort_idx DESC `;
             let category_groups = await readPool.query(category_group_sql, [decode_dns?.id ?? 0]);
@@ -210,7 +210,7 @@ const sellerProductsCtrl = {
                 try {
                     const product_id = item.id;
                     //console.log(item)
-                    if (item.product_sale_price == 0 || item.seller_price == 0) return;
+                    if (!item.product_sale_price || item.product_sale_price == 0) return;
 
                     const is_exist_product = await readPool.query(
                         ` SELECT * FROM seller_products WHERE seller_id=? AND product_id=? AND is_delete = 0 `,
