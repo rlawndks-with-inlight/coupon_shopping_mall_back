@@ -105,7 +105,8 @@ const utilCtrl = {
             const resultMessage2 = resultDiv.find("tbody tr td:nth-child(5)").text().trim();
 
             console.log(`[unipass] name=${name}, code=${code}, resultMessage1="${resultMessage1}", resultMessage2="${resultMessage2}", raw_html_length=${(result.data || '').length}`);
-            console.log(`[unipass] raw_html_snippet: ${(result.data || '').substring(0, 3000)}`);
+            console.log(`[unipass] raw_html_part1: ${(result.data || '').substring(3000, 6000)}`);
+            console.log(`[unipass] raw_html_part2: ${(result.data || '').substring(6000)}`);
 
             data = { message: `${resultMessage1} : ${resultMessage2}` }
 
