@@ -85,7 +85,7 @@ const utilCtrl = {
 
             const payload = new URLSearchParams({
                 action_type: 'query',
-                chk_data: `${name}/${code}/${phone_num}`
+                chk_data: `${name}/${code}/${phone_num}/`
             }).toString()
 
             const result = await axios.post("https://www.gsiexpress.com/pcc_chk.php", payload, {
@@ -101,8 +101,8 @@ const utilCtrl = {
                 return $(this).text().includes("검증결과");
             }).next("div.panel-body");
 
-            const resultMessage1 = resultDiv.find("tbody tr td:nth-child(4)").text().trim();
-            const resultMessage2 = resultDiv.find("tbody tr td:nth-child(5)").text().trim();
+            const resultMessage1 = resultDiv.find("tbody tr td:nth-child(5)").text().trim();
+            const resultMessage2 = resultDiv.find("tbody tr td:nth-child(6)").text().trim();
 
             console.log(`[unipass] name=${name}, code=${code}, resultMessage1="${resultMessage1}", resultMessage2="${resultMessage2}", raw_html_length=${(result.data || '').length}`);
             console.log(`[unipass] raw_html_part1: ${(result.data || '').substring(3000, 6000)}`);
