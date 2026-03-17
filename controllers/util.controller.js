@@ -104,6 +104,8 @@ const utilCtrl = {
             const resultMessage1 = resultDiv.find("tbody tr td:nth-child(4)").text().trim();
             const resultMessage2 = resultDiv.find("tbody tr td:nth-child(5)").text().trim();
 
+            console.log(`[unipass] name=${name}, code=${code}, resultMessage1="${resultMessage1}", resultMessage2="${resultMessage2}", raw_html_length=${(result.data || '').length}`);
+
             data = { message: `${resultMessage1} : ${resultMessage2}` }
 
             return response(req, res, 100, "success", data)
