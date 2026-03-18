@@ -305,7 +305,6 @@ const productCtrl = {
             /*if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND products.status!=5 `
             }*/
-            console.log(`[product-search] req.query=`, JSON.stringify(req.query));
             let data = await getSelectQueryList(sql, columns, { ...req.query, type: type }, [], params);
             let product_ids = data?.content.map(item => { return item?.id });
             product_ids.unshift(0);
