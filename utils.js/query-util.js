@@ -199,7 +199,6 @@ const settingSelectQueryWhere = (sql_, query, table, find_columns = [], wherePar
         params.push(`${e_dt} 23:59:59`);
     }
     if (search && searchColumns[table]?.length > 0) {
-        console.log(`[search-debug] table=${table}, search="${search}", query_keys=${Object.keys(query).join(',')}`);
         const ftCols = fulltextColumns[table] || [];
         const likeCols = likeOnlyColumns[table] || [];
         const hasFulltext = ftCols.length > 0;
