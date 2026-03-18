@@ -323,9 +323,14 @@ const productCtrl = {
             }*/
             let sub_images = await readPool.query(`SELECT * FROM product_images WHERE product_id IN(${product_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY id ASC`, product_ids)
             sub_images = sub_images[0];
+            // Map으로 그룹핑하여 O(n) 처리
+            const imageMap = new Map();
+            for (const img of sub_images) {
+                if (!imageMap.has(img.product_id)) imageMap.set(img.product_id, []);
+                imageMap.get(img.product_id).push(img);
+            }
             for (var i = 0; i < data?.content.length; i++) {
-                let images = sub_images.filter(item => item?.product_id == data?.content[i]?.id);
-                data.content[i].sub_images = images ?? [];
+                data.content[i].sub_images = imageMap.get(data?.content[i]?.id) ?? [];
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
             }
             //console.log(data)

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import when from 'when';
-import { searchColumns } from './search-columns.js';
+import { searchColumns, fulltextColumns, likeOnlyColumns } from './search-columns.js';
 import { readPool, writePool } from '../config/db-pool.js';
 
 export const insertQuery = async (table, obj) => {
@@ -105,9 +105,9 @@ export const getTableNameBySelectQuery = (sql) => {// select query 가지고 불
     return table;
 }
 export const getSelectQueryList = async (sql_, columns, query, add_sql_list = [], params = []) => {
-    let { page = 1, page_size = 150000, is_asc = 0, order, search = "", s_dt, e_dt, } = query;
+    let { page = 1, page_size = 100, is_asc = 0, order, search = "", s_dt, e_dt, } = query;
     page = parseInt(page) || 1;
-    page_size = parseInt(page_size) || 150000;
+    page_size = Math.min(parseInt(page_size) || 100, 10000);
     let sql = sql_;
     let table = getTableNameBySelectQuery(sql);
     let find_columns = await readPool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND TABLE_SCHEMA=?`, [table, process.env.DB_DATABASE]);
@@ -199,15 +199,35 @@ const settingSelectQueryWhere = (sql_, query, table, find_columns = [], wherePar
         params.push(`${e_dt} 23:59:59`);
     }
     if (search && searchColumns[table]?.length > 0) {
-        sql += ` AND (`
-        for (var i = 0; i < searchColumns[table].length; i++) {
-            if (i > 0) {
-                sql += ' OR '
-            }
-            sql += searchColumns[table][i] + " LIKE ? ";
+        const ftCols = fulltextColumns[table] || [];
+        const likeCols = likeOnlyColumns[table] || [];
+        const hasFulltext = ftCols.length > 0;
+
+        sql += ` AND (`;
+        let conditions = [];
+
+        // FULLTEXT 대상 컬럼: MATCH AGAINST (한 번에 묶어서 처리)
+        if (hasFulltext) {
+            conditions.push(`MATCH(${ftCols.join(',')}) AGAINST(? IN BOOLEAN MODE)`);
+            params.push(search);
+        }
+
+        // JOIN 테이블 등 LIKE 대상 컬럼
+        for (var i = 0; i < likeCols.length; i++) {
+            conditions.push(likeCols[i] + " LIKE ?");
             params.push(`%${search}%`);
         }
-        sql += `)`
+
+        // FULLTEXT 설정 없는 테이블은 기존 LIKE 방식 유지
+        if (!hasFulltext && likeCols.length === 0) {
+            for (var i = 0; i < searchColumns[table].length; i++) {
+                conditions.push(searchColumns[table][i] + " LIKE ?");
+                params.push(`%${search}%`);
+            }
+        }
+
+        sql += conditions.join(' OR ');
+        sql += `)`;
     }
     return { sql, params };
 }
