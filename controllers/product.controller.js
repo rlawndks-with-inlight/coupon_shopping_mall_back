@@ -110,6 +110,7 @@ const productCtrl = {
                 columns.push(`seller_products.seller_id`)
                 if (type == 'seller') {
                     columns.push(`seller_products.seller_price AS product_sale_price `)
+                    columns.push(`COALESCE(seller_products.seller_price, ${table_name}.product_price) AS product_price`)
                     sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=? AND seller_products.is_delete=0 `
                     params.push(seller_id);
                 } else if (manager_type == 'seller') {
@@ -419,6 +420,7 @@ const productCtrl = {
                     `seller_products.id AS seller_product_id`,
                     `seller_products.seller_id`,
                     `seller_products.seller_price AS product_sale_price`,
+                    `COALESCE(seller_products.seller_price, ${table_name}.product_price) AS product_price`,
                     `seller_products.agent_price AS product_agent_price`
                 );
             }
