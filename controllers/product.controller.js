@@ -109,8 +109,7 @@ const productCtrl = {
                 columns.push(`seller_products.id AS seller_product_id`)
                 columns.push(`seller_products.seller_id`)
                 if (type == 'seller') {
-                    columns.push(`seller_products.seller_price AS product_sale_price `)
-                    columns.push(`COALESCE(seller_products.seller_price, ${table_name}.product_price) AS product_price`)
+                    columns.push(`seller_products.seller_price`)
                     sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=? AND seller_products.is_delete=0 `
                     params.push(seller_id);
                 } else if (manager_type == 'seller') {
@@ -331,6 +330,11 @@ const productCtrl = {
             for (var i = 0; i < data?.content.length; i++) {
                 data.content[i].sub_images = imageMap.get(data?.content[i]?.id) ?? [];
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
+                // 셀러몰: seller_price로 product_sale_price, product_price 덮어쓰기
+                if (data.content[i].seller_price != null) {
+                    data.content[i].product_sale_price = data.content[i].seller_price;
+                    data.content[i].product_price = data.content[i].seller_price;
+                }
             }
             //console.log(data)
 
@@ -419,8 +423,7 @@ const productCtrl = {
                 productColumns.push(
                     `seller_products.id AS seller_product_id`,
                     `seller_products.seller_id`,
-                    `seller_products.seller_price AS product_sale_price`,
-                    `COALESCE(seller_products.seller_price, ${table_name}.product_price) AS product_price`,
+                    `seller_products.seller_price`,
                     `seller_products.agent_price AS product_agent_price`
                 );
             }
@@ -480,6 +483,11 @@ const productCtrl = {
             }
 
             let data = productRows[0];
+            // 셀러몰: seller_price로 product_sale_price, product_price 덮어쓰기
+            if (sellerIdNum > 0 && data.seller_price != null) {
+                data.product_sale_price = data.seller_price;
+                data.product_price = data.seller_price;
+            }
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}');
 
             // 이후 쿼리에서 사용할 product id
