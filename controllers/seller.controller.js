@@ -127,7 +127,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num, user_name, user_pw, level, oper_id, seller_trx_fee, seller_point,
+                brand_id, name, phone_num, user_name, user_pw, level, oper_id, seller_trx_fee, seller_trx_fee_type = 0, seller_point,
                 seller_range_u = 0, seller_range_o = 0, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
@@ -136,7 +136,7 @@ const sellerCtrl = {
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
-            if (seller_trx_fee > 1) {
+            if (seller_trx_fee_type == 0 && seller_trx_fee > 1) {
                 return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
             }
             if (seller_point > 1) {
@@ -153,7 +153,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                brand_id, name, phone_num, user_name, user_pw, user_salt, level, oper_id, seller_trx_fee, seller_point,
+                brand_id, name, phone_num, user_name, user_pw, user_salt, level, oper_id, seller_trx_fee, seller_trx_fee_type, seller_point,
                 seller_range_u, seller_range_o, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
@@ -203,13 +203,13 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee, seller_point,
+                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee, seller_trx_fee_type = 0, seller_point,
                 seller_range_u = 0, seller_range_o = 0, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
                 id
             } = req.body;
-            if (seller_trx_fee > 1) {
+            if (seller_trx_fee_type == 0 && seller_trx_fee > 1) {
                 return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
             }
             if (seller_point > 1) {
@@ -223,7 +223,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee, seller_point,
+                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee, seller_trx_fee_type, seller_point,
                 seller_range_u, seller_range_o, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
@@ -236,8 +236,9 @@ const sellerCtrl = {
                 [id]
             );
 
-            let isSellerBrandChanged = sellerData[0].seller_brand !== seller_brand;
-            let isSellerCategoryChanged = sellerData[0].seller_category !== seller_category;
+            const normalize = (val) => (val ?? '').toString().replace(/\s/g, '').split(',').filter(Boolean).sort().join(',');
+            let isSellerBrandChanged = normalize(sellerData[0].seller_brand) !== normalize(seller_brand);
+            let isSellerCategoryChanged = normalize(sellerData[0].seller_category) !== normalize(seller_category);
 
             if (isSellerBrandChanged || isSellerCategoryChanged) {
                 await writePool.query(

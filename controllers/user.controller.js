@@ -123,8 +123,8 @@ const userCtrl = {
                 brand_id, user_name, user_pw, name, nickname, level = 0, phone_num, note,
                 contract_img, bsin_lic_img, company_name, business_num,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point,
-                oper_id, oper_trx_fee
+                seller_trx_fee, seller_trx_fee_type = 0, seller_point,
+                oper_id, oper_trx_fee, oper_trx_fee_type = 0
             } = req.body;
             let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0`, [user_name, brand_id]);
             if (is_exist_user[0].length > 0) {
@@ -133,7 +133,7 @@ const userCtrl = {
             if (level > 0 && decode_user?.level < level) {
                 return lowLevelException(req, res);
             }
-            if (seller_trx_fee > 1) {
+            if (seller_trx_fee_type == 0 && seller_trx_fee > 1) {
                 return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
             }
             if (seller_point > 1) {
@@ -148,8 +148,8 @@ const userCtrl = {
                 brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, note,
                 contract_img, bsin_lic_img, company_name, business_num,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point,
-                oper_id, oper_trx_fee
+                seller_trx_fee, seller_trx_fee_type, seller_point,
+                oper_id, oper_trx_fee, oper_trx_fee_type
             };
             //console.log(obj)
             if (level >= 15) {
@@ -182,14 +182,14 @@ const userCtrl = {
                 brand_id, user_name, name, nickname, level, phone_num, note, id,
                 company_name, business_num, contract_img, bsin_lic_img,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point,
-                oper_id, oper_trx_fee,
+                seller_trx_fee, seller_trx_fee_type = 0, seller_point,
+                oper_id, oper_trx_fee, oper_trx_fee_type = 0,
             } = req.body;
             let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0 AND id!=?`, [user_name, brand_id, id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
-            if (seller_trx_fee > 1) {
+            if (seller_trx_fee_type == 0 && seller_trx_fee > 1) {
                 return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
             }
             if (seller_point > 1) {
@@ -202,8 +202,8 @@ const userCtrl = {
                 brand_id, user_name, name, nickname, level, phone_num, note,
                 company_name, business_num, contract_img, bsin_lic_img,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
-                seller_trx_fee, seller_point,
-                oper_id, oper_trx_fee
+                seller_trx_fee, seller_trx_fee_type, seller_point,
+                oper_id, oper_trx_fee, oper_trx_fee_type
             };
 
             if (level >= 15) {

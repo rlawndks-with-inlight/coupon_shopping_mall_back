@@ -32,7 +32,7 @@ const sellerAdjustmentsCtrl = {
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
+                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - (CASE WHEN COALESCE(ag.oper_trx_fee_type,0)=1 THEN (CASE WHEN COALESCE(sl.seller_trx_fee_type,0)=1 THEN t.agent_amount - sl.seller_trx_fee ELSE t.agent_amount * (1/(1+sl.seller_trx_fee)) END) - ag.oper_trx_fee ELSE (CASE WHEN COALESCE(sl.seller_trx_fee_type,0)=1 THEN t.agent_amount - sl.seller_trx_fee ELSE t.agent_amount * (1/(1+sl.seller_trx_fee)) END) * (1/(1+ag.oper_trx_fee)) END) ) AS total_agent
                 FROM users tp
                 LEFT JOIN users ag
                 ON ag.oper_id = tp.id AND ag.level = 15
@@ -97,7 +97,7 @@ const sellerAdjustmentsCtrl = {
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
+                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - (CASE WHEN COALESCE(ag.oper_trx_fee_type,0)=1 THEN (CASE WHEN COALESCE(sl.seller_trx_fee_type,0)=1 THEN t.agent_amount - sl.seller_trx_fee ELSE t.agent_amount * (1/(1+sl.seller_trx_fee)) END) - ag.oper_trx_fee ELSE (CASE WHEN COALESCE(sl.seller_trx_fee_type,0)=1 THEN t.agent_amount - sl.seller_trx_fee ELSE t.agent_amount * (1/(1+sl.seller_trx_fee)) END) * (1/(1+ag.oper_trx_fee)) END) ) AS total_agent
                 FROM users ag
                 LEFT JOIN users sl
                 ON sl.oper_id = ag.id AND sl.level = 10
@@ -134,7 +134,7 @@ const sellerAdjustmentsCtrl = {
                 SUM(t.amount) AS total_amount,
                 SUM(t.amount * 0.1) AS total_card,
                 SUM((t.amount * 0.9) - t.agent_amount) AS total_seller,
-                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - ((t.agent_amount * (1 / (1 + sl.seller_trx_fee))) * (1 / (1 + ag.oper_trx_fee))) ) AS total_agent
+                SUM(t.amount - ((t.amount * 0.9) - t.agent_amount) - (CASE WHEN COALESCE(ag.oper_trx_fee_type,0)=1 THEN (CASE WHEN COALESCE(sl.seller_trx_fee_type,0)=1 THEN t.agent_amount - sl.seller_trx_fee ELSE t.agent_amount * (1/(1+sl.seller_trx_fee)) END) - ag.oper_trx_fee ELSE (CASE WHEN COALESCE(sl.seller_trx_fee_type,0)=1 THEN t.agent_amount - sl.seller_trx_fee ELSE t.agent_amount * (1/(1+sl.seller_trx_fee)) END) * (1/(1+ag.oper_trx_fee)) END) ) AS total_agent
                 FROM users ag
                 LEFT JOIN users sl
                 ON sl.oper_id = ag.id AND sl.level = 10

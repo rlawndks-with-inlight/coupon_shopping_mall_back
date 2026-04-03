@@ -96,6 +96,7 @@ const domainCtrl = {
         "dns",
         "oper_id",
         "seller_trx_fee",
+        "seller_trx_fee_type",
         "seller_point",
         "seller_logo_img",
         "seller_color",

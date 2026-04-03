@@ -74,6 +74,7 @@ const authCtrl = {
                 bsin_lic_img: user.bsin_lic_img,
                 oper_id: user.oper_id,
                 seller_trx_fee: user.seller_trx_fee,
+                seller_trx_fee_type: user.seller_trx_fee_type ?? 0,
                 seller_range_u: user.seller_range_u,
                 seller_range_o: user.seller_range_o,
                 seller_brand: user.seller_brand,
@@ -82,6 +83,7 @@ const authCtrl = {
                 seller_point: user.seller_point,
 
                 oper_trx_fee: user.level == 10 ? agent.oper_trx_fee : user.oper_trx_fee,
+                oper_trx_fee_type: user.level == 10 ? (agent.oper_trx_fee_type ?? 0) : (user.oper_trx_fee_type ?? 0),
             })
             res.cookie("token", token, {
                 httpOnly: true,
