@@ -17,10 +17,15 @@ const phoneRegistrationCtrl = {
 
             let columns = [
                 `${table_name}.*`,
-                `users.dns`
+                `sellers.dns`,
+                `registered_user.id AS registered_user_id`,
+                `registered_user.user_name AS registered_user_name`,
+                `registered_user.name AS registered_name`,
+                `registered_user.created_at AS registered_at`
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` LEFT JOIN users ON ${table_name}.seller_id=users.id `
+            sql += ` LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id `
+            sql += ` LEFT JOIN users AS registered_user ON ${table_name}.phone_number=registered_user.phone_num AND ${table_name}.brand_id=registered_user.brand_id AND registered_user.is_delete=0 `
 
             let whereParams = [];
             if (type == 'manager') {
