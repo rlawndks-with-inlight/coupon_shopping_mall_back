@@ -212,11 +212,16 @@ const sellerProductsCtrl = {
                     const product_id = item.id;
                     if (!item.product_sale_price || item.product_sale_price == 0) return;
 
-                    const agent_price = Math.round(
-                        Math.floor(
-                            Number((item.product_sale_price * (1 + (decode_user?.oper_trx_fee ?? 0)) * (1 + (decode_user?.seller_trx_fee ?? 0))).toFixed(6))
-                        ) / 1000
-                    ) * 1000;
+                    const basePrice = item.product_sale_price;
+                    const operFee = decode_user?.oper_trx_fee ?? 0;
+                    const sellerFee = decode_user?.seller_trx_fee ?? 0;
+                    const operFeeType = decode_user?.oper_trx_fee_type ?? 0;
+                    const sellerFeeType = decode_user?.seller_trx_fee_type ?? 0;
+
+                    const afterOper = operFeeType == 1 ? basePrice + operFee : basePrice * (1 + operFee);
+                    const afterSeller = sellerFeeType == 1 ? afterOper + sellerFee : afterOper * (1 + sellerFee);
+
+                    const agent_price = Math.round(Math.floor(Number(afterSeller.toFixed(6))) / 1000) * 1000;
 
                     const seller_price = (price_per != 0
                         ? Math.round((agent_price * (1 + price_per / 100)) / 1000) * 1000

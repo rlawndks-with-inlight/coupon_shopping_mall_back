@@ -169,6 +169,7 @@ const payCtrl = {
       }*/
 
       for (var i = 0; i < products.length; i++) {
+        const matchedSeller = _.find(seller_data, { id: parseInt(products[i]?.seller_id) });
         insert_item_data.push([
           trans_id,
           parseInt(products[i]?.id),
@@ -178,17 +179,15 @@ const payCtrl = {
           JSON.stringify(products[i]?.groups ?? []),
           (isNaN(products[i]?.delivery_fee) ? 0 : products[i]?.delivery_fee),
           parseInt(products[i]?.seller_id ?? 0),
-          parseFloat(
-            _.find(seller_data, { id: parseInt(products[i]?.seller_id) })
-              ?.seller_trx_fee ?? 0
-          ),
+          parseFloat(matchedSeller?.seller_trx_fee ?? 0),
+          parseInt(matchedSeller?.seller_trx_fee_type ?? 0),
         ]);
       }
       //console.log(req.body)
 
       if (insert_item_data.length > 0) {
         let insert_item_result = await writePool.query(
-          `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
+          `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee, seller_trx_fee_type) VALUES ?`,
           [insert_item_data]
         );
       }
@@ -544,11 +543,12 @@ const asdsadsad = async () => {
           result_products[j]?.delivery_fee,
           0,
           0,
+          0,
         ]);
       }
       if (insert_item_data.length > 0) {
         let insert_item_result = await writePool.query(
-          `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee) VALUES ?`,
+          `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee, seller_trx_fee_type) VALUES ?`,
           [insert_item_data]
         );
       }
