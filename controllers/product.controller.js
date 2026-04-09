@@ -110,10 +110,12 @@ const productCtrl = {
                 columns.push(`seller_products.seller_id`)
                 if (type == 'seller') {
                     columns.push(`seller_products.seller_price`)
+                    columns.push(`seller_products.agent_price`)
                     sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.seller_id=? AND seller_products.is_delete=0 `
                     params.push(seller_id);
                 } else if (manager_type == 'seller') {
                     columns.push(`seller_products.seller_price`)
+                    columns.push(`seller_products.agent_price`)
                     sql += ` LEFT JOIN seller_products ON ${table_name}.id=seller_products.product_id AND seller_products.is_delete=0 AND seller_products.seller_id = ?`
                     params.push(decode_user?.id);
                 }
@@ -330,8 +332,9 @@ const productCtrl = {
             for (var i = 0; i < data?.content.length; i++) {
                 data.content[i].sub_images = imageMap.get(data?.content[i]?.id) ?? [];
                 data.content[i].lang_obj = JSON.parse(data.content[i]?.lang_obj ?? '{}');
-                // 셀러몰: seller_price로 product_sale_price, product_price 덮어쓰기
-                if (data.content[i].seller_price != null) {
+                // 셀러몰 프론트(type=='seller'): seller_price로 product_sale_price, product_price 덮어쓰기
+                // 관리자 페이지(manager_type=='seller')에서는 원본 유지
+                if (type == 'seller' && data.content[i].seller_price != null) {
                     data.content[i].product_sale_price = data.content[i].seller_price;
                     data.content[i].product_price = data.content[i].seller_price;
                 }
