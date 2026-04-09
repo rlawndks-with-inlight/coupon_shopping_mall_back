@@ -28,6 +28,24 @@ app.use(express.json());
 
 app.use(cookieParser());
 
+// 한글 자소 분리(NFD) → 조합형(NFC) 정규화 미들웨어
+const normalizeNFC = (obj) => {
+  if (!obj || typeof obj !== 'object') return obj;
+  for (const key of Object.keys(obj)) {
+    if (typeof obj[key] === 'string') {
+      obj[key] = obj[key].normalize('NFC');
+    } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+      normalizeNFC(obj[key]);
+    }
+  }
+  return obj;
+};
+app.use((req, res, next) => {
+  if (req.body) normalizeNFC(req.body);
+  if (req.query) normalizeNFC(req.query);
+  next();
+});
+
 // SVG 파일을 브라우저에서 직접 실행하지 못하도록 Content-Security-Policy 적용
 app.use('/files', (req, res, next) => {
   if (req.path.toLowerCase().endsWith('.svg')) {

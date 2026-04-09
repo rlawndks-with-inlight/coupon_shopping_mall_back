@@ -63,6 +63,9 @@ const sellerProductsCtrl = {
                 seller_id, product_id, seller_price, agent_price
             } = req.body;
             let files = settingFiles(req.files);
+            if (Number(seller_price) < Number(agent_price)) {
+                return response(req, res, -100, "본사 가격보다 낮게 등록할 수 없습니다.", false);
+            }
             await writePool.query(
                 `INSERT INTO seller_products (seller_id, product_id, seller_price, agent_price, is_delete)
                  VALUES (?, ?, ?, ?, 0)
