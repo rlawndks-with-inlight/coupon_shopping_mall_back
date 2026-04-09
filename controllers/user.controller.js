@@ -4,7 +4,7 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-import { readPool } from "../config/db-pool.js";
+import { readPool, writePool } from "../config/db-pool.js";
 const table_name = 'users';
 
 const userCtrl = {
@@ -213,8 +213,49 @@ const userCtrl = {
                 obj = { ...obj, ...files };
             }
 
-            //console.log('123')
-            //obj = { ...obj, ...files };
+            // 영업자(level>=15) 수수료 변경 시 하위 셀러들의 seller_products 재계산
+            if (level >= 15 && (oper_trx_fee !== undefined || oper_trx_fee_type !== undefined)) {
+                let [oldUserData] = await readPool.query(
+                    `SELECT oper_trx_fee, oper_trx_fee_type FROM ${table_name} WHERE id = ?`, [id]
+                );
+                const oldOperFee = parseFloat(oldUserData?.[0]?.oper_trx_fee ?? 0);
+                const oldOperFeeType = parseInt(oldUserData?.[0]?.oper_trx_fee_type ?? 0);
+                const newOperFee = parseFloat(oper_trx_fee ?? 0);
+                const newOperFeeType = parseInt(oper_trx_fee_type ?? 0);
+
+                if (oldOperFee !== newOperFee || oldOperFeeType !== newOperFeeType) {
+                    // 이 영업자 하위의 모든 셀러 조회
+                    let [sellers] = await readPool.query(
+                        `SELECT id, seller_trx_fee, seller_trx_fee_type FROM ${table_name} WHERE oper_id = ? AND level = 10 AND is_delete = 0`, [id]
+                    );
+                    for (const seller of sellers) {
+                        let [sellerProducts] = await readPool.query(
+                            `SELECT sp.id, sp.seller_price, sp.agent_price, p.product_sale_price
+                             FROM seller_products sp
+                             LEFT JOIN products p ON sp.product_id = p.id
+                             WHERE sp.seller_id = ? AND sp.is_delete = 0`,
+                            [seller.id]
+                        );
+                        for (const sp of sellerProducts) {
+                            if (!sp.product_sale_price || sp.product_sale_price == 0) continue;
+                            const margin = sp.seller_price - sp.agent_price;
+                            const basePrice = sp.product_sale_price;
+                            const afterOper = newOperFeeType == 1 ? basePrice + newOperFee : basePrice * (1 + newOperFee);
+                            const sellerFee = parseFloat(seller.seller_trx_fee ?? 0);
+                            const sellerFeeType = parseInt(seller.seller_trx_fee_type ?? 0);
+                            const afterSeller = sellerFeeType == 1 ? afterOper + sellerFee : afterOper * (1 + sellerFee);
+                            const newAgentPrice = Math.round(Math.floor(Number(afterSeller.toFixed(6))) / 1000) * 1000;
+                            const newSellerPrice = newAgentPrice + margin;
+                            const finalSellerPrice = newSellerPrice >= newAgentPrice ? newSellerPrice : newAgentPrice;
+                            await writePool.query(
+                                `UPDATE seller_products SET agent_price = ?, seller_price = ? WHERE id = ?`,
+                                [newAgentPrice, finalSellerPrice, sp.id]
+                            );
+                        }
+                    }
+                }
+            }
+
             let result = await updateQuery(`${table_name}`, obj, id);
             return response(req, res, 100, "success", {})
         } catch (err) {

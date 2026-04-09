@@ -232,9 +232,16 @@ const sellerCtrl = {
             obj = { ...obj, ...files };
 
             let [sellerData] = await writePool.query(
-                `SELECT seller_brand, seller_category FROM ${table_name} WHERE id = ?`,
+                `SELECT seller_brand, seller_category, seller_trx_fee, seller_trx_fee_type, oper_id FROM ${table_name} WHERE id = ?`,
                 [id]
             );
+            // 영업자의 기존 수수료도 조회
+            let oldOper = sellerData[0];
+            let [agentData] = await readPool.query(
+                `SELECT oper_trx_fee, oper_trx_fee_type FROM ${table_name} WHERE id = ?`,
+                [oper_id || oldOper.oper_id || 0]
+            );
+            let agent = agentData?.[0] ?? {};
 
             const normalize = (val) => (val ?? '').toString().replace(/\s/g, '').split(',').filter(Boolean).sort().join(',');
             let isSellerBrandChanged = normalize(sellerData[0].seller_brand) !== normalize(seller_brand);
@@ -245,6 +252,41 @@ const sellerCtrl = {
                     `UPDATE seller_products SET is_delete = 1 WHERE seller_id = ?`,
                     [id]
                 );
+            }
+
+            // 수수료 변경 시 기존 seller_products 가격 재계산
+            const oldSellerFee = parseFloat(sellerData[0].seller_trx_fee ?? 0);
+            const oldSellerFeeType = parseInt(sellerData[0].seller_trx_fee_type ?? 0);
+            const newSellerFee = parseFloat(seller_trx_fee ?? 0);
+            const newSellerFeeType = parseInt(seller_trx_fee_type ?? 0);
+
+            if (oldSellerFee !== newSellerFee || oldSellerFeeType !== newSellerFeeType) {
+                // 해당 셀러의 모든 seller_products 조회
+                let [sellerProducts] = await readPool.query(
+                    `SELECT sp.id, sp.product_id, sp.seller_price, sp.agent_price, p.product_sale_price
+                     FROM seller_products sp
+                     LEFT JOIN products p ON sp.product_id = p.id
+                     WHERE sp.seller_id = ? AND sp.is_delete = 0`,
+                    [id]
+                );
+                for (const sp of sellerProducts) {
+                    if (!sp.product_sale_price || sp.product_sale_price == 0) continue;
+                    const margin = sp.seller_price - sp.agent_price; // 기존 마진 보존
+                    // 새 agent_price 계산
+                    const basePrice = sp.product_sale_price;
+                    const operFee = parseFloat(agent?.oper_trx_fee ?? 0);
+                    const operFeeType = parseInt(agent?.oper_trx_fee_type ?? 0);
+                    const afterOper = operFeeType == 1 ? basePrice + operFee : basePrice * (1 + operFee);
+                    const afterSeller = newSellerFeeType == 1 ? afterOper + newSellerFee : afterOper * (1 + newSellerFee);
+                    const newAgentPrice = Math.round(Math.floor(Number(afterSeller.toFixed(6))) / 1000) * 1000;
+                    const newSellerPrice = newAgentPrice + margin;
+                    // seller_price가 agent_price보다 낮아지지 않도록
+                    const finalSellerPrice = newSellerPrice >= newAgentPrice ? newSellerPrice : newAgentPrice;
+                    await writePool.query(
+                        `UPDATE seller_products SET agent_price = ?, seller_price = ? WHERE id = ?`,
+                        [newAgentPrice, finalSellerPrice, sp.id]
+                    );
+                }
             }
 
             let result = await updateQuery(`${table_name}`, obj, id);
