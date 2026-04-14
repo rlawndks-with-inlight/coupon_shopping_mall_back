@@ -269,6 +269,8 @@ const sellerCtrl = {
                      WHERE sp.seller_id = ? AND sp.is_delete = 0`,
                     [id]
                 );
+
+                let bulkUpdates = [];
                 for (const sp of sellerProducts) {
                     if (!sp.product_sale_price || sp.product_sale_price == 0) continue;
                     const margin = sp.seller_price - sp.agent_price; // 기존 마진 보존
@@ -282,9 +284,21 @@ const sellerCtrl = {
                     const newSellerPrice = newAgentPrice + margin;
                     // seller_price가 agent_price보다 낮아지지 않도록
                     const finalSellerPrice = newSellerPrice >= newAgentPrice ? newSellerPrice : newAgentPrice;
+                    bulkUpdates.push({ id: sp.id, agent_price: newAgentPrice, seller_price: finalSellerPrice });
+                }
+
+                // 벌크 UPDATE: CASE WHEN으로 한 번에 (파라미터화)
+                if (bulkUpdates.length > 0) {
+                    let ids = bulkUpdates.map(u => u.id);
+                    let agentCase = bulkUpdates.map(() => `WHEN ? THEN ?`).join(' ');
+                    let sellerCase = bulkUpdates.map(() => `WHEN ? THEN ?`).join(' ');
+                    let params = [];
+                    for (const u of bulkUpdates) { params.push(u.id, u.agent_price); }
+                    for (const u of bulkUpdates) { params.push(u.id, u.seller_price); }
+                    params.push(...ids);
                     await writePool.query(
-                        `UPDATE seller_products SET agent_price = ?, seller_price = ? WHERE id = ?`,
-                        [newAgentPrice, finalSellerPrice, sp.id]
+                        `UPDATE seller_products SET agent_price = CASE id ${agentCase} END, seller_price = CASE id ${sellerCase} END WHERE id IN (${ids.map(() => '?').join(',')})`,
+                        params
                     );
                 }
             }

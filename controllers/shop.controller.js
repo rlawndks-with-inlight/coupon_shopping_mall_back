@@ -9,6 +9,7 @@ import productFaqCtrl from "./product_faq.controller.js";
 import _ from "lodash";
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
+import { redisClient } from "../config/redis-client.js";
 
 const shopCtrl = {
     setting: async (req, res, next) => {
@@ -18,6 +19,18 @@ const shopCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { is_manager = 0 } = req.query;
+
+            // Redis 캐시 체크 (일반 유저만, 관리자는 항상 최신 데이터)
+            const isAdminLike = decode_user && decode_user?.level >= 10;
+            const canUseCache = !!redisClient?.isOpen && !isAdminLike && is_manager != 1 && decode_dns?.id > 0;
+            if (canUseCache) {
+                const cacheKey = `shop:setting:${decode_dns.id}:${decode_user?.id ?? 0}`;
+                const cached = await redisClient.get(cacheKey);
+                if (cached) {
+                    return response(req, res, 100, "success(cache)", JSON.parse(cached));
+                }
+            }
+
             let return_moment = returnMoment();
             let brand_column = [
                 'shop_obj',
@@ -319,10 +332,17 @@ const shopCtrl = {
             //메인obj처리
             brand_data['shop_obj'] = await finallySettingMainObj(brand_data['shop_obj'], data);
             brand_data['blog_obj'] = await finallySettingMainObj(brand_data['blog_obj'], data);
-            return response(req, res, 100, "success", {
-                ...data,
-                ...brand_data,
-            });
+            let responseData = { ...data, ...brand_data };
+
+            // Redis 캐시 저장 (180초 TTL)
+            if (canUseCache) {
+                const cacheKey = `shop:setting:${decode_dns.id}:${decode_user?.id ?? 0}`;
+                try {
+                    await redisClient.set(cacheKey, JSON.stringify(responseData), { EX: 180 });
+                } catch (e) { /* Redis 실패해도 정상 응답 */ }
+            }
+
+            return response(req, res, 100, "success", responseData);
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
