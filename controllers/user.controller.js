@@ -228,16 +228,24 @@ const userCtrl = {
                     let [sellers] = await readPool.query(
                         `SELECT id, seller_trx_fee, seller_trx_fee_type FROM ${table_name} WHERE oper_id = ? AND level = 10 AND is_delete = 0`, [id]
                     );
-                    for (const seller of sellers) {
-                        let [sellerProducts] = await readPool.query(
-                            `SELECT sp.id, sp.seller_price, sp.agent_price, p.product_sale_price
+                    if (sellers.length > 0) {
+                        let sellerIds = sellers.map(s => s.id);
+                        let sellerMap = {};
+                        for (const s of sellers) sellerMap[s.id] = s;
+
+                        // 벌크 조회: 모든 셀러의 상품을 한 번에
+                        let [allProducts] = await readPool.query(
+                            `SELECT sp.id, sp.seller_id, sp.seller_price, sp.agent_price, p.product_sale_price
                              FROM seller_products sp
                              LEFT JOIN products p ON sp.product_id = p.id
-                             WHERE sp.seller_id = ? AND sp.is_delete = 0`,
-                            [seller.id]
+                             WHERE sp.seller_id IN (${sellerIds.map(() => '?').join(',')}) AND sp.is_delete = 0`,
+                            sellerIds
                         );
-                        for (const sp of sellerProducts) {
+
+                        let bulkUpdates = [];
+                        for (const sp of allProducts) {
                             if (!sp.product_sale_price || sp.product_sale_price == 0) continue;
+                            const seller = sellerMap[sp.seller_id];
                             const margin = sp.seller_price - sp.agent_price;
                             const basePrice = sp.product_sale_price;
                             const afterOper = newOperFeeType == 1 ? basePrice + newOperFee : basePrice * (1 + newOperFee);
@@ -247,9 +255,21 @@ const userCtrl = {
                             const newAgentPrice = Math.round(Math.floor(Number(afterSeller.toFixed(6))) / 1000) * 1000;
                             const newSellerPrice = newAgentPrice + margin;
                             const finalSellerPrice = newSellerPrice >= newAgentPrice ? newSellerPrice : newAgentPrice;
+                            bulkUpdates.push({ id: sp.id, agent_price: newAgentPrice, seller_price: finalSellerPrice });
+                        }
+
+                        // 벌크 UPDATE: CASE WHEN으로 한 번에 (파라미터화)
+                        if (bulkUpdates.length > 0) {
+                            let ids = bulkUpdates.map(u => u.id);
+                            let agentCase = bulkUpdates.map(() => `WHEN ? THEN ?`).join(' ');
+                            let sellerCase = bulkUpdates.map(() => `WHEN ? THEN ?`).join(' ');
+                            let params = [];
+                            for (const u of bulkUpdates) { params.push(u.id, u.agent_price); }
+                            for (const u of bulkUpdates) { params.push(u.id, u.seller_price); }
+                            params.push(...ids);
                             await writePool.query(
-                                `UPDATE seller_products SET agent_price = ?, seller_price = ? WHERE id = ?`,
-                                [newAgentPrice, finalSellerPrice, sp.id]
+                                `UPDATE seller_products SET agent_price = CASE id ${agentCase} END, seller_price = CASE id ${sellerCase} END WHERE id IN (${ids.map(() => '?').join(',')})`,
+                                params
                             );
                         }
                     }

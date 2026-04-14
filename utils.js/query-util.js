@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import when from 'when';
 import { searchColumns, fulltextColumns, likeOnlyColumns } from './search-columns.js';
 import { readPool, writePool } from '../config/db-pool.js';
 
@@ -159,17 +158,14 @@ export const getSelectQueryList = async (sql_, columns, query, add_sql_list = []
 
     //console.log(sql_list)
 
-    for (var i = 0; i < sql_list.length; i++) {
-        result_list.push({
-            table: sql_list[i].table,
-            content: (await readPool.query(sql_list[i].sql, sql_list[i].params))
-        });
-    }
-    //console.log(result_list)
-    for (var i = 0; i < result_list.length; i++) {
-        await result_list[i];
-    }
-    let result = (await when(result_list));
+    let promises = sql_list.map((item) =>
+        readPool.query(item.sql, item.params).then((content) => ({
+            table: item.table,
+            content,
+        }))
+    );
+    result_list = await Promise.all(promises);
+    let result = result_list;
     let obj = {
         page,
         page_size,
@@ -239,20 +235,18 @@ const settingSelectQueryObj = (obj_) => {
     return obj;
 }
 export const getMultipleQueryByWhen = async (sql_list = [], is_list) => {
-    let result_list = [];
-    for (var i = 0; i < sql_list.length; i++) {
-        result_list.push({
-            table: sql_list[i].table,
-            content: (await writePool.query(sql_list[i].sql, sql_list[i]?.data ?? sql_list[i]?.params ?? []))
-        });
-    }
-    for (var i = 0; i < result_list.length; i++) {
-        await result_list[i];
-    }
-    let result = (await when(result_list));
+    let promises = sql_list.map((item) => {
+        const sql = (item.sql || '').trimStart().toUpperCase();
+        const pool = (sql.startsWith('SELECT') || sql.startsWith('WITH')) ? readPool : writePool;
+        return pool.query(item.sql, item?.data ?? item?.params ?? []).then((content) => ({
+            table: item.table,
+            content,
+        }));
+    });
+    let result_list = await Promise.all(promises);
     let data = {};
-    for (var i = 0; i < result.length; i++) {
-        data[result[i].table] = result[i]?.content[0]
+    for (var i = 0; i < result_list.length; i++) {
+        data[result_list[i].table] = result_list[i]?.content[0]
     }
     return data;
 }
