@@ -25,6 +25,9 @@ const app = express();
 
 app.use(compression());
 app.use(cors());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+app.use(cookieParser());
 
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -34,11 +37,6 @@ const apiLimiter = rateLimit({
     message: { result: -429, message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', data: false },
 });
 app.use('/api', apiLimiter);
-
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
-
-app.use(cookieParser());
 // express.json() 제거됨 - bodyParser.json()이 동일 역할 수행
 
 // 한글 자소 분리(NFD) → 조합형(NFC) 정규화 미들웨어
