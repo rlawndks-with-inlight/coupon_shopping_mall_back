@@ -40,6 +40,9 @@ const shopCtrl = {
 
             let brand_data = await readPool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=?`, [decode_dns?.id ?? 0]);
             brand_data = brand_data[0][0];
+            if (!brand_data) {
+                return response(req, res, -100, "브랜드 정보를 찾을 수 없습니다.", false);
+            }
             brand_data['shop_obj'] = JSON.parse(brand_data?.shop_obj ?? '[]');
             brand_data['blog_obj'] = JSON.parse(brand_data?.blog_obj ?? '[]');
             let product_ids = [...(await settingMainObj(brand_data['shop_obj'])).product_ids, ...(await settingMainObj(brand_data['blog_obj'])).product_ids,];
