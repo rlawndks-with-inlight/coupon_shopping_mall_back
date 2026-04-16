@@ -286,11 +286,14 @@ const brandCtrl = {
         shop_obj: lang_setting?.shop_obj,
       }, id);
 
-      // 브랜드 설정 변경 시 shop:setting 캐시 삭제
+      // 브랜드 설정 변경 시 캐시 삭제 (shop:setting + domain)
       if (redisClient?.isOpen) {
         try {
           for await (const key of redisClient.scanIterator({ MATCH: `shop:setting:${id}:*`, COUNT: 100 })) {
             await redisClient.del(key);
+          }
+          if (dns) {
+            await redisClient.del(`domain:${dns}`);
           }
         } catch (e) { /* Redis 실패해도 정상 응답 */ }
       }
