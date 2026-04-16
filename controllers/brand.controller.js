@@ -289,10 +289,7 @@ const brandCtrl = {
       // 브랜드 설정 변경 시 캐시 삭제 (shop:setting + domain)
       if (redisClient?.isOpen) {
         try {
-          for await (const key of redisClient.scanIterator({ MATCH: `shop:setting:${id}:*`, COUNT: 100 })) {
-            await redisClient.del(key);
-          }
-          // domain 캐시 삭제: req.body의 dns가 없으면 DB에서 조회
+          // domain 캐시 삭제
           let brandDns = dns;
           if (!brandDns) {
             let [brandRow] = await readPool.query(`SELECT dns FROM ${table_name} WHERE id=?`, [id]);
@@ -301,7 +298,12 @@ const brandCtrl = {
           if (brandDns) {
             await redisClient.del(`domain:${brandDns}`);
           }
-        } catch (e) { console.log('Redis cache clear error:', e.message, 'dns:', dns, 'id:', id); }
+          // shop:setting 캐시 삭제
+          let keys = await redisClient.keys(`shop:setting:${id}:*`);
+          if (keys.length > 0) {
+            await redisClient.del(keys);
+          }
+        } catch (e) { console.log('Redis cache clear error:', e.message); }
       }
 
       return response(req, res, 100, "success", {});
