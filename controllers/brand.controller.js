@@ -5,6 +5,7 @@ import {
   insertQuery,
   updateQuery,
 } from "../utils.js/query-util.js";
+import { redisClient } from "../config/redis-client.js";
 import {
   checkDns,
   checkLevel,
@@ -284,6 +285,16 @@ const brandCtrl = {
         ...obj,
         shop_obj: lang_setting?.shop_obj,
       }, id);
+
+      // 브랜드 설정 변경 시 shop:setting 캐시 삭제
+      if (redisClient?.isOpen) {
+        try {
+          for await (const key of redisClient.scanIterator({ MATCH: `shop:setting:${id}:*`, COUNT: 100 })) {
+            await redisClient.del(key);
+          }
+        } catch (e) { /* Redis 실패해도 정상 응답 */ }
+      }
+
       return response(req, res, 100, "success", {});
     } catch (err) {
       console.log(err);
