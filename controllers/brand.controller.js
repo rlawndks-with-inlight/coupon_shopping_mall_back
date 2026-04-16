@@ -301,7 +301,7 @@ const brandCtrl = {
           if (brandDns) {
             await redisClient.del(`domain:${brandDns}`);
           }
-        } catch (e) { /* Redis 실패해도 정상 응답 */ }
+        } catch (e) { console.log('Redis cache clear error:', e.message, 'dns:', dns, 'id:', id); }
       }
 
       return response(req, res, 100, "success", {});
