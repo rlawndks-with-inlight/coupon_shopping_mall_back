@@ -292,8 +292,14 @@ const brandCtrl = {
           for await (const key of redisClient.scanIterator({ MATCH: `shop:setting:${id}:*`, COUNT: 100 })) {
             await redisClient.del(key);
           }
-          if (dns) {
-            await redisClient.del(`domain:${dns}`);
+          // domain 캐시 삭제: req.body의 dns가 없으면 DB에서 조회
+          let brandDns = dns;
+          if (!brandDns) {
+            let [brandRow] = await readPool.query(`SELECT dns FROM ${table_name} WHERE id=?`, [id]);
+            brandDns = brandRow?.[0]?.dns;
+          }
+          if (brandDns) {
+            await redisClient.del(`domain:${brandDns}`);
           }
         } catch (e) { /* Redis 실패해도 정상 응답 */ }
       }
