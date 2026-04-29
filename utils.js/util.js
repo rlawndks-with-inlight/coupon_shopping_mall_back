@@ -390,7 +390,13 @@ export const getPayType = (num) => {
             description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
             type: 'certification_wayup',
         }
-    }*/
+    }*/ else if (num == 50) {
+        return {
+            title: 'SMS결제',
+            description: '이름과 핸드폰번호를 입력하시면 결제 안내가 전송됩니다.',
+            type: 'sms_pay',
+        }
+    }
 
     return {
         title: '',
