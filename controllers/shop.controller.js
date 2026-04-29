@@ -827,6 +827,7 @@ const settingMainObj = async (main_obj_ = []) => {
     let product_review_ids = [];
     product_review_ids = getMainObjIdList(main_obj, 'item-reviews-select', product_review_ids);
     let product_ids = [];
+    product_ids = getMainObjIdList(main_obj, 'item-hero', product_ids);
     product_ids = getMainObjIdList(main_obj, 'items', product_ids);
     product_ids = getMainObjIdList(main_obj, 'items-ids', product_ids);
     product_ids = getMainObjIdList(main_obj, 'items-with-categories', product_ids, true);
@@ -846,6 +847,7 @@ const finallySettingMainObj = async (main_obj_ = [], data = {}) => {
     let main_obj = main_obj_;
     main_obj = getMainObjContentByIdList(main_obj, 'item-reviews-select', data?.product_reviews);
     main_obj = getMainObjContentByIdList(main_obj, 'item-reviews', data?.product_reviews, false, true);
+    main_obj = getMainObjContentByIdList(main_obj, 'item-hero', data?.products);
     main_obj = getMainObjContentByIdList(main_obj, 'items', data?.products);
     main_obj = getMainObjContentByIdList(main_obj, 'items-ids', data?.products);
     main_obj = getMainObjContentByIdList(main_obj, 'items-with-categories', data?.products, true);
