@@ -22,6 +22,7 @@ export const lang_obj_columns = {
     products: [
         'product_name',
         'product_comment',
+        'product_spec',
     ],
     product_options: [
         'option_name',

@@ -32,6 +32,7 @@ import productFaq from './product_faq.controller.js';
 import sellerAdjustmentsCtrl from './seller_adjustments.controller.js';
 import sellerProductsCtrl from './seller_products.controller.js';
 import phoneRegistrationCtrl from './phone_registration.controller.js';
+import merchantApplicationCtrl from './merchant_application.controller.js';
 
 export {
     brandCtrl,
@@ -66,4 +67,5 @@ export {
     sellerAdjustmentsCtrl,
     sellerProductsCtrl,
     phoneRegistrationCtrl,
+    merchantApplicationCtrl,
 };

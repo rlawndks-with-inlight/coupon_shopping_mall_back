@@ -31,6 +31,7 @@ import productFaqRoutes from "./product_faq.route.js"
 import sellerAdjustmentsRoutes from "./seller_adjustments.route.js"
 import sellerProductsRoutes from "./seller_products.route.js";
 import phoneRegistrationRoutes from "./phone_registration.route.js";
+import merchantApplicationRoutes from "./merchant_application.route.js";
 
 const router = express.Router(); // eslint-disable-line new-cap
 
@@ -73,6 +74,7 @@ router.use("/column", columnRoutes);
 router.use("/third-parties", thirdPartyRoutes);
 router.use("/dashboards", dashboardRoutes);
 router.use("/phone-registration", phoneRegistrationRoutes);
+router.use("/merchant-application", merchantApplicationRoutes);
 
 //user
 router.use("/shop", shopRoutes);

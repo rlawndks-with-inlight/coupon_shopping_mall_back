@@ -193,99 +193,37 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
             lang_obj: {}
         };
         try {
+            // 지원 언어 (구글 번역 gtx 코드). ko는 원문 기준이라 번역 대상에서 제외
             let lang_list = [
-                {
-                    value: 'en',
-                    use_value: 'en'
-                },
-                {
-                    value: 'ja',
-                    use_value: 'ja'
-                },
-                {
-                    value: 'vi',
-                    use_value: 'vi'
-                },
-                {
-                    value: 'cn',
-                    use_value: 'zh-CN'
-                },
-                {
-                    value: 'fr',
-                    use_value: 'fr'
-                },
-                {
-                    value: 'ko',
-                    use_value: 'ko'
-                },
+                { value: 'en', use_value: 'en' },
+                { value: 'ja', use_value: 'ja' },
+                { value: 'cn', use_value: 'zh-CN' },
+                { value: 'es', use_value: 'es' },
             ]
-            let headers = {
-                'X-NCP-APIGW-API-KEY-ID': '97k5vekd9y',
-                'X-NCP-APIGW-API-KEY': 'Jx1Qmgf4rpJTsdXc1IDNZLEhyuzOwwUCBUkifW8w',
-                'Content-Type': 'application/json; charset=UTF-8',
-            }
-            let lang_when_list = [];
+            // 구글 번역(gtx, 무료) 헬퍼 — sl=auto 로 원문 언어 자동 감지
+            const gtrans = async (text, target) => {
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${target}&dt=t&q=${encodeURIComponent(text)}`;
+                const { data } = await axios.get(url, { timeout: 10000 });
+                return (data?.[0] || []).map((s) => s?.[0]).filter(Boolean).join('');
+            };
             if (columns.length > 0 && decode_dns?.setting_obj?.is_use_lang == 1) {
                 for (var i = 0; i < columns.length; i++) {
                     if (!obj[columns[i]]) {
                         continue;
                     }
-                    let { data: detect } = await axios.post(`https://naveropenapi.apigw.ntruss.com/langs/v1/dect`, {
-                        'query': obj[columns[i]],
-                    }, {
-                        headers
-                    })
-                    let detect_lang_code = detect?.langCode;
-                    let detect_lang = undefined;
-                    if (detect_lang_code != 'ko') {
-                        detect_lang = await axios.post(`https://naveropenapi.apigw.ntruss.com/nmt/v1/translation`, {
-                            'source': detect_lang_code,
-                            'target': 'ko',
-                            'text': obj[columns[i]],
-                        }, {
-                            headers
-                        })
-                        detect_lang_code = 'ko';
-                    }
-                    result.lang_obj[columns[i]] = {
-                        ko: detect_lang?.data?.message?.result?.translatedText || obj[columns[i]]
-                    };
+                    // 원문은 ko 슬롯에 보관
+                    result.lang_obj[columns[i]] = { ko: obj[columns[i]] };
                     for (var j = 0; j < lang_list.length; j++) {
-
-                        if (decode_dns?.setting_obj?.lang_list && decode_dns?.setting_obj?.lang_list?.includes(lang_list[j].value) && obj[columns[i]]) {
-
-                            if (detect_lang_code != lang_list[j].use_value && detect?.langCode != lang_list[j].use_value) {
-                                try {
-                                    lang_when_list.push({
-                                        column: columns[i],
-                                        lang: lang_list[j].value,
-                                        func: await axios.post(`https://naveropenapi.apigw.ntruss.com/nmt/v1/translation`, {
-                                            'source': detect_lang_code,
-                                            'target': lang_list[j].use_value,
-                                            'text': result.lang_obj[columns[i]][detect_lang_code],
-                                        }, {
-                                            headers
-                                        })
-                                    })
-                                } catch (err) {
-                                    console.log(err)
-                                }
-
-                            }
+                        const langCfg = lang_list[j];
+                        // 브랜드가 켠 언어만 (lang_list 설정 없으면 전체 번역)
+                        const enabled = !decode_dns?.setting_obj?.lang_list
+                            || decode_dns?.setting_obj?.lang_list?.includes(langCfg.value);
+                        if (!enabled) continue;
+                        try {
+                            result.lang_obj[columns[i]][langCfg.value] = await gtrans(obj[columns[i]], langCfg.use_value);
+                        } catch (err) {
+                            console.log(err);
                         }
-                    }
-                }
-                for (var i = 0; i < lang_when_list.length; i++) {
-                    await lang_when_list[i];
-                }
-                let when_result = (await when(lang_when_list));
-                for (var i = 0; i < when_result.length; i++) {
-                    if (!result.lang_obj[when_result[i].column]) {
-                        result.lang_obj[when_result[i].column] = {};
-                    }
-                    result.lang_obj[when_result[i].column] = {
-                        ...result.lang_obj[when_result[i].column],
-                        [`${when_result[i].lang}`]: when_result[i].func?.data?.message?.result?.translatedText
                     }
                 }
             }

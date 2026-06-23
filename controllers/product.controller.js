@@ -15,14 +15,14 @@ const table_name = 'products';
         let {
             brand_id,
             product_img,
-            product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
+            product_name, product_code, product_comment, product_spec, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
             consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
             sub_images = [], groups = [], characters = [], properties = "{}"
         } = req.body;
 
         obj = {
             product_img,
-            brand_id, product_name, product_code, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
+            brand_id, product_name, product_code, product_comment, product_spec, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
             consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type,
         };
         for (var i = 0; i < categoryDepth; i++) {
@@ -632,7 +632,7 @@ const productCtrl = {
             let {
                 brand_id,
                 product_img,
-                product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
+                product_name, product_code, product_comment, product_spec, product_description, product_price = 0, product_sale_price = 0, user_id = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 description_images = [], another_id = 0,
@@ -641,7 +641,7 @@ const productCtrl = {
 
             let obj = {
                 product_img,
-                brand_id, product_name, product_code, product_comment, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
+                brand_id, product_name, product_code, product_comment, product_spec, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
                 another_id, price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status, memo,
             };
@@ -679,7 +679,10 @@ const productCtrl = {
             dns_data = dns_data[0][0];
             dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
 
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, result?.insertId);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, result?.insertId, true);
+            if (langs?.lang_obj) {
+                await updateQuery(table_name, { lang_obj: langs.lang_obj }, result?.insertId);
+            }
 
 
             if (!result?.insertId) {
@@ -831,7 +834,7 @@ const productCtrl = {
                 brand_id,
                 id,
                 product_img,
-                product_name, product_code, product_comment, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
+                product_name, product_code, product_comment, product_spec, product_description, product_price = 0, product_sale_price = 0, delivery_fee = 0, product_type = 0,
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], description_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 another_id = 0, price_lang = 'ko', point_save = 0, memo, /*point_usable = 1, cash_usable = 1, pg_usable = 1, status = 0, show_status*/
@@ -851,7 +854,7 @@ const productCtrl = {
             let files = settingFiles(req.files);
             let obj = {
                 product_img,
-                product_name, product_code, product_comment, product_description, product_price, product_sale_price, delivery_fee, product_type,
+                product_name, product_code, product_comment, product_spec, product_description, product_price, product_sale_price, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
                 another_id,
                 price_lang, point_save, memo, /*point_usable, cash_usable, pg_usable, status, show_status*/
@@ -861,7 +864,7 @@ const productCtrl = {
                 let { sort_idx } = req.body;
                 obj = {
                     product_img,
-                    product_name, product_code, product_comment, product_description, product_price, product_sale_price, delivery_fee, product_type,
+                    product_name, product_code, product_comment, product_spec, product_description, product_price, product_sale_price, delivery_fee, product_type,
                     consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
                     another_id,
                     price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status, sort_idx
@@ -889,7 +892,10 @@ const productCtrl = {
             dns_data = dns_data[0][0];
             dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
 
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, id);
+            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, id, true);
+            if (langs?.lang_obj) {
+                await updateQuery(table_name, { lang_obj: langs.lang_obj }, id);
+            }
 
             const product_id = id;
             //option
