@@ -8,4 +8,8 @@ router
     .route('/translate-naver')
     .post(thirdPartyCtrl.translate_naver);
 
+router
+    .route('/translate-google')
+    .post(thirdPartyCtrl.translate_google);
+
 export default router;
