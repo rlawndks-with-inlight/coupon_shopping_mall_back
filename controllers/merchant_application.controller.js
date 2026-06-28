@@ -264,6 +264,78 @@ const merchantApplicationCtrl = {
         }
     },
 
+    // 공개: 가맹점·상품 검색 (메인 사이트 방문자용)
+    // 가맹점명 / 주소(dns) / 상품명 중 하나라도 일치하면 해당 가맹점 + 상품 반환.
+    // 스코프: 현재 마스터의 서브브랜드(parent_id=master)만 → 무관 브랜드 노출 방지.
+    searchShops: async (req, res, next) => {
+        try {
+            const q = String(req.query.q || '').trim();
+            // 부하 방지: 2글자 미만은 검색하지 않음
+            if (q.length < 2) {
+                return response(req, res, 100, "success", { shops: [] });
+            }
+            const rootDomain = getRootDomain();
+            const masterRes = await readPool.query(
+                `SELECT id FROM brands WHERE dns=? AND is_main_dns=1 LIMIT 1`,
+                [rootDomain]
+            );
+            const master = masterRes[0][0];
+            if (!master) {
+                return response(req, res, 100, "success", { shops: [] });
+            }
+            const like = `%${q}%`;
+            // (가맹점명/주소) 매칭
+            const byBrand = await readPool.query(
+                `SELECT id FROM brands WHERE parent_id=? AND is_delete=0 AND (is_closure IS NULL OR is_closure!=1) AND (name LIKE ? OR dns LIKE ?) LIMIT 100`,
+                [master.id, like, like]
+            );
+            // (상품명) 매칭 → 해당 상품이 속한 가맹점
+            const byProduct = await readPool.query(
+                `SELECT DISTINCT b.id FROM brands b JOIN products p ON p.brand_id=b.id
+                 WHERE b.parent_id=? AND b.is_delete=0 AND (b.is_closure IS NULL OR b.is_closure!=1) AND p.is_delete=0 AND p.product_name LIKE ? LIMIT 100`,
+                [master.id, like]
+            );
+            const idSet = new Set();
+            byBrand[0].forEach((r) => idSet.add(r.id));
+            byProduct[0].forEach((r) => idSet.add(r.id));
+            const ids = [...idSet].slice(0, 30);
+            if (ids.length === 0) {
+                return response(req, res, 100, "success", { shops: [] });
+            }
+            const ph = ids.map(() => '?').join();
+            const brandsRes = await readPool.query(
+                `SELECT id, name, dns, logo_img FROM brands WHERE id IN (${ph}) AND is_delete=0`,
+                ids
+            );
+            const productsRes = await readPool.query(
+                `SELECT id, brand_id, product_name, product_sale_price, product_img
+                 FROM products WHERE brand_id IN (${ph}) AND is_delete=0 ORDER BY id DESC LIMIT 800`,
+                ids
+            );
+            const prodByBrand = {};
+            productsRes[0].forEach((p) => {
+                if (!prodByBrand[p.brand_id]) prodByBrand[p.brand_id] = [];
+                prodByBrand[p.brand_id].push({
+                    id: p.id,
+                    product_name: p.product_name,
+                    product_sale_price: p.product_sale_price,
+                    product_img: p.product_img,
+                });
+            });
+            const shops = brandsRes[0].map((b) => ({
+                name: b.name,
+                dns: b.dns,
+                logo_img: b.logo_img,
+                products: (prodByBrand[b.id] || []).slice(0, 12),
+            }));
+            return response(req, res, 100, "success", { shops });
+        } catch (err) {
+            console.log(err);
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err));
+            return response(req, res, -200, "서버 에러 발생", false);
+        }
+    },
+
     // 매니저 전용: 신청 단건
     get: async (req, res, next) => {
         try {
