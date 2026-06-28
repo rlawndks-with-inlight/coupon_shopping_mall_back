@@ -6,6 +6,7 @@ const router = express.Router(); // eslint-disable-line new-cap
 // 공개
 router.route('/').post(merchantApplicationCtrl.create);
 router.route('/check-slug').get(merchantApplicationCtrl.checkSlug);
+router.route('/shops').get(merchantApplicationCtrl.searchShops);
 
 // 매니저 전용
 router.route('/list').get(merchantApplicationCtrl.list);
