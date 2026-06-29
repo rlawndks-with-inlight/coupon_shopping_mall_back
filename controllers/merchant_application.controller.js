@@ -292,8 +292,8 @@ const merchantApplicationCtrl = {
             // (상품명) 매칭 → 해당 상품이 속한 가맹점
             const byProduct = await readPool.query(
                 `SELECT DISTINCT b.id FROM brands b JOIN products p ON p.brand_id=b.id
-                 WHERE b.parent_id=? AND b.is_delete=0 AND (b.is_closure IS NULL OR b.is_closure!=1) AND p.is_delete=0 AND p.product_name LIKE ? LIMIT 100`,
-                [master.id, like]
+                 WHERE b.parent_id=? AND b.is_delete=0 AND (b.is_closure IS NULL OR b.is_closure!=1) AND p.is_delete=0 AND (p.product_name LIKE ? OR p.lang_obj LIKE ?) LIMIT 100`,
+                [master.id, like, like]
             );
             const idSet = new Set();
             byBrand[0].forEach((r) => idSet.add(r.id));
@@ -308,7 +308,7 @@ const merchantApplicationCtrl = {
                 ids
             );
             const productsRes = await readPool.query(
-                `SELECT id, brand_id, product_name, product_sale_price, product_img
+                `SELECT id, brand_id, product_name, product_sale_price, product_img, lang_obj
                  FROM products WHERE brand_id IN (${ph}) AND is_delete=0 ORDER BY id DESC LIMIT 800`,
                 ids
             );
@@ -320,6 +320,7 @@ const merchantApplicationCtrl = {
                     product_name: p.product_name,
                     product_sale_price: p.product_sale_price,
                     product_img: p.product_img,
+                    lang_obj: p.lang_obj,
                 });
             });
             const shops = brandsRes[0].map((b) => ({
