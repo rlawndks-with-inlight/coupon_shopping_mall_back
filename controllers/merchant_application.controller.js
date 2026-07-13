@@ -151,14 +151,9 @@ const merchantApplicationCtrl = {
                 return response(req, res, -106, "약정서 동의가 필요합니다", false);
             }
 
-            // 슬러그 중복 확인 (이미 처리되지 않은 신청 + brands 테이블)
-            const dup = await readPool.query(
-                `SELECT id FROM ${table_name} WHERE desired_slug=? AND status IN ('pending','approved') LIMIT 1`,
-                [slug]
-            );
-            if (dup[0]?.length > 0) {
-                return response(req, res, -101, "이미 사용 중인 URL명입니다", false);
-            }
+            // 중복 체크는 "실제 운영 중인 쇼핑몰(brands) 주소"와만 한다.
+            // 처리 전(pending) 신청끼리는 중복을 허용 — 승인·개설은 우리가 수동으로 하며,
+            // 이때 slug가 겹치면 확인/조정하면 되고, 브랜드 생성 단계에서 dns 중복이 한 번 더 방지된다.
             const mainDomain = process.env.MAIN_FRONT_URL || '';
             if (mainDomain) {
                 const fullDns = `${slug}.${mainDomain.replace(/^www\./, '')}`;
@@ -167,7 +162,7 @@ const merchantApplicationCtrl = {
                     [fullDns]
                 );
                 if (dupBrand[0]?.length > 0) {
-                    return response(req, res, -101, "이미 사용 중인 URL명입니다", false);
+                    return response(req, res, -101, "이미 운영 중인 쇼핑몰 주소입니다", false);
                 }
             }
 
