@@ -19,7 +19,7 @@ const sellerProductsCtrl = {
                 `${table_name}.*`,
             ]
             let params = [];
-            let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} AND is_delete=0 `;
+            let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` WHERE ${table_name}.brand_id=? `;
             params.push(decode_dns?.id ?? 0);
 
