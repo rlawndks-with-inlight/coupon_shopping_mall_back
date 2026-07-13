@@ -195,7 +195,7 @@ const merchantApplicationCtrl = {
 
             // 관리자에게 신청 알림 메일 (실패해도 접수는 성공 처리)
             sendMail({
-                to: process.env.MAIL_TO || 'forspay@forspay.com',
+                to: process.env.MAIL_TO || 'office@forspay.com',
                 subject: `[ShopGo] 새 가맹점 신청 - ${obj.business_name}`,
                 html: buildApplicationMailHtml(obj),
             }).catch(() => { });
