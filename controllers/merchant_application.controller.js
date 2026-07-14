@@ -56,6 +56,47 @@ const frameToDemo = (frame) => {
     return { shop_demo_num: String(n), blog_demo_num: '0' };
 };
 
+// 신규 가맹점에 기본 게시판(공지사항 / 1:1문의) 자동 생성.
+// 1:1문의 = 볼수있는대상 '자신 및 관리자만'(read_type=1) + 회원 글쓰기 허용(is_able_user_add=1)
+//   → 고객이 남긴 문의에 관리자가 답변하는 문의함으로 동작하며, 대시보드 '문의관리' 카드에도 집계됨.
+// 가맹점은 게시판 생성 권한이 없으므로(레벨50 전용) 개설 단계에서 우리가 미리 심어준다.
+// 이미 같은 이름의 게시판이 있으면 중복 생성하지 않는다(멱등).
+const seedDefaultBoards = async (brandId) => {
+    if (!brandId) return;
+    const boards = [
+        { post_category_title: '공지사항', parent_id: -1, is_able_user_add: 0, post_category_type: 0, post_category_read_type: 0 },
+        { post_category_title: '1:1문의', parent_id: -1, is_able_user_add: 1, post_category_type: 0, post_category_read_type: 1 },
+    ];
+    const exist = await readPool.query(
+        `SELECT post_category_title FROM post_categories WHERE brand_id=? AND is_delete=0`,
+        [brandId]
+    );
+    const existTitles = (exist[0] || []).map((r) => r.post_category_title);
+    for (const b of boards) {
+        if (existTitles.includes(b.post_category_title)) continue;
+        await insertQuery('post_categories', { ...b, brand_id: brandId });
+    }
+};
+
+// 마스터 하위 가맹점 중 기본 게시판이 없는 곳에 일괄 시드(멱등). 개설된 가맹점 수 반환.
+export const backfillDefaultBoards = async () => {
+    const rootDomain = getRootDomain();
+    const masterRes = await readPool.query(
+        `SELECT id FROM brands WHERE dns=? AND is_main_dns=1 LIMIT 1`, [rootDomain]
+    );
+    const master = masterRes[0][0];
+    if (!master) throw new Error('마스터 브랜드를 찾을 수 없습니다');
+    const subs = await readPool.query(
+        `SELECT id, dns FROM brands WHERE parent_id=? AND is_delete=0`, [master.id]
+    );
+    let count = 0;
+    for (const b of (subs[0] || [])) {
+        await seedDefaultBoards(b.id);
+        count++;
+    }
+    return count;
+};
+
 // 승인 시 신청 정보로 하위 가맹점(brands) 자동 생성. 생성된 brand_id 반환.
 const createSubBrandFromApplication = async (app) => {
     const rootDomain = getRootDomain();
@@ -107,7 +148,16 @@ const createSubBrandFromApplication = async (app) => {
     };
 
     const result = await insertQuery('brands', obj);
-    return result?.insertId;
+    const newBrandId = result?.insertId;
+    // 개설 즉시 기본 게시판(공지사항 / 1:1문의) 자동 생성. 실패해도 브랜드 생성은 유지.
+    if (newBrandId) {
+        try {
+            await seedDefaultBoards(newBrandId);
+        } catch (e) {
+            logger.error('기본 게시판 시드 실패: ' + (e?.message || e));
+        }
+    }
+    return newBrandId;
 };
 
 const merchantApplicationCtrl = {
@@ -250,9 +300,138 @@ const merchantApplicationCtrl = {
             if (req.query.status) {
                 sql += ` AND ${table_name}.status='${String(req.query.status).replace(/'/g, '')}' `;
             }
-            sql += ` ORDER BY ${table_name}.created_at DESC `;
+            // 정렬/LIMIT은 getSelectQueryList가 자체적으로 붙인다(기본 id DESC = 최신순).
+            // 여기서 ORDER BY를 또 붙이면 ORDER BY가 중복돼 SQL 문법 오류가 난다.
             const data = await getSelectQueryList(sql, columns, req.query);
             return response(req, res, 100, "success", data);
+        } catch (err) {
+            console.log(err);
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err));
+            return response(req, res, -200, "서버 에러 발생", false);
+        }
+    },
+
+    // 매니저 전용: 개설된 하위 가맹점 현황 + 매출 집계 (마스터 대시보드 / 가맹점 현황 페이지용)
+    merchants: async (req, res, next) => {
+        try {
+            checkLevel(req.cookies.token, 10, res);
+            if (!isMasterManager(req)) {
+                return response(req, res, -403, "권한이 없습니다", false);
+            }
+            const { s_dt, e_dt } = req.query;
+            const rootDomain = getRootDomain();
+            const masterRes = await readPool.query(
+                `SELECT id FROM brands WHERE dns=? AND is_main_dns=1 LIMIT 1`, [rootDomain]
+            );
+            const master = masterRes[0][0];
+            if (!master) {
+                return response(req, res, 100, "success", { merchants: [], summary: { merchant_count: 0, total_sales: 0, order_count: 0 } });
+            }
+            // 매출 = 결제완료 이후 단계(trx_status>=5) & 미취소(is_cancel=0) 합계.
+            // 집계를 마스터의 하위 가맹점으로만 스코프(transactions 전체 스캔 방지).
+            let joinDate = '';
+            const params = [];
+            if (s_dt) { joinDate += ` AND t.created_at >= ? `; params.push(`${s_dt} 00:00:00`); }
+            if (e_dt) { joinDate += ` AND t.created_at <= ? `; params.push(`${e_dt} 23:59:59`); }
+            params.push(master.id);
+            const sql = `
+                SELECT b.id, b.name, b.dns, b.created_at, b.logo_img,
+                       COALESCE(SUM(t.amount), 0) AS sales,
+                       COUNT(t.id) AS order_count
+                FROM brands b
+                LEFT JOIN transactions t
+                  ON t.brand_id = b.id AND t.trx_status >= 5 AND t.is_cancel = 0${joinDate}
+                WHERE b.parent_id = ? AND b.is_delete = 0
+                GROUP BY b.id, b.name, b.dns, b.created_at, b.logo_img
+                ORDER BY sales DESC, b.created_at DESC`;
+            const rows = (await readPool.query(sql, params))[0];
+            const merchants = rows.map((r) => ({
+                id: r.id,
+                name: r.name,
+                dns: r.dns,
+                created_at: r.created_at,
+                logo_img: r.logo_img,
+                sales: Number(r.sales) || 0,
+                order_count: Number(r.order_count) || 0,
+            }));
+            const summary = {
+                merchant_count: merchants.length,
+                total_sales: merchants.reduce((a, m) => a + m.sales, 0),
+                order_count: merchants.reduce((a, m) => a + m.order_count, 0),
+            };
+            return response(req, res, 100, "success", { merchants, summary });
+        } catch (err) {
+            console.log(err);
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err));
+            return response(req, res, -200, "서버 에러 발생", false);
+        }
+    },
+
+    // 매니저 전용: 특정 하위 가맹점의 상세 내역 (상태별 집계 + 최근 주문). 마스터의 하위 가맹점만 조회 허용.
+    merchantDetail: async (req, res, next) => {
+        try {
+            checkLevel(req.cookies.token, 10, res);
+            if (!isMasterManager(req)) {
+                return response(req, res, -403, "권한이 없습니다", false);
+            }
+            const { id } = req.params;
+            const { s_dt, e_dt } = req.query;
+            const rootDomain = getRootDomain();
+            const masterRes = await readPool.query(
+                `SELECT id FROM brands WHERE dns=? AND is_main_dns=1 LIMIT 1`, [rootDomain]
+            );
+            const master = masterRes[0][0];
+            if (!master) {
+                return response(req, res, -404, "마스터 브랜드를 찾을 수 없습니다", false);
+            }
+            // 대상이 마스터의 하위 가맹점인지 검증 (무관 브랜드 조회 차단)
+            const brandRes = await readPool.query(
+                `SELECT id, name, dns, created_at FROM brands WHERE id=? AND parent_id=? AND is_delete=0 LIMIT 1`,
+                [id, master.id]
+            );
+            const brand = brandRes[0][0];
+            if (!brand) {
+                return response(req, res, -403, "해당 가맹점을 조회할 권한이 없습니다", false);
+            }
+
+            let dateWhere = '';
+            const dateParams = [];
+            if (s_dt) { dateWhere += ` AND created_at >= ? `; dateParams.push(`${s_dt} 00:00:00`); }
+            if (e_dt) { dateWhere += ` AND created_at <= ? `; dateParams.push(`${e_dt} 23:59:59`); }
+
+            // 상태별 집계(미취소)
+            const statusRows = (await readPool.query(
+                `SELECT trx_status, COUNT(*) AS cnt, SUM(amount) AS amt FROM transactions WHERE brand_id=? AND is_cancel=0${dateWhere} GROUP BY trx_status`,
+                [brand.id, ...dateParams]
+            ))[0];
+            const status = {};
+            statusRows.forEach((r) => { status[r.trx_status] = { cnt: Number(r.cnt) || 0, amt: Number(r.amt) || 0 }; });
+            // 취소 건수
+            const cancelRow = (await readPool.query(
+                `SELECT COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND is_cancel=1${dateWhere}`,
+                [brand.id, ...dateParams]
+            ))[0][0];
+            // 총 매출/주문(결제완료 이후, 미취소)
+            const totalRow = (await readPool.query(
+                `SELECT COALESCE(SUM(amount),0) AS sales, COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND trx_status>=5 AND is_cancel=0${dateWhere}`,
+                [brand.id, ...dateParams]
+            ))[0][0];
+            // 최근 주문 30건
+            const orders = (await readPool.query(
+                `SELECT id, buyer_name, amount, trx_status, is_cancel, trx_dt, trx_tm, created_at FROM transactions WHERE brand_id=?${dateWhere} ORDER BY id DESC LIMIT 30`,
+                [brand.id, ...dateParams]
+            ))[0];
+
+            return response(req, res, 100, "success", {
+                brand,
+                summary: {
+                    total_sales: Number(totalRow?.sales) || 0,
+                    order_count: Number(totalRow?.cnt) || 0,
+                    status,
+                    cancel_count: Number(cancelRow?.cnt) || 0,
+                },
+                orders,
+            });
         } catch (err) {
             console.log(err);
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
