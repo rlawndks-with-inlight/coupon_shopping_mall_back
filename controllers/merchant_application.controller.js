@@ -1,6 +1,6 @@
 'use strict';
 import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
-import { checkLevel, checkDns, response } from "../utils.js/util.js";
+import { checkLevel, checkDns, response, createHashedPassword } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -28,6 +28,7 @@ const table_name = 'merchant_applications';
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 const BIZNO_RE = /^[0-9]{10}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ADMIN_ID_RE = /^[a-zA-Z0-9_-]{3,20}$/; // 가맹점 관리자 로그인 아이디
 
 const extractIp = (req) => {
     const xf = req.headers['x-forwarded-for'];
@@ -98,7 +99,8 @@ export const backfillDefaultBoards = async () => {
 };
 
 // 승인 시 신청 정보로 하위 가맹점(brands) 자동 생성. 생성된 brand_id 반환.
-const createSubBrandFromApplication = async (app) => {
+// adminId: 마스터가 가맹점과 협의해 지정하는 로그인 아이디(초기 비밀번호도 아이디와 동일).
+const createSubBrandFromApplication = async (app, adminId) => {
     const rootDomain = getRootDomain();
     if (!rootDomain) throw new Error('MAIN_FRONT_URL 미설정');
 
@@ -111,6 +113,16 @@ const createSubBrandFromApplication = async (app) => {
     if (!master) throw new Error('마스터 브랜드를 찾을 수 없습니다');
 
     const subDns = `${app.desired_slug}.${rootDomain}`;
+
+    // 관리자 아이디 확정/검증을 브랜드 생성 '전에' 수행 (중복 시 반쪽 생성 방지)
+    const finalAdminId = String(adminId || app.desired_slug || '').trim();
+    if (!ADMIN_ID_RE.test(finalAdminId)) {
+        throw new Error('관리자 아이디 형식이 올바르지 않습니다 (영문/숫자/-/_ 3~20자)');
+    }
+    const dupUser = await readPool.query(`SELECT id FROM users WHERE user_name=? LIMIT 1`, [finalAdminId]);
+    if (dupUser[0]?.length > 0) {
+        throw new Error('이미 사용 중인 아이디입니다: ' + finalAdminId);
+    }
 
     // 이미 같은 dns 브랜드가 있으면 그걸 반환(중복 생성 방지)
     const dup = await readPool.query(`SELECT id FROM brands WHERE dns=? LIMIT 1`, [subDns]);
@@ -156,6 +168,18 @@ const createSubBrandFromApplication = async (app) => {
         } catch (e) {
             logger.error('기본 게시판 시드 실패: ' + (e?.message || e));
         }
+        // 가맹점 관리자 계정 생성 (레벨40). 초기 비밀번호 = 아이디 → 가맹점이 로그인 후 변경.
+        const pw = await createHashedPassword(finalAdminId);
+        await insertQuery('users', {
+            user_name: finalAdminId,
+            user_pw: pw.hashedPassword,
+            user_salt: pw.salt,
+            name: app.manager_name || app.business_name || finalAdminId,
+            nickname: app.manager_name || app.business_name || finalAdminId,
+            level: 40,
+            brand_id: newBrandId,
+            phone_num: app.manager_phone || app.ceo_phone || '',
+        });
     }
     return newBrandId;
 };
@@ -537,7 +561,7 @@ const merchantApplicationCtrl = {
             if (!isMasterManager(req)) {
                 return response(req, res, -403, "권한이 없습니다", false);
             }
-            const { id, status, memo, brand_id } = req.body;
+            const { id, status, memo, brand_id, admin_id } = req.body;
             if (!id || !status) {
                 return response(req, res, -100, "필수 항목이 누락되었습니다", false);
             }
@@ -557,11 +581,11 @@ const merchantApplicationCtrl = {
                 }
                 if (!app.brand_id && !brand_id) {
                     try {
-                        const newBrandId = await createSubBrandFromApplication(app);
+                        const newBrandId = await createSubBrandFromApplication(app, admin_id);
                         if (newBrandId) obj.brand_id = newBrandId;
                     } catch (e) {
                         logger.error('sub-brand 생성 실패: ' + (e?.message || e));
-                        return response(req, res, -110, "하위 가맹점 생성 실패: " + (e?.message || ''), false);
+                        return response(req, res, -110, e?.message || "하위 가맹점 생성 실패", false);
                     }
                 }
             }
