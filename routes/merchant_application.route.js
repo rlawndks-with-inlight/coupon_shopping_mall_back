@@ -10,6 +10,8 @@ router.route('/shops').get(merchantApplicationCtrl.searchShops);
 
 // 매니저 전용
 router.route('/list').get(merchantApplicationCtrl.list);
+router.route('/merchants').get(merchantApplicationCtrl.merchants);
+router.route('/merchants/:id').get(merchantApplicationCtrl.merchantDetail);
 router.route('/status').put(merchantApplicationCtrl.updateStatus);
 router.route('/:id').get(merchantApplicationCtrl.get).delete(merchantApplicationCtrl.remove);
 
