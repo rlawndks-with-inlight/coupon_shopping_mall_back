@@ -13,6 +13,7 @@ const buildApplicationMailHtml = (obj) => `
     <table style="border-collapse:collapse">
       <tr><td style="padding:4px 12px 4px 0;color:#888">사업자명</td><td><b>${obj.business_name}</b></td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#888">사업자번호</td><td>${obj.business_number}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#888">통신판매업신고번호</td><td>${obj.mail_order_number || '-'}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#888">대표자</td><td>${obj.ceo_name} / ${obj.ceo_phone} / ${obj.ceo_email || '-'}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#888">담당자</td><td>${obj.manager_name} / ${obj.manager_phone} / ${obj.manager_email || '-'}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#888">고객센터</td><td>${obj.cs_phone || '-'}</td></tr>
