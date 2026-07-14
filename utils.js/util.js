@@ -322,6 +322,12 @@ export const getPayType = (num) => {
             description: '휴대폰결제창으로 이동합니다.',
             type: 'phone_hecto',
         }
+    } else if (num == 40) {
+        return {
+            title: `카드결제(페이레터)`,
+            description: '신용카드로 결제합니다. (페이레터 테스트 모듈)',
+            type: 'card_payletter',
+        }
     } /*else if (num == 41) {
         return {
             title: `인증결제`,

@@ -12,6 +12,13 @@ router
     .route('/cancel')
     .post(payCtrl.cancel);
 router
+    .route('/payletter/callback')
+    .post(payCtrl.payletterCallback);
+router
+    .route('/payletter/return')
+    .get(payCtrl.payletterReturn)
+    .post(payCtrl.payletterReturn);
+router
     .route('/:trx_type')
     .post(payCtrl.ready);
 

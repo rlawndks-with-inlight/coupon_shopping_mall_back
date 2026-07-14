@@ -21,6 +21,7 @@ import _ from "lodash";
 import { readPool, writePool } from "../config/db-pool.js";
 import crypto from 'crypto';
 import qs from 'qs';
+import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
 
 
 const table_name = "transactions";
@@ -82,6 +83,8 @@ const payCtrl = {
         trx_method = 30;
       } else if (trx_type == 'phone_hecto') {
         trx_method = 31;
+      } else if (trx_type == 'card_payletter') {
+        trx_method = 40;
       } else {
         //console.log(trx_type);
         return response(req, res, -100, "잘못된 결제타입 입니다.", false)
@@ -258,6 +261,58 @@ const payCtrl = {
         }
       }
 
+      // ─────────────────────────────
+      // 페이레터(PayLetter) 결제요청
+      //  - 거래 생성 후 결제요청 API 호출 → 결제창 URL(online/mobile) 반환
+      //  - 확정은 return/callback 핸들러에서 상태조회로 재검증 후 처리
+      // ─────────────────────────────
+      if (trx_method == 40) {
+        try {
+          // 인증정보는 payment_modules 테이블에서 조회 (MID=client_id, 결제키=API키)
+          const creds = await getPayletterCreds(brand_id);
+          if (!creds?.client_id || !creds?.payment_key) {
+            return response(req, res, -100, "페이레터 결제모듈 설정이 필요합니다. (관리자 결제모듈에 MID=client_id, 결제키=API키 입력)", false);
+          }
+          // return/callback 주소는 요청에서 유도 (별도 env 불필요)
+          const front_url = (req.body.front_url || "").toString().trim();
+          const backBase = `${req.protocol}://${req.get('host')}`;
+          const order_no = String(ord_num || `PL${trans_id}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
+          const return_url = `${backBase}/api/pays/payletter/return?front=${encodeURIComponent(front_url)}`;
+          const callback_url = `${backBase}/api/pays/payletter/callback`;
+
+          const pl = await requestPayment({
+            client_id: creds.client_id,
+            payment_key: creds.payment_key,
+            pgcode: 'creditcard',
+            user_id: String(user_id || buyer_phone || trans_id),
+            user_name: buyer_name,
+            order_no,
+            amount,
+            product_name: item_name || '상품',
+            return_url,
+            callback_url,
+            custom_parameter: String(trans_id),
+          });
+
+          if (!pl?.online_url && !pl?.mobile_url) {
+            return response(req, res, -100, pl?.message || "페이레터 결제요청 실패", false);
+          }
+
+          // 상태조회 검증 시 사용할 order_no를 거래에 동기화(원본 ord_num을 정규화한 값)
+          await updateQuery(table_name, { ord_num: order_no }, trans_id);
+
+          return response(req, res, 100, "success", {
+            id: trans_id,
+            token: pl?.token,
+            online_url: pl?.online_url,
+            mobile_url: pl?.mobile_url,
+          });
+        } catch (e) {
+          logger.error(JSON.stringify(e?.response?.data || e));
+          return response(req, res, -100, e?.response?.data?.message || "페이레터 결제요청 오류", false);
+        }
+      }
+
       return response(req, res, 100, "success", {
         id: trans_id,
       });
@@ -390,10 +445,31 @@ const payCtrl = {
 
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
-      const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate, id } = req.body;
+      const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate, id, pg } = req.body;
       let files = settingFiles(req.files);
       let obj = {};
       const formData = qs.stringify({ trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate });
+
+      // 페이레터 취소: 거래에서 user_id/tid(trx_id)를 읽어 취소 API 호출
+      if (pg === 'payletter') {
+        let trx = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [id]);
+        trx = trx[0][0];
+        if (!trx) {
+          return response(req, res, -100, "거래를 찾을 수 없습니다.", false);
+        }
+        const creds = await getPayletterCreds(trx.brand_id);
+        if (!creds?.client_id || !creds?.payment_key) {
+          return response(req, res, -100, "페이레터 결제모듈 설정이 없습니다.", false);
+        }
+        const ip_addr = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '127.0.0.1').toString().split(',')[0].trim();
+        const cancelRes = await cancelPayment({ client_id: creds.client_id, payment_key: creds.payment_key, user_id: trx.user_id, tid: trx.trx_id, ip_addr, pgcode: 'creditcard' });
+        if (cancelRes?.tid) {
+          await updateQuery('transactions', { is_cancel_trans: 1 }, id);
+          return response(req, res, 100, "success", {});
+        }
+        return response(req, res, -200, cancelRes?.message || "페이레터 취소 실패", false);
+      }
+
       if (decode_dns.id == 74) {
         let fintree_cancel = await axios.post(
           `https://api.fintree.kr/payment.cancel`, formData,
@@ -468,7 +544,106 @@ const payCtrl = {
     } finally {
     }
   },
+  payletterCallback: async (req, res, next) => {
+    // 페이레터 서버→서버 콜백 (성공 시에만 호출). 반드시 {code:0} 으로 응답해야 함.
+    try {
+      const body = { ...req.query, ...req.body };
+      const trx = (await readPool.query(`SELECT brand_id FROM transactions WHERE id=?`, [body.custom_parameter]))[0][0];
+      const creds = trx ? await getPayletterCreds(trx.brand_id) : null;
+      let status = {};
+      try { status = await getStatusByOrderNo({ client_id: creds?.client_id, payment_key: creds?.payment_key, order_no: body.order_no }); } catch (e) { status = {}; }
+      if (String(status?.status_code) !== '5') {
+        return res.status(200).send({ code: -1, message: "결제 미완료 상태" });
+      }
+      await settlePayletterTransaction(body.custom_parameter, body);
+      return res.status(200).send({ code: 0 });
+    } catch (err) {
+      console.log(err);
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return res.status(200).send({ code: -1, message: "콜백 처리 오류" });
+    }
+  },
+  payletterReturn: async (req, res, next) => {
+    // 결제창 종료 후 브라우저가 도달하는 URL. 상태조회로 재검증 후 프론트 결과페이지로 리다이렉트.
+    const data = { ...req.query, ...req.body };
+    let front = (data.front || "").toString().trim();
+    if (front && !/^https?:\/\//.test(front)) front = `https://${front}`;
+    const resultBase = `${front}/shop/auth/pay-result`;
+    try {
+      const trx = (await readPool.query(`SELECT brand_id FROM transactions WHERE id=?`, [data.custom_parameter]))[0][0];
+      const creds = trx ? await getPayletterCreds(trx.brand_id) : null;
+      let status = {};
+      try { status = await getStatusByOrderNo({ client_id: creds?.client_id, payment_key: creds?.payment_key, order_no: data.order_no }); } catch (e) { status = {}; }
+      if (String(status?.status_code) === '5') {
+        await settlePayletterTransaction(data.custom_parameter, data);
+        const q = new URLSearchParams({
+          result_cd: '0000',
+          ord_num: (data.order_no || '').toString(),
+          buyer_name: (data.user_name || '').toString(),
+          trx_dttm: (data.transaction_date || '').toString(),
+        }).toString();
+        return res.redirect(302, `${resultBase}?${q}`);
+      }
+      return res.redirect(302, `${resultBase}?result_cd=9999`);
+    } catch (err) {
+      console.log(err);
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return res.redirect(302, `${resultBase}?result_cd=9999`);
+    }
+  },
 };
+
+// 브랜드별 페이레터 인증정보를 payment_modules(trx_type=40)에서 조회
+//  MID=client_id, 결제키(pay_key)=결제 API키, TID=조회 API키
+async function getPayletterCreds(brand_id) {
+  let rows = await readPool.query(
+    `SELECT mid, pay_key, tid FROM payment_modules WHERE brand_id=? AND trx_type=40 ORDER BY id DESC LIMIT 1`,
+    [brand_id]
+  );
+  let m = rows[0][0];
+  if (!m) return null;
+  return { client_id: m.mid, payment_key: m.pay_key, search_key: m.tid };
+}
+
+// 페이레터 거래 확정(멱등): 상태조회로 완료 확인된 거래를 결제완료 처리 + 포인트 적립
+async function settlePayletterTransaction(transId, data = {}) {
+  if (!transId) return false;
+  let rows = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [transId]);
+  let trx = rows[0][0];
+  if (!trx) return false;
+  if (trx.trx_status == 5) return true; // 이미 확정됨(중복 콜백/리턴 방지)
+
+  let trx_dttm = (data.transaction_date || '').toString();
+  let trx_dt = trx_dttm.includes(' ') ? trx_dttm.split(' ')[0] : trx_dttm;
+  let trx_tm = trx_dttm.includes(' ') ? trx_dttm.split(' ')[1] : '';
+
+  await updateQuery('transactions', {
+    trx_id: data.tid ?? trx.trx_id,
+    appr_num: (data.cid ?? '').toString(),
+    card_num: (data.card_info ?? '').toString(),
+    trx_dt,
+    trx_tm,
+    trx_status: 5,
+  }, transId);
+
+  // 포인트 적립 (기존 pays.result 성공 로직과 동일)
+  let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);
+  let brand = brandRows[0][0];
+  let setting = JSON.parse(brand?.setting_obj ?? '{}');
+  let point = (trx.amount) * ((setting?.point_rate ?? 0) / 100);
+  if (point > 0) {
+    await insertQuery('points', {
+      brand_id: trx.brand_id,
+      user_id: trx.user_id,
+      sender_id: 0,
+      point,
+      type: 0,
+      trans_id: transId,
+    });
+  }
+  return true;
+}
+
 function generateArrayWithSum(products_ = [], targetSum = 0) {
   if (products_.length == 0) {
     return [];
