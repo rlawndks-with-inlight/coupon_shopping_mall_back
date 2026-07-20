@@ -81,8 +81,14 @@ app.get('/', (req, res) => {
   return next(err);
 });*/
 
-const HTTP_PORT = 8000;
+const HTTP_PORT = process.env.PORT ? Number(process.env.PORT) : 8000;
 const HTTPS_PORT = 8443;
+
+// SSL을 이 서버가 직접 물고 https로 뜰지 여부.
+//  - 기존 cafe24 운영: .env 에 SSL_ENABLED=true (+선택 SSL_CERT_DIR) → letsencrypt 인증서로 https 8443 (기존 동작 유지)
+//  - AWS(nginx 리버스 프록시 뒤): SSL_ENABLED 미설정 → http로 뜨고 SSL 종료는 nginx가 담당
+const SSL_ENABLED = process.env.SSL_ENABLED === 'true';
+const SSL_CERT_DIR = process.env.SSL_CERT_DIR || '/etc/letsencrypt/live/purplevery22.cafe24.com';
 
 async function bootstrap() {
   try {
@@ -92,21 +98,31 @@ async function bootstrap() {
     let server;
 
     if (process.env.NODE_ENV === 'development') {
+      // 로컬 개발: HTTP, 스케줄러 off
       server = http.createServer(app).listen(HTTP_PORT, function () {
         console.log("**-------------------------------------**");
-        console.log(`====      Server is On ${HTTP_PORT}...!!!    ====`);
+        console.log(`====      Server is On ${HTTP_PORT} (dev/http)...!!!    ====`);
         console.log("**-------------------------------------**");
         // scheduleIndex();
       });
-    } else {
+    } else if (SSL_ENABLED) {
+      // 운영(자체 HTTPS): letsencrypt 인증서로 https listen (기존 cafe24 동작)
       const options = {
-        ca: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/fullchain.pem"),
-        key: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/privkey.pem"),
-        cert: fs.readFileSync("/etc/letsencrypt/live/purplevery22.cafe24.com/cert.pem"),
+        ca: fs.readFileSync(`${SSL_CERT_DIR}/fullchain.pem`),
+        key: fs.readFileSync(`${SSL_CERT_DIR}/privkey.pem`),
+        cert: fs.readFileSync(`${SSL_CERT_DIR}/cert.pem`),
       };
       server = https.createServer(options, app).listen(HTTPS_PORT, function () {
         console.log("**-------------------------------------**");
-        console.log(`====      Server is On ${HTTPS_PORT}...!!!    ====`);
+        console.log(`====      Server is On ${HTTPS_PORT} (https)...!!!    ====`);
+        console.log("**-------------------------------------**");
+        scheduleIndex();
+      });
+    } else {
+      // 운영(리버스 프록시 뒤): HTTP로 뜨고 SSL은 nginx가 종료. 스케줄러 on.
+      server = http.createServer(app).listen(HTTP_PORT, function () {
+        console.log("**-------------------------------------**");
+        console.log(`====      Server is On ${HTTP_PORT} (prod/http behind proxy)...!!!    ====`);
         console.log("**-------------------------------------**");
         scheduleIndex();
       });
