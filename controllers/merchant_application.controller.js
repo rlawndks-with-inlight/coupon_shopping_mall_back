@@ -6,22 +6,84 @@ import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { sendMail } from "../utils.js/mail.js";
 
-// 신청 접수 알림 메일 본문
-const buildApplicationMailHtml = (obj) => `
-  <div style="font-family:sans-serif;font-size:14px;color:#222;line-height:1.7">
-    <h2 style="margin:0 0 12px">새 가맹점 신청이 접수되었습니다</h2>
-    <table style="border-collapse:collapse">
-      <tr><td style="padding:4px 12px 4px 0;color:#888">사업자명</td><td><b>${obj.business_name}</b></td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#888">사업자번호</td><td>${obj.business_number}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#888">통신판매업신고번호</td><td>${obj.mail_order_number || '-'}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#888">대표자</td><td>${obj.ceo_name} / ${obj.ceo_phone} / ${obj.ceo_email || '-'}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#888">담당자</td><td>${obj.manager_name} / ${obj.manager_phone} / ${obj.manager_email || '-'}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#888">고객센터</td><td>${obj.cs_phone || '-'}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#888">영업추천인</td><td>${obj.referrer_name || '-'}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#888">희망 URL</td><td>${obj.desired_slug}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#888">프레임</td><td>${obj.selected_frame || '-'}</td></tr>
-    </table>
+// ── ShopGo 브랜드 이메일 템플릿 ─────────────────────────────────────────────
+// 다크 헤더(ShopGo 워드마크) + 본문 + 회사정보/면책 푸터로 감싸는 공통 셸.
+const MAIL_GREEN = '#9ee54e';
+const mailShell = (inner) => `
+  <div style="margin:0;padding:24px 0;background:#f4f4f5">
+    <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:10px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕',sans-serif;color:#222">
+      <div style="background:#141414;padding:22px 32px">
+        <span style="font-size:23px;font-weight:800;letter-spacing:-0.5px;color:#ffffff">Shop<span style="color:${MAIL_GREEN}">Go</span></span>
+      </div>
+      <div style="padding:30px 32px">${inner}</div>
+      <div style="border-top:1px solid #eee;padding:20px 32px;background:#fafafa;font-size:12px;color:#999;line-height:1.7">
+        <div style="font-weight:700;color:#666">주식회사 우진플랫폼</div>
+        <div>서울시 영등포구 여의대방로 67길 11, 5층 에이5-41호(여의도동)</div>
+        <div>쇼핑몰 문의 kimin6756@gmail.com &middot; 가맹 및 결제 문의 office@forspay.com</div>
+        <div style="margin-top:10px;color:#bbb">무료 쇼핑몰은 ㈜우진플랫폼이 제공하며, 결제서비스는 ㈜포스페이의 결제 솔루션을 통해 제공됩니다. 상품의 판매, 계약, 배송, 환불, 고객응대 및 쇼핑몰 운영에 관한 모든 책임은 해당 판매자에게 있으며, 양사는 플랫폼 및 결제서비스 제공자로서 거래의 당사자가 아닙니다.</div>
+      </div>
+    </div>
   </div>`;
+const mailRow = (k, v) => `<tr><td style="padding:7px 16px 7px 0;color:#999;white-space:nowrap;vertical-align:top;font-size:13px">${k}</td><td style="padding:7px 0;color:#222;font-weight:600;font-size:13px">${v || '-'}</td></tr>`;
+const mailTable = (rows) => `<table style="border-collapse:collapse;width:100%">${rows}</table>`;
+const mailBox = (rows) => `<div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:14px 20px">${mailTable(rows)}</div>`;
+
+// 운영사(마스터) 수신용 — 새 신청 알림
+const buildApplicationMailHtml = (obj) => mailShell(`
+  <h2 style="margin:0 0 16px;font-size:18px">새 가맹점 신청이 접수되었습니다</h2>
+  ${mailBox(
+    mailRow('사업자명', `<b>${obj.business_name}</b>`) +
+    mailRow('사업자번호', obj.business_number) +
+    mailRow('통신판매업신고번호', obj.mail_order_number) +
+    mailRow('대표자', `${obj.ceo_name} / ${obj.ceo_phone} / ${obj.ceo_email || '-'}`) +
+    mailRow('담당자', `${obj.manager_name} / ${obj.manager_phone} / ${obj.manager_email || '-'}`) +
+    mailRow('고객센터', obj.cs_phone) +
+    mailRow('영업추천인', obj.referrer_name) +
+    mailRow('희망 URL', obj.desired_slug) +
+    mailRow('프레임', obj.selected_frame)
+  )}
+`);
+
+// 신청자(대표자/담당자) 수신용 — 접수 확인
+const buildApplicantReceiptHtml = (obj, shopUrl) => mailShell(`
+  <h2 style="margin:0 0 8px;font-size:19px">무료쇼핑몰 가맹점 신청이 접수되었습니다.</h2>
+  <p style="margin:0 0 22px;font-size:14px;color:#555;line-height:1.75">
+    무료쇼핑몰을 신청해 주셔서 진심으로 감사드립니다.<br>
+    신청 내용을 확인 후 <b>담당자가 순차적으로 서비스 상담</b>을 진행해 드리겠습니다.<br>
+    상담 완료 후 <b>관리자(Admin) 계정 및 운영 매뉴얼</b>을 제공해 드릴 예정입니다.
+  </p>
+  ${mailBox(
+    mailRow('사업자명', `<b>${obj.business_name}</b>`) +
+    mailRow('사업자번호', obj.business_number) +
+    mailRow('통신판매업신고번호', obj.mail_order_number) +
+    mailRow('대표자', `${obj.ceo_name} / ${obj.ceo_phone}`) +
+    mailRow('담당자', `${obj.manager_name} / ${obj.manager_phone}`) +
+    mailRow('고객센터', obj.cs_phone) +
+    mailRow('희망 주소', shopUrl || obj.desired_slug) +
+    mailRow('선택 프레임', obj.selected_frame)
+  )}
+`);
+
+// 신청자(대표자/담당자) 수신용 — 승인/개설 완료 + 관리자 계정 안내
+const buildApprovalHtml = ({ businessName, adminId, adminUrl, shopUrl, manualUrl }) => mailShell(`
+  <h2 style="margin:0 0 8px;font-size:19px">가맹점 개설이 완료되었습니다 🎉</h2>
+  <p style="margin:0 0 22px;font-size:14px;color:#555;line-height:1.75">
+    <b>${businessName}</b> 님, 무료쇼핑몰 가맹점 개설이 완료되었습니다.<br>
+    아래 관리자 정보로 로그인하여 <b>상품 등록부터</b> 바로 시작하실 수 있습니다.
+  </p>
+  ${mailBox(
+    mailRow('관리자 페이지', `<a href="https://${adminUrl}" style="color:#1a73e8;text-decoration:none">${adminUrl}</a>`) +
+    mailRow('쇼핑몰 주소', `<a href="https://${shopUrl}" style="color:#1a73e8;text-decoration:none">${shopUrl}</a>`) +
+    mailRow('아이디', `<b>${adminId}</b>`) +
+    mailRow('초기 비밀번호', `아이디와 동일 (<b>${adminId}</b>)`)
+  )}
+  <div style="background:#fff8e1;border:1px solid #ffe0a3;border-radius:8px;padding:12px 16px;margin-top:14px;font-size:13px;color:#8a5a00;line-height:1.7">
+    ⚠ 보안을 위해 <b>로그인 후 반드시 비밀번호를 변경</b>해 주세요. (관리자 페이지 우측 상단 프로필 → 비밀번호 변경)
+  </div>
+  <p style="margin:22px 0 0">
+    <a href="${manualUrl}" style="display:inline-block;background:#141414;color:#ffffff;text-decoration:none;padding:11px 22px;border-radius:6px;font-weight:700;font-size:14px">📘 운영 매뉴얼 보기</a>
+  </p>
+`);
 
 const table_name = 'merchant_applications';
 
@@ -126,7 +188,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
 
     // 이미 같은 dns 브랜드가 있으면 그걸 반환(중복 생성 방지)
     const dup = await readPool.query(`SELECT id FROM brands WHERE dns=? LIMIT 1`, [subDns]);
-    if (dup[0]?.length > 0) return dup[0][0].id;
+    if (dup[0]?.length > 0) return { brandId: dup[0][0].id, created: false, subDns, adminId: finalAdminId };
 
     const demo = frameToDemo(app.selected_frame);
     const setting_obj = JSON.stringify({
@@ -181,7 +243,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
             phone_num: app.manager_phone || app.ceo_phone || '',
         });
     }
-    return newBrandId;
+    return { brandId: newBrandId, adminId: finalAdminId, subDns, created: true };
 };
 
 const merchantApplicationCtrl = {
@@ -212,11 +274,11 @@ const merchantApplicationCtrl = {
             if (!BIZNO_RE.test(bizNo)) {
                 return response(req, res, -102, "사업자번호 형식이 올바르지 않습니다", false);
             }
-            if (ceo_email && !EMAIL_RE.test(ceo_email)) {
-                return response(req, res, -103, "대표자 이메일 형식이 올바르지 않습니다", false);
+            if (!ceo_email || !EMAIL_RE.test(ceo_email)) {
+                return response(req, res, -103, "대표자 이메일을 정확히 입력해 주세요", false);
             }
-            if (manager_email && !EMAIL_RE.test(manager_email)) {
-                return response(req, res, -104, "담당자 이메일 형식이 올바르지 않습니다", false);
+            if (!manager_email || !EMAIL_RE.test(manager_email)) {
+                return response(req, res, -104, "담당자 이메일을 정확히 입력해 주세요", false);
             }
             const slug = String(desired_slug || '').toLowerCase().trim();
             if (!SLUG_RE.test(slug)) {
@@ -263,12 +325,24 @@ const merchantApplicationCtrl = {
 
             await insertQuery(`${table_name}`, obj);
 
-            // 관리자에게 신청 알림 메일 (실패해도 접수는 성공 처리)
+            // 운영사(마스터)에게 신청 알림 메일 (실패해도 접수는 성공 처리)
             sendMail({
                 to: process.env.MAIL_TO || 'office@forspay.com',
                 subject: `[ShopGo] 새 가맹점 신청 - ${obj.business_name}`,
                 html: buildApplicationMailHtml(obj),
             }).catch(() => { });
+
+            // 신청자(대표자+담당자)에게 접수 확인 메일 (실패해도 접수는 성공 처리)
+            const applicantTo = [...new Set([obj.ceo_email, obj.manager_email].filter(Boolean))].join(',');
+            if (applicantTo) {
+                const rootDomain = getRootDomain();
+                const shopUrl = rootDomain ? `${obj.desired_slug}.${rootDomain}` : obj.desired_slug;
+                sendMail({
+                    to: applicantTo,
+                    subject: `[ShopGo] 무료쇼핑몰 신청이 접수되었습니다 - ${obj.business_name}`,
+                    html: buildApplicantReceiptHtml(obj, shopUrl),
+                }).catch(() => { });
+            }
 
             return response(req, res, 100, "success", {});
         } catch (err) {
@@ -572,17 +646,19 @@ const merchantApplicationCtrl = {
             if (memo !== undefined) obj.memo = memo;
             if (brand_id !== undefined) obj.brand_id = brand_id;
 
+            let app = null;
+            let approval = null;
             // 승인 시: 아직 연결된 brand가 없으면 하위 가맹점 자동 생성
             if (status === 'approved') {
                 const appRes = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
-                const app = appRes[0][0];
+                app = appRes[0][0];
                 if (!app) {
                     return response(req, res, -100, "신청 내역을 찾을 수 없습니다", false);
                 }
                 if (!app.brand_id && !brand_id) {
                     try {
-                        const newBrandId = await createSubBrandFromApplication(app, admin_id);
-                        if (newBrandId) obj.brand_id = newBrandId;
+                        approval = await createSubBrandFromApplication(app, admin_id);
+                        if (approval?.brandId) obj.brand_id = approval.brandId;
                     } catch (e) {
                         logger.error('sub-brand 생성 실패: ' + (e?.message || e));
                         return response(req, res, -110, e?.message || "하위 가맹점 생성 실패", false);
@@ -591,6 +667,26 @@ const merchantApplicationCtrl = {
             }
 
             await updateQuery(`${table_name}`, obj, id);
+
+            // 신규 개설된 경우 신청자(대표자+담당자)에게 승인/계정 안내 메일 (실패해도 승인은 성공)
+            if (approval?.created && app) {
+                const rootDomain = getRootDomain();
+                const applicantTo = [...new Set([app.ceo_email, app.manager_email].filter(Boolean))].join(',');
+                if (applicantTo) {
+                    sendMail({
+                        to: applicantTo,
+                        subject: `[ShopGo] 가맹점 개설이 완료되었습니다 - ${app.business_name}`,
+                        html: buildApprovalHtml({
+                            businessName: app.business_name,
+                            adminId: approval.adminId,
+                            adminUrl: `${approval.subDns}/manager`,
+                            shopUrl: approval.subDns,
+                            manualUrl: rootDomain ? `https://${rootDomain}/manual` : '/manual',
+                        }),
+                    }).catch(() => { });
+                }
+            }
+
             return response(req, res, 100, "success", { brand_id: obj.brand_id });
         } catch (err) {
             console.log(err);
