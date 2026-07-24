@@ -91,7 +91,9 @@ export const decFields = (obj, keys = []) => {
 export const blindIndex = (plaintext) => {
     if (plaintext === null || plaintext === undefined || plaintext === '') return '';
     const key = process.env.DB_INDEX_KEY || process.env.DB_ENCRYPTION_KEY || '';
-    const norm = String(plaintext).replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+    // 정규화: 공백·하이픈·괄호·점 등 구분자를 제거해 형식 차이(010-1234-5678 vs 01012345678)를 흡수하고,
+    // 영문은 소문자화. 한글 등 유니코드 문자는 반드시 보존해야 이름 검색이 동작한다.
+    const norm = String(plaintext).replace(/[\s.\-()]/g, '').toLowerCase();
     return crypto.createHmac('sha256', key).update(norm).digest('hex');
 };
 
