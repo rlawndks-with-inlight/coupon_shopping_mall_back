@@ -185,7 +185,12 @@ const userAddressCtrl = {
                 addr,
                 detail_addr,
                 brand_id,
-                user_id
+                user_id,
+                receiver,        // 주소록 확장(주문서용): 받는사람
+                phone,           // 연락처
+                zonecode,        // 우편번호
+                address_type,    // 배송지 구분(집/회사 등)
+                is_default,      // 기본배송지 여부
             } = req.body;
 
             const brandId = brand_id || decode_dns?.id || 0;
@@ -199,6 +204,12 @@ const userAddressCtrl = {
                 brand_id: brandId,
                 user_id
             };
+            // 확장 필드는 전달된 경우에만 포함(다른 프로젝트/구클라이언트 하위호환 — 미전송 시 컬럼 미포함)
+            if (receiver !== undefined) obj.receiver = receiver;
+            if (phone !== undefined) obj.phone = phone;
+            if (zonecode !== undefined) obj.zonecode = zonecode;
+            if (address_type !== undefined) obj.address_type = address_type;
+            if (is_default !== undefined) obj.is_default = is_default ? 1 : 0;
 
             // 권한: 관리자(레벨>=10) or 본인
             if (!(loginLevel >= 10 || loginUserId == user_id)) {
@@ -231,6 +242,11 @@ const userAddressCtrl = {
                 addr,
                 detail_addr,
                 user_id, // 프론트에서 같이 보내주면 바로 사용
+                receiver,
+                phone,
+                zonecode,
+                address_type,
+                is_default,
             } = req.body;
 
             const loginUserId = decode_user?.id ?? 0;
@@ -256,6 +272,12 @@ const userAddressCtrl = {
                 addr,
                 detail_addr,
             };
+            // 확장 필드는 전달된 경우에만 포함(하위호환)
+            if (receiver !== undefined) obj.receiver = receiver;
+            if (phone !== undefined) obj.phone = phone;
+            if (zonecode !== undefined) obj.zonecode = zonecode;
+            if (address_type !== undefined) obj.address_type = address_type;
+            if (is_default !== undefined) obj.is_default = is_default ? 1 : 0;
 
             // 권한: 관리자(레벨>=10) or 본인
             if (!(loginLevel >= 10 || loginUserId == targetUserId)) {

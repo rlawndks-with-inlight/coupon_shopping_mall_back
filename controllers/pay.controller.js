@@ -46,6 +46,9 @@ const payCtrl = {
         products = [],
         buyer_name,
         buyer_phone,
+        receiver,          // 배송지 받는사람
+        addr_phone,        // 배송지 연락처
+        zonecode,          // 우편번호
         mid,
         tid,
         pay_key,
@@ -114,6 +117,9 @@ const payCtrl = {
         detail_addr,
         buyer_name,
         buyer_phone,
+        receiver,
+        receiver_phone: addr_phone,
+        zonecode,
         mid,
         tid,
         pay_key,
