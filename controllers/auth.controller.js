@@ -2,6 +2,7 @@
 import { checkIsManagerUrl, differenceTwoDate, generateRandomCode, returnMoment } from "../utils.js/function.js";
 import { insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { createHashedPassword, checkLevel, makeUserToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
+import { encForSave, decRow, decRows, blindIndex } from "../utils.js/pii.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import axios from "axios";
@@ -57,6 +58,7 @@ const authCtrl = {
                     return response(req, res, -100, "OTP번호가 잘못되었습니다.", {})
                 }
             }
+            decRow('users', user); // 토큰에 담기 전 실명·전화 복호화
             const token = makeUserToken({
                 id: user.id,
                 user_name: user.user_name,
@@ -167,7 +169,7 @@ const authCtrl = {
             }
 
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
-                let is_exist_phone = await readPool.query(`SELECT * FROM phone_registration WHERE phone_number=? AND brand_id=? AND is_delete = 0`, [phone_num, decode_dns?.id ?? 0]);
+                let is_exist_phone = await readPool.query(`SELECT * FROM phone_registration WHERE (phone_number=? OR phone_idx=?) AND brand_id=? AND is_delete = 0`, [phone_num, blindIndex(phone_num), decode_dns?.id ?? 0]);
                 if (is_exist_phone[0].length <= 0) {
                     //console.log(is_exist_phone[0])
                     return response(req, res, -100, "가입 허락된 전화번호가 아닙니다. 관리자에 문의하세요.", false)
@@ -200,6 +202,7 @@ const authCtrl = {
                 seller_id
             }
 
+            obj = encForSave('users', obj); // 실명·전화 암호화 + blind-index
             let result = await insertQuery('users', obj);
             return response(req, res, 100, "success", {})
         } catch (err) {
@@ -379,13 +382,15 @@ const authCtrl = {
             }
             let data = {};
             if (find_user_name) {
-                let users = await readPool.query(`SELECT * FROM users WHERE phone_num=? AND brand_id=? AND status=0 `, [send_log?.phone_num, decode_dns?.id]);
+                let users = await readPool.query(`SELECT * FROM users WHERE (phone_num=? OR phone_idx=?) AND brand_id=? AND status=0 `, [send_log?.phone_num, blindIndex(send_log?.phone_num), decode_dns?.id]);
                 users = users[0];
+                decRows('users', users); // 읽기 복호화
                 data['users'] = users;
             }
             if (find_password) {
-                let user = await readPool.query(`SELECT * FROM users WHERE phone_num=? AND user_name=? AND brand_id=? AND status=0 `, [send_log?.phone_num, user_name, decode_dns?.id]);
+                let user = await readPool.query(`SELECT * FROM users WHERE (phone_num=? OR phone_idx=?) AND user_name=? AND brand_id=? AND status=0 `, [send_log?.phone_num, blindIndex(send_log?.phone_num), user_name, decode_dns?.id]);
                 user = user[0][0];
+                decRow('users', user); // 읽기 복호화
                 if (user?.status == 1) {
                     return response(req, res, -100, "승인 대기중입니다.", {})
                 }
@@ -422,7 +427,7 @@ const authCtrl = {
             } = req.body;
 
             let return_moment = returnMoment();
-            let user = await readPool.query(`SELECT * FROM users WHERE (phone_num=? AND user_name=? AND brand_id=? AND status=0) OR (id=?) `, [phone_num, user_name, decode_dns?.id, decode_user?.id ?? 0]);
+            let user = await readPool.query(`SELECT * FROM users WHERE ((phone_num=? OR phone_idx=?) AND user_name=? AND brand_id=? AND status=0) OR (id=?) `, [phone_num, blindIndex(phone_num), user_name, decode_dns?.id, decode_user?.id ?? 0]);
             user = user[0][0];
             if (decode_user?.id == user?.id) {//개인정보 변경일때
                 let user_pw = (await createHashedPassword(password, user.user_salt)).hashedPassword;

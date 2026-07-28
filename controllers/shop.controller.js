@@ -10,6 +10,7 @@ import _ from "lodash";
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
+import { decRows } from "../utils.js/pii.js";
 
 const shopCtrl = {
     setting: async (req, res, next) => {
@@ -269,6 +270,7 @@ const shopCtrl = {
                 data.products[i].description_images = images ?? [];
             }
             //셀러처리
+            decRows('users', data?.sellers || []); // 셀러(users) 실명·전화 복호화
             data['sellers'] = data?.sellers.map((item) => {
                 return {
                     ...item,
@@ -495,6 +497,7 @@ const shopCtrl = {
                 }
             }
 
+            decRows('transactions', sql_result['orders']); // 주문자명·전화·주소 복호화
             data = {
                 ...data,
                 ...sql_result,

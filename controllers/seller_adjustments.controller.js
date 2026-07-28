@@ -5,6 +5,7 @@ import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, respon
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
+import { decField } from "../utils.js/pii.js";
 
 const table_name = 'transactions';
 
@@ -69,7 +70,7 @@ const sellerAdjustmentsCtrl = {
                 // 결과를 유저별로 구성
                 const result = topSales.map(row => ({
                     id: row.top_id,
-                    name: row.top_name,
+                    name: decField(row.top_name), // 실명 복호화
                     total_amount: row.total_amount ?? 0, // null 방지
                     total_card: row.total_card ? parseInt(row.total_card) : 0,
                     total_seller: row.total_seller ? parseInt(row.total_seller) : 0,
@@ -172,7 +173,7 @@ const sellerAdjustmentsCtrl = {
                 // 결과를 유저별로 구성
                 const result = agSales.map(row => ({
                     id: row.ag_id,
-                    name: row.ag_name,
+                    name: decField(row.ag_name), // 실명 복호화
                     total_amount: row.total_amount ?? 0, // null 방지
                     total_card: row.total_card ? parseInt(row.total_card) : 0,
                     total_seller: row.total_seller ? parseInt(row.total_seller) : 0,
@@ -305,7 +306,7 @@ const sellerAdjustmentsCtrl = {
                 // 결과를 유저별로 구성
                 const result = sellerSales.map(row => ({
                     id: row.seller_id,
-                    name: row.seller_name,
+                    name: decField(row.seller_name), // 실명 복호화
                     total_amount: row.total_amount ?? 0, // null 방지
                     total_card: row.total_card ? parseInt(row.total_card) : 0,
                     total_seller: row.total_seller ? parseInt(row.total_seller) : 0,

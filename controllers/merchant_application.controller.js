@@ -5,6 +5,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { sendMail } from "../utils.js/mail.js";
+import { encForSave, decRows } from "../utils.js/pii.js";
 
 // ── ShopGo 브랜드 이메일 템플릿 ─────────────────────────────────────────────
 // 다크 헤더(ShopGo 워드마크) + 본문 + 회사정보/면책 푸터로 감싸는 공통 셸.
@@ -238,7 +239,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
         }
         // 가맹점 관리자 계정 생성 (레벨40). 초기 비밀번호 = 아이디 → 가맹점이 로그인 후 변경.
         const pw = await createHashedPassword(finalAdminId);
-        await insertQuery('users', {
+        await insertQuery('users', encForSave('users', {
             user_name: finalAdminId,
             user_pw: pw.hashedPassword,
             user_salt: pw.salt,
@@ -247,7 +248,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
             level: 40,
             brand_id: newBrandId,
             phone_num: app.manager_phone || app.ceo_phone || '',
-        });
+        }));
     }
     return { brandId: newBrandId, adminId: finalAdminId, subDns, created: true };
 };
@@ -529,6 +530,7 @@ const merchantApplicationCtrl = {
                 `SELECT id, buyer_name, amount, trx_status, is_cancel, trx_dt, trx_tm, created_at FROM transactions WHERE brand_id=?${dateWhere} ORDER BY id DESC LIMIT 30`,
                 [brand.id, ...dateParams]
             ))[0];
+            decRows('transactions', orders); // 주문자명 복호화
 
             return response(req, res, 100, "success", {
                 brand,

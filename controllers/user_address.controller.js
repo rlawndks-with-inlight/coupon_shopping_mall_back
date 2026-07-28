@@ -19,6 +19,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
+import { encForSave, decRow, decListContent } from "../utils.js/pii.js";
 
 const table_name = 'user_addresses';
 
@@ -88,6 +89,7 @@ const userAddressCtrl = {
                     const cached = await redisClient.get(cacheKey);
                     if (cached) {
                         const data = JSON.parse(cached);
+                        decListContent(table_name, data); // 읽기 복호화
                         return response(req, res, 100, "success(cache)", data);
                     }
                 } catch (e) {
@@ -107,6 +109,7 @@ const userAddressCtrl = {
                 }
             }
 
+            decListContent(table_name, data); // 읽기 복호화(캐시엔 암호문 저장, 응답은 복호화)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err);
@@ -140,6 +143,7 @@ const userAddressCtrl = {
                             return lowLevelException(req, res);
                         }
 
+                        decRow(table_name, data); // 읽기 복호화
                         return response(req, res, 100, "success(cache)", data);
                     }
                 } catch (e) {
@@ -167,6 +171,7 @@ const userAddressCtrl = {
                 }
             }
 
+            decRow(table_name, data); // 읽기 복호화
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err);
@@ -217,6 +222,7 @@ const userAddressCtrl = {
             }
 
             obj = { ...obj, ...files };
+            obj = encForSave(table_name, obj); // PII(주소·받는사람·연락처) 암호화
 
             let result = await insertQuery(`${table_name}`, obj);
 
@@ -285,6 +291,7 @@ const userAddressCtrl = {
             }
 
             obj = { ...obj, ...files };
+            obj = encForSave(table_name, obj); // PII 암호화(부분 업데이트 — 있는 필드만)
 
             let result = await updateQuery(`${table_name}`, obj, id);
 

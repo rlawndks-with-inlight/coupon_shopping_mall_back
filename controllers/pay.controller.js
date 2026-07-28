@@ -22,6 +22,7 @@ import { readPool, writePool } from "../config/db-pool.js";
 import crypto from 'crypto';
 import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
+import { encForSave } from "../utils.js/pii.js";
 
 
 const table_name = "transactions";
@@ -144,6 +145,7 @@ const payCtrl = {
 
       //console.log(obj)
 
+      obj = encForSave('transactions', obj); // PII(주문자명·전화·주소) 암호화 + blind-index(이름·전화)
       let result = await insertQuery(`${table_name}`, obj);
 
       //console.log(result)

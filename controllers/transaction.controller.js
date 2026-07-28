@@ -7,6 +7,7 @@ import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
 import fs from 'fs';
 import { readPool } from "../config/db-pool.js";
+import { decRow, decRows, decListContent, blindIndex, encForSave } from "../utils.js/pii.js";
 const table_name = 'transactions';
 
 const transactionCtrl = {
@@ -128,6 +129,7 @@ const transactionCtrl = {
                 }
             }
             //console.log(data)
+            decListContent('transactions', data); // 읽기 복호화(주문자명·전화·주소)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -167,14 +169,15 @@ const transactionCtrl = {
                 const phoneDigits = String(buyer_phone).replace(/[^0-9]/g, '');
                 let list = await readPool.query(
                     `SELECT * FROM ${table_name}
-                     WHERE REPLACE(REPLACE(REPLACE(buyer_phone,'-',''),' ',''),'.','') = ?
+                     WHERE (REPLACE(REPLACE(REPLACE(buyer_phone,'-',''),' ',''),'.','') = ? OR buyer_phone_idx = ?)
                        AND password=? AND brand_id=? ORDER BY id DESC LIMIT 50`,
-                    [phoneDigits, password, brandId]
+                    [phoneDigits, blindIndex(buyer_phone), password, brandId]
                 );
                 list = list[0];
                 for (const row of list) {
                     await attachOrders(row);
                 }
+                decRows('transactions', list); // 읽기 복호화
                 return response(req, res, 100, "success", list) // 배열
             }
 
@@ -195,6 +198,7 @@ const transactionCtrl = {
             }
             await attachOrders(data);
 
+            decRow('transactions', data); // 읽기 복호화
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
@@ -272,6 +276,7 @@ const transactionCtrl = {
                 //check_img
             };
             obj = { ...obj, ...files };
+            obj = encForSave('transactions', obj); // 주문자명·전화 암호화 + blind-index(어드민 수정)
 
             let result = await updateQuery(`${table_name}`, obj, id);
 
