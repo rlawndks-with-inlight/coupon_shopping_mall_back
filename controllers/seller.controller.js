@@ -5,6 +5,7 @@ import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, low
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
+import { encForSave, decListContent, decField, decRow, decRows } from "../utils.js/pii.js";
 const table_name = 'users';
 
 const sellerCtrl = {
@@ -46,6 +47,8 @@ const sellerCtrl = {
 
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
+            decListContent('users', data); // 셀러(users) 실명·전화 복호화
+            (data?.content || []).forEach((r) => { if (r.agent_name) r.agent_name = decField(r.agent_name); }); // 상위 영업자 실명 복호화
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -62,6 +65,7 @@ const sellerCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
 
             let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
+            decRows('users', user_list[0]); // 이름·전화 복호화(암호문 노출 방지) — 라우팅된 user.organizationalChart와 동일
             let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -88,6 +92,7 @@ const sellerCtrl = {
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
             //data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
+            decRow('users', data); // 셀러(users) 실명·전화 복호화
             return response(req, res, 100, "success", { ...data, products })
         } catch (err) {
             console.log(err)
@@ -160,6 +165,7 @@ const sellerCtrl = {
             obj['sns_obj'] = JSON.stringify(obj.sns_obj);
             obj['theme_css'] = JSON.stringify(obj.theme_css);
             obj = { ...obj, ...files };
+            obj = encForSave('users', obj); // 셀러(users) 실명·전화 암호화 + blind-index
             let result = await insertQuery(`${table_name}`, obj);
             if (!result) {
                 return response(req, res, -100, "셀러추가중 에러", false)
@@ -303,6 +309,7 @@ const sellerCtrl = {
                 }
             }
 
+            obj = encForSave('users', obj); // 셀러(users) 실명·전화 암호화 + blind-index(부분 업데이트)
             let result = await updateQuery(`${table_name}`, obj, id);
             //let delete_connect = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${id}`);
 

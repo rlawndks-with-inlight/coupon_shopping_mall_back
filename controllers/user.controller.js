@@ -5,6 +5,7 @@ import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, low
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
+import { encForSave, decRow, decRows, decListContent } from "../utils.js/pii.js";
 const table_name = 'users';
 
 const userCtrl = {
@@ -47,6 +48,7 @@ const userCtrl = {
 
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
+            decListContent('users', data); // 읽기 복호화(실명·전화)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -63,6 +65,7 @@ const userCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
 
             let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
+            decRows('users', user_list[0]); // 읽기 복호화(실명·전화)
             let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -86,6 +89,7 @@ const userCtrl = {
             }
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
+            decRow('users', data); // 읽기 복호화(실명·전화)
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
@@ -158,6 +162,7 @@ const userCtrl = {
             } else {
                 obj = { ...obj, ...files };
             }
+            obj = encForSave('users', obj); // 실명·전화 암호화 + blind-index
             let result = await insertQuery(`${table_name}`, obj);
             if (!result) {
                 return response(req, res, -100, "추가중 에러", false)
@@ -276,6 +281,7 @@ const userCtrl = {
                 }
             }
 
+            obj = encForSave('users', obj); // 실명·전화 암호화 + blind-index(부분 업데이트)
             let result = await updateQuery(`${table_name}`, obj, id);
             return response(req, res, 100, "success", {})
         } catch (err) {

@@ -19,6 +19,7 @@ import logger from "../utils.js/winston/index.js";
 import { brandSettingLang } from "../utils.js/schedules/lang-process.js";
 import speakeasy from 'speakeasy';
 import { readPool } from "../config/db-pool.js";
+import { encForSave } from "../utils.js/pii.js";
 
 const table_name = "brands";
 
@@ -183,7 +184,7 @@ const brandCtrl = {
       user_obj.user_pw = pw_data.hashedPassword;
       let user_salt = pw_data.salt;
       user_obj["user_salt"] = user_salt;
-      let user_sign_up = await insertQuery("users", user_obj);
+      let user_sign_up = await insertQuery("users", encForSave("users", user_obj)); // 판매자 실명(name) 암호화 + name_idx 세팅
       return response(req, res, 100, "success", {});
     } catch (err) {
       console.log(err);

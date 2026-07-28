@@ -5,32 +5,38 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { sendMail } from "../utils.js/mail.js";
+import { encForSave, decRows } from "../utils.js/pii.js";
 
 // ── ShopGo 브랜드 이메일 템플릿 ─────────────────────────────────────────────
 // 다크 헤더(ShopGo 워드마크) + 본문 + 회사정보/면책 푸터로 감싸는 공통 셸.
 const MAIL_GREEN = '#9ee54e';
+// 이메일 클라이언트 호환을 위해 div가 아닌 table 기반으로 구성.
+// (Outlook은 div의 max-width를 무시 → 화면 끝까지 늘어남. 고정폭 600px table로 방지)
+// 카드는 좌측 정렬(align="left") 고정폭 600px.
 const mailShell = (inner) => `
-  <div style="margin:0;padding:24px 0;background:#f4f4f5">
-    <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:10px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕',sans-serif;color:#222">
-      <div style="background:#141414;padding:22px 32px">
-        <span style="font-size:23px;font-weight:800;letter-spacing:-0.5px;color:#ffffff">Shop<span style="color:${MAIL_GREEN}">Go</span></span>
-      </div>
-      <div style="padding:30px 32px">${inner}</div>
-      <div style="border-top:1px solid #eee;padding:20px 32px;background:#fafafa;font-size:12px;color:#999;line-height:1.7">
-        <div style="font-weight:700;color:#666">주식회사 우진플랫폼</div>
-        <div>서울시 영등포구 여의대방로 67길 11, 5층 에이5-41호(여의도동)</div>
-        <div>쇼핑몰 문의 kimin6756@gmail.com &middot; 가맹 및 결제 문의 office@forspay.com</div>
-        <div style="margin-top:10px;color:#bbb">무료 쇼핑몰은 ㈜우진플랫폼이 제공하며, 결제서비스는 ㈜포스페이의 결제 솔루션을 통해 제공됩니다. 상품의 판매, 계약, 배송, 환불, 고객응대 및 쇼핑몰 운영에 관한 모든 책임은 해당 판매자에게 있으며, 양사는 플랫폼 및 결제서비스 제공자로서 거래의 당사자가 아닙니다.</div>
-      </div>
-    </div>
-  </div>`;
-const mailRow = (k, v) => `<tr><td style="padding:7px 16px 7px 0;color:#999;white-space:nowrap;vertical-align:top;font-size:13px">${k}</td><td style="padding:7px 0;color:#222;font-weight:600;font-size:13px">${v || '-'}</td></tr>`;
-const mailTable = (rows) => `<table style="border-collapse:collapse;width:100%">${rows}</table>`;
-const mailBox = (rows) => `<div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:14px 20px">${mailTable(rows)}</div>`;
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;border-collapse:collapse">
+    <tr><td align="left" style="padding:24px 16px">
+      <table role="presentation" width="650" cellpadding="0" cellspacing="0" style="width:650px;max-width:650px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #ececec;border-collapse:separate;font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕',sans-serif;color:#222">
+        <tr><td style="background:#141414;padding:18px 30px">
+          <span style="font-size:22px;font-weight:800;letter-spacing:-0.5px;color:#ffffff">Shop<span style="color:${MAIL_GREEN}">Go</span></span>
+        </td></tr>
+        <tr><td style="padding:26px 30px 28px">${inner}</td></tr>
+        <tr><td style="padding:20px 30px;background:#fafafa;border-top:1px solid #eee;font-size:12px;color:#999;line-height:1.7">
+          <div style="font-weight:700;color:#666">주식회사 우진플랫폼</div>
+          <div>서울시 영등포구 여의대방로 67길 11, 5층 에이5-41호(여의도동)</div>
+          <div>쇼핑몰 문의 kimin6756@gmail.com &middot; 가맹 및 결제 문의 office@forspay.com</div>
+          <div style="margin-top:9px;color:#bbb;font-size:11px">무료 쇼핑몰은 ㈜우진플랫폼이 제공하며, 결제서비스는 ㈜포스페이의 결제 솔루션을 통해 제공됩니다. 상품의 판매, 계약, 배송, 환불, 고객응대 및 쇼핑몰 운영에 관한 모든 책임은 해당 판매자에게 있으며, 양사는 플랫폼 및 결제서비스 제공자로서 거래의 당사자가 아닙니다.</div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>`;
+const mailRow = (k, v) => `<tr><td style="padding:11px 18px 11px 20px;color:#9a9aa2;white-space:nowrap;vertical-align:top;font-size:13px;border-bottom:1px solid #f0f0f0;width:120px">${k}</td><td style="padding:11px 20px 11px 0;color:#222;font-weight:600;font-size:13px;border-bottom:1px solid #f0f0f0;word-break:break-all">${v || '-'}</td></tr>`;
+const mailBox = (rows) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fafafa;border:1px solid #eee;border-radius:10px;border-collapse:separate">${rows}</table>`;
 
 // 운영사(마스터) 수신용 — 새 신청 알림
 const buildApplicationMailHtml = (obj) => mailShell(`
-  <h2 style="margin:0 0 16px;font-size:18px">새 가맹점 신청이 접수되었습니다</h2>
+  <div style="font-size:20px;font-weight:800;color:#191919;letter-spacing:-0.4px">새 가맹점 신청이 접수되었습니다</div>
+  <div style="font-size:13px;color:#8a8a90;margin:7px 0 18px">아래 내용으로 신규 가맹점 신청이 접수되었습니다.</div>
   ${mailBox(
     mailRow('사업자명', `<b>${obj.business_name}</b>`) +
     mailRow('사업자번호', obj.business_number) +
@@ -48,9 +54,10 @@ const buildApplicationMailHtml = (obj) => mailShell(`
 const buildApplicantReceiptHtml = (obj, shopUrl) => mailShell(`
   <h2 style="margin:0 0 8px;font-size:19px">무료쇼핑몰 가맹점 신청이 접수되었습니다.</h2>
   <p style="margin:0 0 22px;font-size:14px;color:#555;line-height:1.75">
-    무료쇼핑몰을 신청해 주셔서 진심으로 감사드립니다.<br>
-    신청 내용을 확인 후 <b>담당자가 순차적으로 서비스 상담</b>을 진행해 드리겠습니다.<br>
-    상담 완료 후 <b>관리자(Admin) 계정 및 운영 매뉴얼</b>을 제공해 드릴 예정입니다.
+    ShopGo 무료쇼핑몰을 신청해 주셔서 진심으로 감사드립니다.<br>
+    신청 내용을 확인 후 <b>포스페이 담당자가 순차적으로 서비스 상담</b>을 진행해 드리겠습니다.<br>
+    상담 완료 후 <b>관리자(Admin) 계정 및 운영 매뉴얼</b>을 제공해 드릴 예정입니다.<br>
+    앞으로 성공적인 온라인 비즈니스 운영을 위해 최선을 다해 지원하겠습니다.
   </p>
   ${mailBox(
     mailRow('사업자명', `<b>${obj.business_name}</b>`) +
@@ -59,8 +66,8 @@ const buildApplicantReceiptHtml = (obj, shopUrl) => mailShell(`
     mailRow('대표자', `${obj.ceo_name} / ${obj.ceo_phone}`) +
     mailRow('담당자', `${obj.manager_name} / ${obj.manager_phone}`) +
     mailRow('고객센터', obj.cs_phone) +
-    mailRow('희망 주소', shopUrl || obj.desired_slug) +
-    mailRow('선택 프레임', obj.selected_frame)
+    mailRow('희망 URL', shopUrl || obj.desired_slug) +
+    mailRow('프레임', obj.selected_frame)
   )}
 `);
 
@@ -232,7 +239,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
         }
         // 가맹점 관리자 계정 생성 (레벨40). 초기 비밀번호 = 아이디 → 가맹점이 로그인 후 변경.
         const pw = await createHashedPassword(finalAdminId);
-        await insertQuery('users', {
+        await insertQuery('users', encForSave('users', {
             user_name: finalAdminId,
             user_pw: pw.hashedPassword,
             user_salt: pw.salt,
@@ -241,7 +248,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
             level: 40,
             brand_id: newBrandId,
             phone_num: app.manager_phone || app.ceo_phone || '',
-        });
+        }));
     }
     return { brandId: newBrandId, adminId: finalAdminId, subDns, created: true };
 };
@@ -326,8 +333,12 @@ const merchantApplicationCtrl = {
             await insertQuery(`${table_name}`, obj);
 
             // 운영사(마스터)에게 신청 알림 메일 (실패해도 접수는 성공 처리)
+            // 수신자 = env MAIL_TO. 미설정 시에만 office@forspay.com으로 폴백.
+            // (env를 '지우면' 폴백이 켜져 office로 감 → 테스트 시엔 MAIL_TO를 원하는 주소로 '지정'할 것)
+            const operatorTo = process.env.MAIL_TO || 'office@forspay.com';
+            logger.info(`[가맹점신청] 운영사 알림 수신자 → ${operatorTo} (env MAIL_TO=${process.env.MAIL_TO || '(미설정)'})`);
             sendMail({
-                to: process.env.MAIL_TO || 'office@forspay.com',
+                to: operatorTo,
                 subject: `[ShopGo] 새 가맹점 신청 - ${obj.business_name}`,
                 html: buildApplicationMailHtml(obj),
             }).catch(() => { });
@@ -519,6 +530,7 @@ const merchantApplicationCtrl = {
                 `SELECT id, buyer_name, amount, trx_status, is_cancel, trx_dt, trx_tm, created_at FROM transactions WHERE brand_id=?${dateWhere} ORDER BY id DESC LIMIT 30`,
                 [brand.id, ...dateParams]
             ))[0];
+            decRows('transactions', orders); // 주문자명 복호화
 
             return response(req, res, 100, "success", {
                 brand,

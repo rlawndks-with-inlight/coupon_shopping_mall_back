@@ -19,4 +19,8 @@ export const fulltextColumns = {
 export const likeOnlyColumns = {
     'products': [`product_categories0.category_name`, `product_categories1.category_en_name`],
     'seller_adjustments': ['brands.name', 'users.name', 'users.nickname'],
+    // 주문검색 축 추가: 주문번호(ord_num) + 회원 아이디(users.user_name).
+    // 암호화(Phase 4)로 이름·전화 부분검색이 사라지는 것을 대체하는 평문 검색축.
+    // ※ users.user_name은 transactions list 쿼리가 users를 항상 JOIN해야 유효(transaction.controller.js).
+    'transactions': ['transactions.ord_num', 'users.user_name'],
 }

@@ -7,6 +7,7 @@ import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
 import fs from 'fs';
 import { readPool } from "../config/db-pool.js";
+import { decRow, decRows, decListContent, blindIndex, encForSave } from "../utils.js/pii.js";
 const table_name = 'transactions';
 
 const transactionCtrl = {
@@ -28,15 +29,13 @@ const transactionCtrl = {
 
             //console.log(req.query)
 
+            // 회원 아이디(user_name)로 주문검색하기 위해 users JOIN은 항상 포함(seller 모드 무관).
+            sql += `LEFT JOIN users AS users ON ${table_name}.user_id=users.id `;
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
                 columns.push(`sellers.user_name AS seller_user_name`);
                 columns.push(`sellers.dns AS seller_dns`);
                 sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id `;
-
                 columns.push(`users.unipass AS user_unipass`);
-                sql += `LEFT JOIN users AS users ON ${table_name}.user_id=users.id `;
-            } else {
-
             }
             let params = [];
             sql += ` WHERE ${table_name}.brand_id=? `;
@@ -130,6 +129,7 @@ const transactionCtrl = {
                 }
             }
             //console.log(data)
+            decListContent('transactions', data); // 읽기 복호화(주문자명·전화·주소)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -145,7 +145,41 @@ const transactionCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id, } = req.params;
-            const { ord_num, password } = req.query;
+            const { ord_num, password, buyer_phone } = req.query;
+            const brandId = decode_dns?.id ?? 0;
+
+            // 라인아이템(orders[]) 첨부 헬퍼
+            const attachOrders = async (row) => {
+                if (!row) return row;
+                let od = await readPool.query(`SELECT * FROM transaction_orders WHERE trans_id=? ORDER BY id DESC`, [row?.id ?? 0]);
+                od = od[0];
+                for (var i = 0; i < od.length; i++) {
+                    od[i].groups = JSON.parse(od[i]?.groups ?? "[]");
+                }
+                row.orders = od;
+                return row;
+            };
+
+            // 비회원 조회: 전화번호 + 주문비밀번호 → 현재 브랜드로 스코프, 여러 건 배열 반환.
+            // 전화번호는 형식차(하이픈/공백/점) 흡수 위해 숫자만 비교.
+            if (buyer_phone) {
+                if (!password) {
+                    return response(req, res, -100, "주문 비밀번호를 입력해 주세요.", [])
+                }
+                const phoneDigits = String(buyer_phone).replace(/[^0-9]/g, '');
+                let list = await readPool.query(
+                    `SELECT * FROM ${table_name}
+                     WHERE (REPLACE(REPLACE(REPLACE(buyer_phone,'-',''),' ',''),'.','') = ? OR buyer_phone_idx = ?)
+                       AND password=? AND brand_id=? ORDER BY id DESC LIMIT 50`,
+                    [phoneDigits, blindIndex(buyer_phone), password, brandId]
+                );
+                list = list[0];
+                for (const row of list) {
+                    await attachOrders(row);
+                }
+                decRows('transactions', list); // 읽기 복호화
+                return response(req, res, 100, "success", list) // 배열
+            }
 
             let sql = `SELECT * FROM ${table_name} WHERE id=?`;
             let queryParams = [id];
@@ -162,13 +196,9 @@ const transactionCtrl = {
             if (!data) {
                 return response(req, res, -100, "존재하지 않는 주문번호 입니다.", {})
             }
-            let order_data = await readPool.query(`SELECT * FROM transaction_orders WHERE trans_id=? ORDER BY id DESC`, [data?.id ?? 0]);
-            order_data = order_data[0];
-            for (var i = 0; i < order_data.length; i++) {
-                order_data[i].groups = JSON.parse(order_data[i]?.groups ?? "[]");
-            }
-            data.orders = order_data;
+            await attachOrders(data);
 
+            decRow('transactions', data); // 읽기 복호화
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
@@ -246,6 +276,7 @@ const transactionCtrl = {
                 //check_img
             };
             obj = { ...obj, ...files };
+            obj = encForSave('transactions', obj); // 주문자명·전화 암호화 + blind-index(어드민 수정)
 
             let result = await updateQuery(`${table_name}`, obj, id);
 

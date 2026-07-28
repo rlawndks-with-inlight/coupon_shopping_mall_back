@@ -5,6 +5,7 @@ import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, respon
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
+import { decListContent } from "../utils.js/pii.js";
 
 const table_name = 'consignments';
 
@@ -40,6 +41,7 @@ const consignmentCtrl = {
 
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
+            decListContent('users', data); // JOIN된 위탁회원 실명(users.name) 복호화
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)

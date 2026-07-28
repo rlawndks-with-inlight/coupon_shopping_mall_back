@@ -19,6 +19,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
+import { encForSave, decRow, decListContent } from "../utils.js/pii.js";
 
 const table_name = 'user_addresses';
 
@@ -88,6 +89,7 @@ const userAddressCtrl = {
                     const cached = await redisClient.get(cacheKey);
                     if (cached) {
                         const data = JSON.parse(cached);
+                        decListContent(table_name, data); // 읽기 복호화
                         return response(req, res, 100, "success(cache)", data);
                     }
                 } catch (e) {
@@ -107,6 +109,7 @@ const userAddressCtrl = {
                 }
             }
 
+            decListContent(table_name, data); // 읽기 복호화(캐시엔 암호문 저장, 응답은 복호화)
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err);
@@ -140,6 +143,7 @@ const userAddressCtrl = {
                             return lowLevelException(req, res);
                         }
 
+                        decRow(table_name, data); // 읽기 복호화
                         return response(req, res, 100, "success(cache)", data);
                     }
                 } catch (e) {
@@ -167,6 +171,7 @@ const userAddressCtrl = {
                 }
             }
 
+            decRow(table_name, data); // 읽기 복호화
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err);
@@ -185,7 +190,12 @@ const userAddressCtrl = {
                 addr,
                 detail_addr,
                 brand_id,
-                user_id
+                user_id,
+                receiver,        // 주소록 확장(주문서용): 받는사람
+                phone,           // 연락처
+                zonecode,        // 우편번호
+                address_type,    // 배송지 구분(집/회사 등)
+                is_default,      // 기본배송지 여부
             } = req.body;
 
             const brandId = brand_id || decode_dns?.id || 0;
@@ -199,6 +209,12 @@ const userAddressCtrl = {
                 brand_id: brandId,
                 user_id
             };
+            // 확장 필드는 전달된 경우에만 포함(다른 프로젝트/구클라이언트 하위호환 — 미전송 시 컬럼 미포함)
+            if (receiver !== undefined) obj.receiver = receiver;
+            if (phone !== undefined) obj.phone = phone;
+            if (zonecode !== undefined) obj.zonecode = zonecode;
+            if (address_type !== undefined) obj.address_type = address_type;
+            if (is_default !== undefined) obj.is_default = is_default ? 1 : 0;
 
             // 권한: 관리자(레벨>=10) or 본인
             if (!(loginLevel >= 10 || loginUserId == user_id)) {
@@ -206,6 +222,7 @@ const userAddressCtrl = {
             }
 
             obj = { ...obj, ...files };
+            obj = encForSave(table_name, obj); // PII(주소·받는사람·연락처) 암호화
 
             let result = await insertQuery(`${table_name}`, obj);
 
@@ -231,6 +248,11 @@ const userAddressCtrl = {
                 addr,
                 detail_addr,
                 user_id, // 프론트에서 같이 보내주면 바로 사용
+                receiver,
+                phone,
+                zonecode,
+                address_type,
+                is_default,
             } = req.body;
 
             const loginUserId = decode_user?.id ?? 0;
@@ -256,6 +278,12 @@ const userAddressCtrl = {
                 addr,
                 detail_addr,
             };
+            // 확장 필드는 전달된 경우에만 포함(하위호환)
+            if (receiver !== undefined) obj.receiver = receiver;
+            if (phone !== undefined) obj.phone = phone;
+            if (zonecode !== undefined) obj.zonecode = zonecode;
+            if (address_type !== undefined) obj.address_type = address_type;
+            if (is_default !== undefined) obj.is_default = is_default ? 1 : 0;
 
             // 권한: 관리자(레벨>=10) or 본인
             if (!(loginLevel >= 10 || loginUserId == targetUserId)) {
@@ -263,6 +291,7 @@ const userAddressCtrl = {
             }
 
             obj = { ...obj, ...files };
+            obj = encForSave(table_name, obj); // PII 암호화(부분 업데이트 — 있는 필드만)
 
             let result = await updateQuery(`${table_name}`, obj, id);
 
