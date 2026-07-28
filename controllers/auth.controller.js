@@ -273,7 +273,7 @@ const authCtrl = {
             if (differenceTwoDate(return_moment, send_log?.created_at).second > 180) {
                 return response(req, res, -100, "인증시간이 지났습니다. 다시 인증해 주세요.", false)
             }
-            let result = await updateQuery('users', {
+            let result = await updateQuery('users', encForSave('users', {
                 nickname,
                 phone_num,
                 profile_img,
@@ -286,7 +286,7 @@ const authCtrl = {
                 bsin_lic_img,
                 shareholder_img,
                 register_img
-            }, decode_user?.id);
+            }), decode_user?.id); // phone_num 암호화 + phone_idx 세팅(부분 업데이트 안전, name 없음)
             await res.clearCookie('token');
             return response(req, res, 100, "success", {})
         } catch (err) {

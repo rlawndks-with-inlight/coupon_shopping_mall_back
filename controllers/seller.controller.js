@@ -5,7 +5,7 @@ import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, low
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
-import { encForSave, decListContent, decField, decRow } from "../utils.js/pii.js";
+import { encForSave, decListContent, decField, decRow, decRows } from "../utils.js/pii.js";
 const table_name = 'users';
 
 const sellerCtrl = {
@@ -65,6 +65,7 @@ const sellerCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
 
             let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
+            decRows('users', user_list[0]); // 이름·전화 복호화(암호문 노출 방지) — 라우팅된 user.organizationalChart와 동일
             let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
