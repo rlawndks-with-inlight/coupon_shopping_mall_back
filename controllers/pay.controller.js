@@ -22,6 +22,7 @@ import { readPool, writePool } from "../config/db-pool.js";
 import crypto from 'crypto';
 import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
+import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
 
 
@@ -89,6 +90,8 @@ const payCtrl = {
         trx_method = 31;
       } else if (trx_type == 'card_payletter') {
         trx_method = 40;
+      } else if (trx_type == 'auth_forspay') {
+        trx_method = 41;
       } else {
         //console.log(trx_type);
         return response(req, res, -100, "잘못된 결제타입 입니다.", false)
@@ -321,6 +324,62 @@ const payCtrl = {
         }
       }
 
+      // ─────────────────────────────
+      // 포스페이(Forspay External API, direct_pg_ui) 인증결제
+      //  - 체크아웃 세션 생성 → PG 결제창 URL(launch_page_url) 반환
+      //  - 확정은 return/callback 에서 거래조회(GET /transactions)로 재검증
+      // ─────────────────────────────
+      if (trx_method == 41) {
+        try {
+          const creds = await getForspayCreds(brand_id);
+          if (!creds?.app_key) {
+            return response(req, res, -100, "포스페이 결제모듈 설정이 필요합니다. (결제모듈 '결제키'에 App key 입력)", false);
+          }
+          if (!FORSPAY_API_BASE || FORSPAY_API_BASE.includes('REPLACE')) {
+            return response(req, res, -100, "포스페이 Base URL(FORSPAY_API_BASE) 설정이 필요합니다.", false);
+          }
+          const front_url = (req.body.front_url || "").toString().trim();
+          const backBase = `${req.protocol}://${req.get('host')}`;
+          const order_no = String(ord_num || `FS${trans_id}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 64);
+          const return_url = `${backBase}/api/pays/forspay/return?front=${encodeURIComponent(front_url)}&trans=${trans_id}&ord=${encodeURIComponent(order_no)}`;
+
+          const session = await forspayCreateSession({
+            app_key: creds.app_key,
+            amount,
+            item_name: item_name || '상품',
+            buyer_name,
+            ord_num: order_no,
+            pg_method_id: 0,               // 인증결제 = 카드
+            pg_provider_id: creds.pg_provider_id,  // 비어있으면 포스페이 자동 라우팅
+            return_url,
+            user_agent: req.body.user_agent || 'WP',
+            buyer_phone,
+          });
+
+          let launch_page_url = session?.launch_page_url;
+          if (!launch_page_url && session?.order_code) {
+            // create가 launch_page_url을 안 준 경우 /pay 로 조회
+            const launched = await forspayGetLaunch({ app_key: creds.app_key, order_code: session.order_code, return_url, user_agent: req.body.user_agent || 'WP' });
+            launch_page_url = launched?.launch_page_url;
+          }
+          if (!launch_page_url) {
+            return response(req, res, -100, session?.message || "포스페이 세션 생성 실패", false);
+          }
+
+          // return/webhook 매칭용 ord_num을 거래에 동기화(정규화 값)
+          await updateQuery(table_name, { ord_num: order_no }, trans_id);
+
+          return response(req, res, 100, "success", {
+            id: trans_id,
+            order_code: session?.order_code,
+            launch_page_url,
+          });
+        } catch (e) {
+          logger.error(JSON.stringify(e?.response?.data || e));
+          return response(req, res, -100, e?.response?.data?.message || "포스페이 세션 생성 오류", false);
+        }
+      }
+
       return response(req, res, 100, "success", {
         id: trans_id,
       });
@@ -457,6 +516,27 @@ const payCtrl = {
       let files = settingFiles(req.files);
       let obj = {};
       const formData = qs.stringify({ trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate });
+
+      // 포스페이 취소: 거래의 ord_num으로 취소 API 호출
+      if (pg === 'forspay') {
+        let trx = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [id]);
+        trx = trx[0][0];
+        if (!trx) {
+          return response(req, res, -100, "거래를 찾을 수 없습니다.", false);
+        }
+        const creds = await getForspayCreds(trx.brand_id);
+        if (!creds?.app_key) {
+          return response(req, res, -100, "포스페이 결제모듈 설정이 없습니다.", false);
+        }
+        try {
+          await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount });
+          await updateQuery('transactions', { is_cancel_trans: 1 }, id);
+          return response(req, res, 100, "success", {});
+        } catch (e) {
+          logger.error(JSON.stringify(e?.response?.data || e));
+          return response(req, res, -200, e?.response?.data?.message || "포스페이 취소 실패", false);
+        }
+      }
 
       // 페이레터 취소: 거래에서 user_id/tid(trx_id)를 읽어 취소 API 호출
       if (pg === 'payletter') {
@@ -599,6 +679,68 @@ const payCtrl = {
       return res.redirect(302, `${resultBase}?result_cd=9999`);
     }
   },
+  forspayReturn: async (req, res, next) => {
+    // 포스페이 결제창 종료 후 브라우저 도달 URL. 거래조회로 재검증 후 프론트 결과페이지로 리다이렉트.
+    const data = { ...req.query, ...req.body };
+    let front = (data.front || "").toString().trim();
+    if (front && !/^https?:\/\//.test(front)) front = `https://${front}`;
+    const resultBase = `${front}/shop/auth/pay-result`;
+    try {
+      const transId = data.trans;
+      const ord = data.ord || data.ord_num;
+      const trx = transId
+        ? (await readPool.query(`SELECT * FROM transactions WHERE id=?`, [transId]))[0][0]
+        : (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
+      const creds = trx ? await getForspayCreds(trx.brand_id) : null;
+      let txn = {};
+      try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); } catch (e) { txn = {}; }
+      if (txn?.status === 'approved') {
+        await settleForspayTransaction(trx?.id, txn);
+        const q = new URLSearchParams({
+          result_cd: '0000',
+          ord_num: (ord || '').toString(),
+          buyer_name: (txn.buyer_name || '').toString(),
+          trx_dttm: (txn.trx_dttm || '').toString(),
+        }).toString();
+        return res.redirect(302, `${resultBase}?${q}`);
+      }
+      return res.redirect(302, `${resultBase}?result_cd=9999`);
+    } catch (err) {
+      console.log(err);
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return res.redirect(302, `${resultBase}?result_cd=9999`);
+    }
+  },
+  forspayCallback: async (req, res, next) => {
+    // 포스페이 웹훅(noti_url). 승인/취소 통지 — 공식 기록. 응답은 200.
+    try {
+      const body = { ...req.query, ...req.body };
+      const ord = body.ord_num;
+      const trx = (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
+      if (!trx) return res.status(200).send({ ok: true });
+      const creds = await getForspayCreds(trx.brand_id);
+      // sign_key 설정 시 서명 검증(불일치면 무시)
+      if (creds?.sign_key && body.signature) {
+        const ok = forspayVerifySig({ sign_key: creds.sign_key, timestamp: body.timestamp, mid: body.mid, signature: body.signature });
+        if (!ok) { logger.error('forspay webhook signature mismatch'); return res.status(200).send({ ok: false }); }
+      }
+      if (String(body.is_cancel) === '1') {
+        await updateQuery('transactions', { is_cancel_trans: 1 }, trx.id);
+        return res.status(200).send({ ok: true });
+      }
+      // 승인: 거래조회로 재확인 후 확정(멱등)
+      let txn = {};
+      try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); } catch (e) { txn = {}; }
+      if (txn?.status === 'approved' || String(body.result_cd) === '0000') {
+        await settleForspayTransaction(trx.id, { ...body, ...txn });
+      }
+      return res.status(200).send({ ok: true });
+    } catch (err) {
+      console.log(err);
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return res.status(200).send({ ok: false });
+    }
+  },
 };
 
 // 브랜드별 페이레터 인증정보를 payment_modules(trx_type=40)에서 조회
@@ -629,6 +771,57 @@ async function settlePayletterTransaction(transId, data = {}) {
     trx_id: data.tid ?? trx.trx_id,
     appr_num: (data.cid ?? '').toString(),
     card_num: (data.card_info ?? '').toString(),
+    trx_dt,
+    trx_tm,
+    trx_status: 5,
+  }, transId);
+
+  // 포인트 적립 (기존 pays.result 성공 로직과 동일)
+  let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);
+  let brand = brandRows[0][0];
+  let setting = JSON.parse(brand?.setting_obj ?? '{}');
+  let point = (trx.amount) * ((setting?.point_rate ?? 0) / 100);
+  if (point > 0) {
+    await insertQuery('points', {
+      brand_id: trx.brand_id,
+      user_id: trx.user_id,
+      sender_id: 0,
+      point,
+      type: 0,
+      trans_id: transId,
+    });
+  }
+  return true;
+}
+
+// 브랜드별 포스페이 인증정보를 payment_modules(trx_type=41)에서 조회
+//  결제키(pay_key)=App key, MID=pg_provider_id(선택), TID=sign_key(선택)
+async function getForspayCreds(brand_id) {
+  let rows = await readPool.query(
+    `SELECT mid, pay_key, tid FROM payment_modules WHERE brand_id=? AND trx_type=41 ORDER BY id DESC LIMIT 1`,
+    [brand_id]
+  );
+  let m = rows[0][0];
+  if (!m) return null;
+  return { app_key: m.pay_key, pg_provider_id: m.mid, sign_key: m.tid };
+}
+
+// 포스페이 거래 확정(멱등): 거래조회로 승인 확인된 건을 결제완료 처리 + 포인트 적립
+async function settleForspayTransaction(transId, data = {}) {
+  if (!transId) return false;
+  let rows = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [transId]);
+  let trx = rows[0][0];
+  if (!trx) return false;
+  if (trx.trx_status == 5) return true; // 이미 확정됨(중복 return/webhook 방지)
+
+  let trx_dttm = (data.trx_dttm || '').toString();
+  let trx_dt = trx_dttm.includes(' ') ? trx_dttm.split(' ')[0] : trx_dttm;
+  let trx_tm = trx_dttm.includes(' ') ? trx_dttm.split(' ')[1] : '';
+
+  await updateQuery('transactions', {
+    trx_id: data.trx_id ?? trx.trx_id,
+    appr_num: (data.appr_num ?? '').toString(),
+    card_num: (data.card_num ?? '').toString(),
     trx_dt,
     trx_tm,
     trx_status: 5,

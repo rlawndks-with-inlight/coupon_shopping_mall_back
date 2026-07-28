@@ -19,6 +19,13 @@ router
     .get(payCtrl.payletterReturn)
     .post(payCtrl.payletterReturn);
 router
+    .route('/forspay/callback')
+    .post(payCtrl.forspayCallback);
+router
+    .route('/forspay/return')
+    .get(payCtrl.forspayReturn)
+    .post(payCtrl.forspayReturn);
+router
     .route('/:trx_type')
     .post(payCtrl.ready);
 
