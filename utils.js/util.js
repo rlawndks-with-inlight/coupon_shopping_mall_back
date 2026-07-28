@@ -328,13 +328,13 @@ export const getPayType = (num) => {
             description: '신용카드로 결제합니다. (페이레터 테스트 모듈)',
             type: 'card_payletter',
         }
-    } /*else if (num == 41) {
+    } else if (num == 41) {
         return {
-            title: `인증결제`,
-            description: '구매를 안전하게 완료하기 위해 인증결제 웹사이트로 리디렉션됩니다.',
-            type: 'certification_wayup',
+            title: `인증결제(포스페이)`,
+            description: '카드 인증결제를 진행합니다. (포스페이)',
+            type: 'auth_forspay',
         }
-    }*/ else if (num == 50) {
+    } else if (num == 50) {
         return {
             title: 'SMS결제',
             description: '이름과 핸드폰번호를 입력하시면 결제 안내가 전송됩니다.',
