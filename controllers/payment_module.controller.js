@@ -59,12 +59,13 @@ const paymentModuleCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url
+                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url, forspay_config
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 brand_id, pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url
             };
+            if (forspay_config !== undefined) obj.forspay_config = forspay_config; // 포스페이 수단별 PG 라우팅(JSON). 컬럼 필요(ALTER).
             let columns = [
                 `${table_name}.*`,
             ]
@@ -94,13 +95,14 @@ const paymentModuleCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const {
-                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url,
+                pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url, forspay_config,
                 id
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
                 pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url
             };
+            if (forspay_config !== undefined) obj.forspay_config = forspay_config; // 포스페이 수단별 PG 라우팅(JSON). 컬럼 필요(ALTER).
             obj = { ...obj, ...files };
             let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=? AND brand_id=? AND id!=?`, [trx_type, decode_dns?.id ?? 0, id]);
             is_exist_trx_type = is_exist_trx_type[0];

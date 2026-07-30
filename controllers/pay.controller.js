@@ -22,7 +22,7 @@ import { readPool, writePool } from "../config/db-pool.js";
 import crypto from 'crypto';
 import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
-import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
+import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
 
 
@@ -48,6 +48,7 @@ const payCtrl = {
         products = [],
         buyer_name,
         buyer_phone,
+        pay_method,        // 포스페이: 구매자가 고른 결제수단 키(card/bank/kakaopay/…)
         receiver,          // 배송지 받는사람
         addr_phone,        // 배송지 연락처
         zonecode,          // 우편번호
@@ -338,6 +339,16 @@ const payCtrl = {
           if (!FORSPAY_API_BASE || FORSPAY_API_BASE.includes('REPLACE')) {
             return response(req, res, -100, "포스페이 Base URL(FORSPAY_API_BASE) 설정이 필요합니다.", false);
           }
+          // 구매자가 고른 결제수단 → 포스페이 파라미터 매핑 (미지정 시 신용카드)
+          const fsMethod = getForspayMethod(pay_method) || getForspayMethod('card');
+          if (fsMethod?.pending) {
+            return response(req, res, -100, `'${fsMethod.label}'은(는) 아직 준비 중인 결제수단입니다. (협력사 확인 필요)`, false);
+          }
+          // PG(페이레터/나이스) 라우팅: 수단별 지정 → 모듈 기본(MID) → 미지정 시 포스페이 자동
+          const routedProvider = creds?.method_provider?.[fsMethod.key];
+          const fsProvider = (routedProvider !== undefined && routedProvider !== null && String(routedProvider).trim() !== '')
+            ? routedProvider
+            : creds.pg_provider_id;
           const front_url = (req.body.front_url || "").toString().trim();
           const backBase = `${req.protocol}://${req.get('host')}`;
           const order_no = String(ord_num || `FS${trans_id}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 64);
@@ -349,11 +360,15 @@ const payCtrl = {
             item_name: item_name || '상품',
             buyer_name,
             ord_num: order_no,
-            pg_method_id: 0,               // 인증결제 = 카드
-            pg_provider_id: creds.pg_provider_id,  // 비어있으면 포스페이 자동 라우팅
+            pg_method_id: fsMethod.pg_method_id,
+            route: fsMethod.route,
+            foreign_method: fsMethod.foreign_method,
+            pg_provider_id: fsProvider,    // 비어있으면 포스페이 자동 라우팅
             return_url,
             user_agent: req.body.user_agent || 'WP',
             buyer_phone,
+            buyer_email: req.body.buyer_email,
+            billaddrcity: req.body.billaddrcity,
           });
 
           let launch_page_url = session?.launch_page_url;
@@ -512,7 +527,16 @@ const payCtrl = {
 
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
-      const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate, id, pg } = req.body;
+      const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate, id } = req.body;
+      let { pg } = req.body;
+      // 프론트가 pg를 안 실어보내도, 거래의 trx_method로 결제사를 판별해 안전하게 라우팅
+      // (40=페이레터, 41=포스페이. 그 외는 기존 기본 취소 흐름 유지)
+      if (!pg && id) {
+        let pgRows = await readPool.query(`SELECT trx_method FROM transactions WHERE id=?`, [id]);
+        let tm = pgRows?.[0]?.[0]?.trx_method;
+        if (tm == 40) pg = 'payletter';
+        else if (tm == 41) pg = 'forspay';
+      }
       let files = settingFiles(req.files);
       let obj = {};
       const formData = qs.stringify({ trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate });
@@ -795,15 +819,26 @@ async function settlePayletterTransaction(transId, data = {}) {
 }
 
 // 브랜드별 포스페이 인증정보를 payment_modules(trx_type=41)에서 조회
-//  결제키(pay_key)=App key, MID=pg_provider_id(선택), TID=sign_key(선택)
+//  결제키(pay_key)=App key, MID=pg_provider_id(기본), TID=sign_key(선택)
+//  forspay_config(JSON, 선택)=수단별 PG 라우팅. 컬럼이 없어도 안전하도록 SELECT *.
 async function getForspayCreds(brand_id) {
   let rows = await readPool.query(
-    `SELECT mid, pay_key, tid FROM payment_modules WHERE brand_id=? AND trx_type=41 ORDER BY id DESC LIMIT 1`,
+    `SELECT * FROM payment_modules WHERE brand_id=? AND trx_type=41 ORDER BY id DESC LIMIT 1`,
     [brand_id]
   );
   let m = rows[0][0];
   if (!m) return null;
-  return { app_key: m.pay_key, pg_provider_id: m.mid, sign_key: m.tid };
+  // 수단별 PG 지정값(provider) 파싱: { card:1, wechat:4, ... }
+  let method_provider = {};
+  try {
+    const cfg = m.forspay_config ? JSON.parse(m.forspay_config) : {};
+    const methods = cfg?.methods || {};
+    for (const k of Object.keys(methods)) {
+      const p = methods[k]?.provider;
+      if (p !== undefined && p !== null && String(p).trim() !== '') method_provider[k] = p;
+    }
+  } catch (e) { method_provider = {}; }
+  return { app_key: m.pay_key, pg_provider_id: m.mid, sign_key: m.tid, method_provider };
 }
 
 // 포스페이 거래 확정(멱등): 거래조회로 승인 확인된 건을 결제완료 처리 + 포인트 적립
@@ -812,7 +847,14 @@ async function settleForspayTransaction(transId, data = {}) {
   let rows = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [transId]);
   let trx = rows[0][0];
   if (!trx) return false;
-  if (trx.trx_status == 5) return true; // 이미 확정됨(중복 return/webhook 방지)
+  if (trx.trx_status == 5) {
+    // 이미 확정됨(중복 return/webhook 방지). 단, 카드번호는 거래조회 응답엔 없고 웹훅에만 있으므로
+    // 리턴 경로가 먼저 확정해 카드번호가 비어있으면, 뒤늦게 온 웹훅 데이터로 1회 보강한다.
+    if (!trx.card_num && data.card_num) {
+      await updateQuery('transactions', { card_num: String(data.card_num) }, transId);
+    }
+    return true;
+  }
 
   let trx_dttm = (data.trx_dttm || '').toString();
   let trx_dt = trx_dttm.includes(' ') ? trx_dttm.split(' ')[0] : trx_dttm;
