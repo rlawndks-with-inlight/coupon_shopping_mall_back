@@ -2,6 +2,7 @@
 import { checkIsManagerUrl, getMainObjType, returnMoment } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
+import { FORSPAY_METHODS } from "../utils.js/payments/forspay.js";
 import 'dotenv/config';
 import productCtrl from "./product.controller.js";
 import postCtrl from "./post.controller.js";
@@ -279,12 +280,35 @@ const shopCtrl = {
                 }
             })
 
-            //결제모듈처리
-            data['payment_modules'] = data?.payment_modules.map((item) => {
-                return {
-                    ...item,
-                    ...getPayType(item?.trx_type)
+            //결제모듈처리 (포스페이(41)는 활성 결제수단별 옵션으로 분리 — 구매자가 수단 선택)
+            data['payment_modules'] = (data?.payment_modules || []).flatMap((item) => {
+                if (item?.trx_type != 41) {
+                    return [{ ...item, ...getPayType(item?.trx_type) }];
                 }
+                // 수단별 노출 설정(enabled) 파싱. 설정 없으면 pending(삼성페이) 제외 전부 노출.
+                let methodsCfg = {};
+                try {
+                    const cfg = item?.forspay_config ? JSON.parse(item.forspay_config) : {};
+                    methodsCfg = cfg?.methods || {};
+                } catch (e) { methodsCfg = {}; }
+                const base = getPayType(item?.trx_type); // type: 'auth_forspay'
+                // 비밀값(App key 등)은 프론트로 내보내지 않는다 — 화이트리스트 필드만 구성
+                return FORSPAY_METHODS
+                    .filter((m) => {
+                        const mc = methodsCfg[m.key];
+                        if (mc && typeof mc.enabled !== 'undefined') return !!mc.enabled;
+                        return !m.pending;
+                    })
+                    .map((m) => ({
+                        id: item?.id,
+                        trx_type: item?.trx_type,
+                        is_old_auth: item?.is_old_auth,
+                        sort_idx: item?.sort_idx,
+                        ...base,
+                        title: `포스페이 · ${m.label}`,
+                        description: '안전한 결제를 위해 포스페이 결제창으로 이동합니다.',
+                        pay_method: m.key,
+                    }));
             })
 
             //상품카테고리처리
