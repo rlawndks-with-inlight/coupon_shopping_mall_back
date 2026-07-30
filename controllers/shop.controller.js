@@ -305,8 +305,8 @@ const shopCtrl = {
                         is_old_auth: item?.is_old_auth,
                         sort_idx: item?.sort_idx,
                         ...base,
-                        title: `포스페이 · ${m.label}`,
-                        description: '안전한 결제를 위해 포스페이 결제창으로 이동합니다.',
+                        title: m.label,                                   // 접두어 없이 수단명만
+                        description: m.desc || '포스페이로 결제합니다.',   // 수단별 안내 문구
                         pay_method: m.key,
                     }));
             })
