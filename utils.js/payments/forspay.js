@@ -33,7 +33,7 @@ export const FORSPAY_METHODS = [
     { key: 'bank',         label: '실시간계좌이체',  desc: '은행 계좌에서 실시간 이체로 결제합니다.',                pg_method_id: 1 },
     { key: 'kakaopay',     label: '카카오페이',      desc: '카카오페이로 간편하게 결제합니다.',                      pg_method_id: 3, route: 0 },
     { key: 'naverpay',     label: '네이버페이',      desc: '네이버페이로 간편하게 결제합니다.',                      pg_method_id: 3, route: 1 },
-    { key: 'linepay',      label: '라인페이',        desc: '라인페이로 결제합니다.',                                pg_method_id: 3, route: 3 },
+    { key: 'linepay',      label: '라인페이',        desc: '라인페이로 간편하게 결제합니다.',                        pg_method_id: 3, route: 3 },
     { key: 'foreign_card', label: '해외발행카드',    desc: '해외에서 발행된 카드로 결제합니다. (Visa/Mastercard 등)', pg_method_id: 5, foreign_method: 'card' },
     { key: 'wechat',       label: '위챗페이',        desc: '위챗페이(WeChat Pay)로 결제합니다.',                    pg_method_id: 5, foreign_method: 'wechat' },
     { key: 'alipay',       label: '알리페이',        desc: '알리페이(Alipay)로 결제합니다.',                        pg_method_id: 5, foreign_method: 'alipay' },
