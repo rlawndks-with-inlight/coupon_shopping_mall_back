@@ -119,13 +119,15 @@ export const getAvailableMethodIds = async ({ app_key, base = FORSPAY_API_BASE }
     if (!app_key || !base || String(base).includes('REPLACE')) return null;
     try {
         const data = await getPing({ app_key, base });
-        const providers = data?.checkout?.direct_pg_ui?.providers; // [pg_provider_id]=[지원 pg_method_id...]
-        if (!Array.isArray(providers)) return null;
+        // 문서는 객체 {"1":[0,5]}, 실서버는 배열 [[0,..],[..]] 로 응답함 → 둘 다 처리
+        const providers = data?.checkout?.direct_pg_ui?.providers;
+        if (!providers) return null;
+        const lists = Array.isArray(providers) ? providers : Object.values(providers);
         const set = new Set();
-        for (const arr of providers) {
+        for (const arr of lists) {
             if (Array.isArray(arr)) for (const id of arr) set.add(Number(id));
         }
-        return Array.from(set);
+        return set.size ? Array.from(set) : null;
     } catch (e) {
         return null;
     }
