@@ -24,6 +24,7 @@ import axios from "axios";
 import _ from "lodash";
 import { readPool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js"; // ✅ Redis 추가
+import { decField } from "../utils.js/crypto-util.js";
 
 const table_name = 'product_reviews';
 
@@ -71,10 +72,12 @@ const productReviewCtrl = {
                 return response(req, res, -400, "brand_id 또는 product_id가 올바르지 않습니다.", false);
             }
 
+            const is_manager = await checkIsManagerUrl(req);
             let columns = [
                 `${table_name}.*`,
                 `users.nickname`,
                 `users.user_name`,
+                ...(is_manager ? [`users.name AS writer_name`] : []),
             ];
 
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
@@ -105,6 +108,9 @@ const productReviewCtrl = {
             }
 
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
+            if (is_manager) {
+                data.content = (data.content || []).map((item) => ({ ...item, writer_name: decField(item?.writer_name) }));
+            }
 
             // ✅ 캐시 저장 (예: 60초)
             if (canUseCache && cacheKey) {
