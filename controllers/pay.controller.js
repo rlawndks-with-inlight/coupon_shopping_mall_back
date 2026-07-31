@@ -380,7 +380,9 @@ const payCtrl = {
             launch_page_url = launched?.launch_page_url;
           }
           if (!launch_page_url) {
-            return response(req, res, -100, session?.message || "포스페이 세션 생성 실패", false);
+            // 포스페이가 201로 오류바디(예: {"error":"No payment module configured..."})를 줄 수 있어, 실제 사유를 로그·노출
+            logger.error(`[forspay] launch_page_url 없음 — resp=${JSON.stringify(session)}`);
+            return response(req, res, -100, session?.message || session?.error || "포스페이 세션 생성 실패", false);
           }
 
           // return/webhook 매칭용 ord_num을 거래에 동기화(정규화 값)
