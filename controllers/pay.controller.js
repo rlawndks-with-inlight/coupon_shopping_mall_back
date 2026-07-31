@@ -147,6 +147,8 @@ const payCtrl = {
         obj = { ...obj, trx_status: 5 }
       }
 
+      if (pay_method) obj = { ...obj, pay_method }; // 포스페이 산하 결제수단(카드/카카오 등) 기록. transactions.pay_method 컬럼 필요(ALTER).
+
       //console.log(obj)
 
       obj = encForSave('transactions', obj); // PII(주문자명·전화·주소) 암호화 + blind-index(이름·전화)
