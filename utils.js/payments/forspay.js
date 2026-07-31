@@ -108,6 +108,31 @@ export const cancelTransaction = async ({ app_key, base = FORSPAY_API_BASE, ord_
     return data;
 };
 
+// 연결/기능 조회 (GET /api/v1/ping) — 계정별 지원 결제수단(대분류) 확인용
+export const getPing = async ({ app_key, base = FORSPAY_API_BASE } = {}) => {
+    const { data } = await axios.get(`${base}/api/v1/ping`, { headers: authHeaders(app_key), timeout: 3000 });
+    return data;
+};
+
+// 이 계정(App key)이 direct_pg_ui에서 지원하는 pg_method_id 집합(대분류)을 배열로 반환. 실패 시 null(→ 호출측에서 필터 미적용).
+export const getAvailableMethodIds = async ({ app_key, base = FORSPAY_API_BASE } = {}) => {
+    if (!app_key || !base || String(base).includes('REPLACE')) return null;
+    try {
+        const data = await getPing({ app_key, base });
+        // 문서는 객체 {"1":[0,5]}, 실서버는 배열 [[0,..],[..]] 로 응답함 → 둘 다 처리
+        const providers = data?.checkout?.direct_pg_ui?.providers;
+        if (!providers) return null;
+        const lists = Array.isArray(providers) ? providers : Object.values(providers);
+        const set = new Set();
+        for (const arr of lists) {
+            if (Array.isArray(arr)) for (const id of arr) set.add(Number(id));
+        }
+        return set.size ? Array.from(set) : null;
+    } catch (e) {
+        return null;
+    }
+};
+
 // 웹훅 서명 검증 (선택) — sign_key 설정 시.
 //   signature = SHA256("sign_key=" + sign_key + "&timestamp=" + timestamp + "&mid=" + mid)
 export const verifyWebhookSignature = ({ sign_key, timestamp, mid, signature } = {}) => {
@@ -126,5 +151,7 @@ export default {
     getLaunch,
     getTransaction,
     cancelTransaction,
+    getPing,
+    getAvailableMethodIds,
     verifyWebhookSignature,
 };

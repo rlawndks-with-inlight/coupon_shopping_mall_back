@@ -143,6 +143,30 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
                         JSON.stringify(posts[j])
                     ])
                 }
+            } else if (table == 'product_option_groups') {
+                // product_option_groups 에는 brand_id 컬럼이 없어 부모(products)로 조인해 브랜드 필터
+                let items = await readPool.query(`SELECT product_option_groups.id, ${lang_obj_columns[table].map(c => `product_option_groups.${c}`).join()} FROM product_option_groups LEFT JOIN products ON product_option_groups.product_id=products.id WHERE products.brand_id=?`, [new_brand_data?.id]);
+                items = items[0];
+                for (var j = 0; j < items.length; j++) {
+                    insert_lang_process_list.push([
+                        table,
+                        items[j]?.id,
+                        new_brand_data?.id,
+                        JSON.stringify(items[j])
+                    ])
+                }
+            } else if (table == 'product_options') {
+                // product_options 에는 brand_id 컬럼이 없어 그룹→상품 으로 조인해 브랜드 필터
+                let items = await readPool.query(`SELECT product_options.id, ${lang_obj_columns[table].map(c => `product_options.${c}`).join()} FROM product_options LEFT JOIN product_option_groups ON product_options.group_id=product_option_groups.id LEFT JOIN products ON product_option_groups.product_id=products.id WHERE products.brand_id=?`, [new_brand_data?.id]);
+                items = items[0];
+                for (var j = 0; j < items.length; j++) {
+                    insert_lang_process_list.push([
+                        table,
+                        items[j]?.id,
+                        new_brand_data?.id,
+                        JSON.stringify(items[j])
+                    ])
+                }
             } else {
                 let items = await readPool.query(`SELECT id,${lang_obj_columns[table].join()} FROM ${table} WHERE brand_id=?`, [new_brand_data?.id]);
                 items = items[0];

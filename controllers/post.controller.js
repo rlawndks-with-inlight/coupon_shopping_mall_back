@@ -7,6 +7,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 import { readPool } from "../config/db-pool.js";
+import { decField } from "../utils.js/crypto-util.js";
 const table_name = 'posts';
 
 
@@ -29,11 +30,12 @@ const postCtrl = {
 
             let category_ids = findChildIds(category_list, category_id)
             category_ids.unshift(parseInt(category_id))
+            const is_manager = await checkIsManagerUrl(req);
             let columns = [
                 `${table_name}.*`,
                 `users.nickname AS writer_nickname`,
                 `users.user_name AS writer_user_name`,
-                `users.nickname AS writer_nickname`,
+                ...(is_manager ? [`users.name AS writer_name`] : []),
                 `post_categories.post_category_title`,
             ]
 
@@ -78,6 +80,7 @@ const postCtrl = {
                     ...item,
                     replies: child_posts.filter(itm => itm.parent_id == item.id),
                     lang_obj: JSON.parse(item?.lang_obj ?? `{}`),
+                    ...(is_manager ? { writer_name: decField(item?.writer_name) } : {}),
                 }
             })
             return response(req, res, 100, "success", data);

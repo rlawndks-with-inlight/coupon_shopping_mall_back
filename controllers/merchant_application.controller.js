@@ -202,7 +202,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
         max_use_point: '0', point_rate: '0', use_point_min_price: '0', tutorial_num: '0',
         shop_demo_num: demo.shop_demo_num, blog_demo_num: demo.blog_demo_num,
         is_use_seller: '0', is_use_consignment: '0', is_use_item_card_style: '0',
-        is_use_lang: '0', is_use_shop_obj_style: '0', is_use_blog_obj_style: '0',
+        is_use_lang: '1', lang_list: ['ko', 'en', 'ja', 'cn', 'es'], default_lang: 'ko', is_use_shop_obj_style: '0', is_use_blog_obj_style: '0',
         is_use_product_sub_category: '0', product_sub_category_name: '',
     });
 

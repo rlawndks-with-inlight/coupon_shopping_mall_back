@@ -5,6 +5,7 @@ import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } 
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
+import { decField } from "../utils.js/crypto-util.js";
 
 const table_name = 'product_faq';
 
@@ -15,10 +16,12 @@ const productFaqCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { product_id } = req.query;
 
+            const is_manager = await checkIsManagerUrl(req);
             let columns = [
                 `${table_name}.*`,
                 `users.nickname AS writer_nickname`,
                 `users.user_name AS writer_user_name`,
+                ...(is_manager ? [`users.name AS writer_name`] : []),
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
@@ -29,6 +32,9 @@ const productFaqCtrl = {
             params.push(product_id);
 
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
+            if (is_manager) {
+                data.content = (data.content || []).map((item) => ({ ...item, writer_name: decField(item?.writer_name) }));
+            }
 
             return response(req, res, 100, "success", data);
         } catch (err) {

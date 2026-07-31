@@ -2,7 +2,7 @@
 import { checkIsManagerUrl, getMainObjType, returnMoment } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
-import { FORSPAY_METHODS } from "../utils.js/payments/forspay.js";
+import { FORSPAY_METHODS, getAvailableMethodIds } from "../utils.js/payments/forspay.js";
 import 'dotenv/config';
 import productCtrl from "./product.controller.js";
 import postCtrl from "./post.controller.js";
@@ -280,6 +280,27 @@ const shopCtrl = {
                 }
             })
 
+            // 포스페이(41) 모듈이 있으면, 그 키(계정)가 지원하는 결제수단(대분류)을 ping으로 조회해 노출을 자동 필터.
+            // 계정 capability는 자주 안 바뀌므로 브랜드별 1시간 캐시. 조회 실패 시 null → 필터 미적용(기존처럼 전부 노출).
+            let forspayAllowedMethodIds = null;
+            const forspayModule = (data?.payment_modules || []).find((m) => m?.trx_type == 41);
+            if (forspayModule?.pay_key) {
+                const fkey = `forspay:allowed_methods:${decode_dns?.id ?? 0}`;
+                try {
+                    const cachedFm = redisClient?.isOpen ? await redisClient.get(fkey) : null;
+                    if (cachedFm) {
+                        forspayAllowedMethodIds = JSON.parse(cachedFm);
+                    } else {
+                        forspayAllowedMethodIds = await getAvailableMethodIds({ app_key: forspayModule.pay_key });
+                        if (redisClient?.isOpen && Array.isArray(forspayAllowedMethodIds)) {
+                            await redisClient.set(fkey, JSON.stringify(forspayAllowedMethodIds), { EX: 3600 });
+                        }
+                    }
+                } catch (e) {
+                    forspayAllowedMethodIds = null;
+                }
+            }
+
             //결제모듈처리 (포스페이(41)는 활성 결제수단별 옵션으로 분리 — 구매자가 수단 선택)
             data['payment_modules'] = (data?.payment_modules || []).flatMap((item) => {
                 if (item?.trx_type != 41) {
@@ -295,6 +316,8 @@ const shopCtrl = {
                 // 비밀값(App key 등)은 프론트로 내보내지 않는다 — 화이트리스트 필드만 구성
                 return FORSPAY_METHODS
                     .filter((m) => {
+                        // 포스페이(계정)가 지원하지 않는 대분류는 무조건 숨김 (ping 조회 성공 시)
+                        if (Array.isArray(forspayAllowedMethodIds) && !forspayAllowedMethodIds.includes(m.pg_method_id)) return false;
                         const mc = methodsCfg[m.key];
                         if (mc && typeof mc.enabled !== 'undefined') return !!mc.enabled;
                         return !m.pending;
