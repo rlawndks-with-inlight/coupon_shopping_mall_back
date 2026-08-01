@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { searchColumns, fulltextColumns, likeOnlyColumns } from './search-columns.js';
+import { searchColumns, fulltextColumns, likeOnlyColumns, blindIndexColumns } from './search-columns.js';
+import { blindIndex } from './crypto-util.js';
 import { readPool, writePool } from '../config/db-pool.js';
 
 export const insertQuery = async (table, obj) => {
@@ -212,6 +213,16 @@ const settingSelectQueryWhere = (sql_, query, table, find_columns = [], wherePar
         for (var i = 0; i < likeCols.length; i++) {
             conditions.push(likeCols[i] + " LIKE ?");
             params.push(`%${search}%`);
+        }
+
+        // 암호화 필드(이름·전화 등) 정확일치 검색: blind-index 컬럼 = blindIndex(검색어)
+        const biCols = blindIndexColumns[table] || [];
+        if (biCols.length > 0) {
+            const bi = blindIndex(search);
+            for (var b = 0; b < biCols.length; b++) {
+                conditions.push(biCols[b] + " = ?");
+                params.push(bi);
+            }
         }
 
         // FULLTEXT 설정 없는 테이블은 기존 LIKE 방식 유지
