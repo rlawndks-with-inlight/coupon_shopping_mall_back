@@ -29,3 +29,12 @@ export const likeOnlyColumns = {
     // 회원검색 평문축: 아이디(user_name) · 닉네임(nickname). 이름·전화는 암호화되어 부분검색 불가.
     'users': ['users.user_name', 'users.nickname'],
 }
+
+// 암호화 필드의 blind-index(정확일치) 검색 컬럼.
+//  검색어를 blindIndex()로 변환해 '=' 로 매칭 → 암호화된 이름·전화도 '정확일치' 검색 가능.
+//  (부분검색은 불가. 전화는 하이픈/공백 무시, 이름은 대소문자 무시로 정규화됨.)
+//  ※ 대상 컬럼은 PII_FIELDS(pii.js)의 idx 매핑과 동일. 값은 encForSave 저장 시/백필로 채워짐.
+export const blindIndexColumns = {
+    'transactions': ['transactions.buyer_name_idx', 'transactions.buyer_phone_idx'],
+    'users': ['users.name_idx', 'users.phone_idx'],
+}
