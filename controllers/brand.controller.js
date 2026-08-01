@@ -198,38 +198,6 @@ const brandCtrl = {
 
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
-      const {
-        logo_img,
-        dark_logo_img,
-        favicon_img,
-        og_img,
-        name,
-        dns,
-        og_description,
-        company_name,
-        business_num,
-        pvcy_rep_name,
-        ceo_name,
-        addr,
-        resident_num,
-        phone_num,
-        fax_num,
-        establish_date,
-        mail_order_num,
-        note,
-        basic_info,
-        show_basic_info,
-        theme_css = {},
-        //slider_css = {},
-        setting_obj = {},
-        none_use_column_obj = {},
-        bonaeja_obj = {},
-        shop_obj = [],
-        blog_obj = [],
-        seo_obj = {},
-        is_use_otp = 0,
-        is_closure = 0,
-      } = req.body;
       const { id } = req.params;
       if (
         (decode_user?.level < 50 && decode_user?.brand_id != id) ||
@@ -237,61 +205,49 @@ const brandCtrl = {
       ) {
         return lowLevelException(req, res);
       }
+
+      // ── merge-safe 업데이트 ─────────────────────────────────────────────
+      // 요청 body에 '실제로 온' 필드만 갱신한다. 예전 방식(전체 컬럼 destructure +
+      // 기본값)은 부분 업데이트(예: 온보딩 닫기 = setting_obj만 전송) 시 나머지 컬럼을
+      // NULL/{}/[]로 덮어써 브랜드(상호·로고·테마·홈레이아웃·폐쇄여부 등)를 지웠다.
+      const SCALAR_COLS = [
+        'logo_img', 'dark_logo_img', 'favicon_img', 'og_img', 'name', 'dns',
+        'og_description', 'company_name', 'business_num', 'pvcy_rep_name',
+        'ceo_name', 'addr', 'resident_num', 'phone_num', 'fax_num',
+        'establish_date', 'mail_order_num', 'note', 'basic_info',
+        'show_basic_info', 'is_use_otp', 'is_closure',
+      ];
+      const JSON_COLS = [
+        'theme_css', 'setting_obj', 'none_use_column_obj', 'bonaeja_obj',
+        'shop_obj', 'blog_obj', 'seo_obj',
+      ];
+      let obj = {};
+      for (const k of SCALAR_COLS) {
+        if (req.body[k] !== undefined) obj[k] = req.body[k];
+      }
+      for (const k of JSON_COLS) {
+        if (req.body[k] !== undefined) obj[k] = JSON.stringify(req.body[k]);
+      }
       let files = settingFiles(req.files);
-
-      let obj = {
-        logo_img,
-        dark_logo_img,
-        favicon_img,
-        og_img,
-        name,
-        dns,
-        og_description,
-        company_name,
-        business_num,
-        pvcy_rep_name,
-        ceo_name,
-        addr,
-        resident_num,
-        phone_num,
-        fax_num,
-        establish_date,
-        mail_order_num,
-        note,
-        basic_info,
-        show_basic_info,
-        theme_css,
-        //slider_css,
-        setting_obj,
-        none_use_column_obj,
-        bonaeja_obj,
-        shop_obj,
-        blog_obj,
-        seo_obj,
-        is_use_otp,
-        is_closure,
-      };
-      obj["theme_css"] = JSON.stringify(obj.theme_css);
-      //obj["slider_css"] = JSON.stringify(obj.slider_css);
-      obj["setting_obj"] = JSON.stringify(obj.setting_obj);
-      obj["none_use_column_obj"] = JSON.stringify(obj.none_use_column_obj);
-      obj["bonaeja_obj"] = JSON.stringify(obj.bonaeja_obj);
-      obj["shop_obj"] = JSON.stringify(obj.shop_obj);
-      obj["blog_obj"] = JSON.stringify(obj.blog_obj);
-      obj["seo_obj"] = JSON.stringify(obj.seo_obj);
       obj = { ...obj, ...files };
-      let lang_setting = await brandSettingLang({ ...obj, id });
 
-      let result = await updateQuery(`${table_name}`, {
-        ...obj,
-        shop_obj: lang_setting?.shop_obj,
-      }, id);
+      // 언어팩(is_use_lang) 처리: shop_obj가 실제로 제공됐을 때만 번역 결과를 반영.
+      // (부분 업데이트에서 shop_obj를 '[]'로 덮어쓰지 않도록 가드)
+      let lang_setting = await brandSettingLang({ ...obj, id });
+      if (obj.shop_obj !== undefined && lang_setting?.shop_obj !== undefined) {
+        obj.shop_obj = lang_setting.shop_obj;
+      }
+
+      if (Object.keys(obj).length === 0) {
+        return response(req, res, 100, "success", {});
+      }
+      let result = await updateQuery(`${table_name}`, obj, id);
 
       // 브랜드 설정 변경 시 캐시 삭제 (shop:setting + domain)
       if (redisClient?.isOpen) {
         try {
           // domain 캐시 삭제
-          let brandDns = dns;
+          let brandDns = req.body?.dns;
           if (!brandDns) {
             let [brandRow] = await readPool.query(`SELECT dns FROM ${table_name} WHERE id=?`, [id]);
             brandDns = brandRow?.[0]?.dns;
