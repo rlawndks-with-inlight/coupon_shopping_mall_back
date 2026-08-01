@@ -66,6 +66,11 @@ const brandCtrl = {
       const { id } = req.params;
       let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
       data = data[0][0];
+      // 행 없음 가드: id에 해당하는 브랜드가 없으면 500 크래시 대신 명확히 응답 + 로그.
+      if (!data) {
+        logger.error(`brand get: not found id=${id}`);
+        return response(req, res, -200, `브랜드 정보를 불러오지 못했습니다. (id=${id})`, false);
+      }
       data["theme_css"] = JSON.parse(data?.theme_css ?? "{}");
       //data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
       data["setting_obj"] = JSON.parse(data?.setting_obj ?? "{}");
