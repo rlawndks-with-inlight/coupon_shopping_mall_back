@@ -164,6 +164,7 @@ const brandCtrl = {
         seo_obj,
         is_use_otp,
         is_closure,
+        is_category_migrated: 1,   // 신규 몰은 단일 카테고리 트리로 시작(레거시 그룹 모델 안 씀)
       };
       obj["theme_css"] = JSON.stringify(obj.theme_css);
       //obj["slider_css"] = JSON.stringify(obj.slider_css);
@@ -176,6 +177,16 @@ const brandCtrl = {
       obj = { ...obj, ...files };
 
       let result = await insertQuery(`${table_name}`, obj);
+      // 신규 몰: 기본 '카테고리' 그룹 1개 생성(단일 트리의 컨테이너 그룹). is_category_migrated=1 과 짝.
+      //   스토어는 단일 합성 트리로 노출되지만, 카테고리 생성 시 유효한 group_id 컨테이너가 필요.
+      await insertQuery('product_category_groups', {
+        category_group_name: '카테고리',
+        brand_id: result?.insertId,
+        max_depth: 10,
+        sort_type: 0,
+        is_show_header_menu: 1,
+        is_use_en_name: 0,
+      });
       let user_obj = {
         user_name: user_name,
         user_pw: user_pw,
