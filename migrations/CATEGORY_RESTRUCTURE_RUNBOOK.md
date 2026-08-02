@@ -25,12 +25,13 @@ WHERE TABLE_SCHEMA = DATABASE()
      OR (TABLE_NAME='product_category_groups' AND COLUMN_NAME='id') )
 ORDER BY TABLE_NAME, COLUMN_NAME;
 ```
-→ `products.id` / `product_categories.id` 가 **int** 계열이면 그대로 진행. **bigint** 면 SQL의 `products_categories.product_id`/`category_id` 를 BIGINT로 바꾼 뒤 진행.
+→ **확인 완료(2026-08-03): 전부 bigint** (products.id, product_categories.id, category_id0/1/2). SQL DDL을 BIGINT로 이미 반영함. 추가 조정 불필요.
 
 ### P2. 영향 테넌트 landscape (누구의 데이터가 바뀌나)
 ```sql
+-- 주의: MySQL8 에서 GROUPS 는 예약어 → 별칭은 grp_cnt 등으로.
 SELECT g.brand_id,
-       COUNT(*) AS groups,
+       COUNT(*) AS grp_cnt,
        (SELECT COUNT(*) FROM product_categories c WHERE c.brand_id=g.brand_id AND c.is_delete=0) AS cats,
        (SELECT COUNT(*) FROM products p          WHERE p.brand_id=g.brand_id AND p.is_delete=0) AS prods
 FROM product_category_groups g

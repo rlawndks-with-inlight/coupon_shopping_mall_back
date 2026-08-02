@@ -21,8 +21,8 @@
 --   - 이후 scripts/category-restructure-backfill.js 실행(리뷰 게이트 통과해야 진행).
 --   - '1681 Integer display width deprecated' 경고는 기존 정수컬럼 때문 → 무시.
 --
--- ※ 타입 주의: products.id / product_categories.id 실제 타입(대부분 int)에 맞춰
---   product_id / category_id 를 INT 로 둠. 실 스키마가 BIGINT면 아래 INT→BIGINT 수정.
+-- ※ 타입: 실 스키마 확인 결과 products.id / product_categories.id / category_id0/1/2 모두 BIGINT →
+--   연결테이블·매핑테이블의 id 참조 컬럼을 BIGINT 로 확정(2026-08-03 P1 검증 반영).
 -- ============================================================================
 
 
@@ -54,9 +54,9 @@ FROM product_categories;
 --   UNIQUE(product_id, category_id) = 멱등성 핵심(INSERT IGNORE 안전).
 CREATE TABLE IF NOT EXISTS products_categories (
   id          BIGINT AUTO_INCREMENT PRIMARY KEY,
-  brand_id    INT NOT NULL,
-  product_id  INT NOT NULL,
-  category_id INT NOT NULL,
+  brand_id    BIGINT NOT NULL,
+  product_id  BIGINT NOT NULL,   -- products.id = bigint (category_id0/1/2 도 bigint)
+  category_id BIGINT NOT NULL,   -- product_categories.id = bigint
   sort_idx    INT      DEFAULT 0,
   is_delete   TINYINT  DEFAULT 0,
   created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -67,8 +67,8 @@ CREATE TABLE IF NOT EXISTS products_categories (
 
 -- 그룹 역할 분류/검토 테이블 (Phase 2에서 시드, 운영자가 검토·확정).
 CREATE TABLE IF NOT EXISTS _mig_group_role (
-  group_id              INT PRIMARY KEY,
-  brand_id              INT,
+  group_id              BIGINT PRIMARY KEY,
+  brand_id              BIGINT,
   group_name            VARCHAR(255),
   num_categories        INT DEFAULT 0,   -- 그룹 내 카테고리 수
   num_parent_categories INT DEFAULT 0,   -- 자식을 가진 카테고리 수(>0 이면 트리 신호)
@@ -81,16 +81,16 @@ CREATE TABLE IF NOT EXISTS _mig_group_role (
 
 -- 브랜드→속성 이전 영속 매핑(재실행 멱등 기준). 백필 스크립트가 채움.
 CREATE TABLE IF NOT EXISTS _mig_group_to_propgroup (
-  group_id          INT PRIMARY KEY,   -- 원본 카테고리그룹
-  brand_id          INT,
-  property_group_id INT,               -- 생성된 product_property_groups.id
+  group_id          BIGINT PRIMARY KEY,   -- 원본 카테고리그룹
+  brand_id          BIGINT,
+  property_group_id BIGINT,               -- 생성된 product_property_groups.id
   created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS _mig_cat_to_prop (
-  category_id       INT PRIMARY KEY,   -- 원본 카테고리(facet)
-  brand_id          INT,
-  property_id       INT,               -- 생성된 product_properties.id
-  property_group_id INT,
+  category_id       BIGINT PRIMARY KEY,   -- 원본 카테고리(facet)
+  brand_id          BIGINT,
+  property_id       BIGINT,               -- 생성된 product_properties.id
+  property_group_id BIGINT,
   created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
