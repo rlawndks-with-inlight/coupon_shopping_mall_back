@@ -529,6 +529,12 @@ const productCtrl = {
                     sql: property_sql,
                     params: [productId],
                 },
+                {
+                    // 카테고리 연결테이블(단일 트리, 1상품 N카테고리) — 폼 다중선택 로드용
+                    table: 'category_links',
+                    sql: `SELECT category_id FROM products_categories WHERE product_id=? AND is_delete=0 ORDER BY sort_idx DESC, id ASC`,
+                    params: [productId],
+                },
             ];
 
             let when_data = await getMultipleQueryByWhen(sql_list);
@@ -590,6 +596,8 @@ const productCtrl = {
                 product_average_scope: when_data?.scope?.[0]?.product_average_scope,
                 product_review_count: when_data?.scope?.[0]?.product_review_count,
                 brand_name: when_data2?.brand_name,
+                // 단일 트리 연결테이블 카테고리 id 배열(폼 다중선택 로드). category_id0/1/2 는 dual-write 로 병존.
+                category_ids: (when_data?.category_links || []).map((r) => r.category_id),
             };
 
             // ─────────────────────────────
