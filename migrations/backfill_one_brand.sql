@@ -103,5 +103,5 @@ WHERE pc.brand_id=@brand AND pc.is_delete=0 AND (c.id IS NULL OR c.is_delete=1);
 SELECT m.property_group_id,
        (SELECT COUNT(*) FROM _mig_cat_to_prop cp WHERE cp.property_group_id=m.property_group_id) AS props,
        (SELECT COUNT(*) FROM products_and_properties pp
-         WHERE pp.property_group_id=m.property_group_id AND pp.is_delete=0) AS links
+         WHERE pp.property_group_id=m.property_group_id) AS links   -- products_and_properties 엔 is_delete 없음(하드삭제)
 FROM _mig_group_to_propgroup m WHERE m.brand_id=@brand;

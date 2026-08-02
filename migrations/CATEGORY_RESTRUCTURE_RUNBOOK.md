@@ -109,7 +109,7 @@ ORDER BY p.brand_id, p.id;
 SELECT r.group_id, r.group_name, m.property_group_id,
        (SELECT COUNT(*) FROM _mig_cat_to_prop cp WHERE cp.property_group_id=m.property_group_id) AS props,
        (SELECT COUNT(*) FROM products_and_properties pp
-         WHERE pp.property_group_id=m.property_group_id AND pp.is_delete=0) AS links
+         WHERE pp.property_group_id=m.property_group_id) AS links
 FROM _mig_group_role r
 LEFT JOIN _mig_group_to_propgroup m ON m.group_id=r.group_id
 WHERE r.role='property' ORDER BY r.brand_id, r.group_id;
