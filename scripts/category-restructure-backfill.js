@@ -111,7 +111,7 @@ const backfillProperty = async () => {
          WHERE role='property' ${BRAND != null ? 'AND brand_id=?' : ''}`,
         BRAND != null ? [BRAND] : gp);
 
-    let stat = { propGroups: 0, props: 0, links: 0, dryLinks: 0 };
+    let stat = { propGroups: 0, props: 0, links: 0, dryLinks: 0, hidden: 0 };
 
     for (const g of groups) {
         // 1) 속성그룹 매핑 확보
@@ -175,12 +175,22 @@ const backfillProperty = async () => {
                 stat.links++;
             }
         }
+
+        // 4) 이 그룹의 facet 카테고리를 카테고리 트리에서 제거(soft-delete).
+        //    → 상품속성으로 이전 완료됐으므로 단일 트리에는 노출되지 않아야 함.
+        //    가역적: 롤백 시 _mig_cat_to_prop.category_id 로 is_delete=0 복원.
+        if (!DRY) {
+            const [del] = await writePool.query(
+                `UPDATE product_categories SET is_delete=1
+                 WHERE product_category_group_id=? AND is_delete=0`, [g.group_id]);
+            stat.hidden += del.affectedRows;
+        }
     }
 
     if (DRY) {
-        console.log(`[property][dry-run] 속성그룹 ${stat.propGroups}, 속성값 ${stat.props}, 링크 예상 ${stat.dryLinks}`);
+        console.log(`[property][dry-run] 속성그룹 ${stat.propGroups}, 속성값 ${stat.props}, 링크 예상 ${stat.dryLinks} (facet 카테고리 soft-delete는 실행 시)`);
     } else {
-        console.log(`[property] 신규 속성그룹 ${stat.propGroups}, 신규 속성값 ${stat.props}, 신규 링크 ${stat.links}`);
+        console.log(`[property] 신규 속성그룹 ${stat.propGroups}, 신규 속성값 ${stat.props}, 신규 링크 ${stat.links}, 트리에서 숨긴 facet 카테고리 ${stat.hidden}`);
     }
 };
 

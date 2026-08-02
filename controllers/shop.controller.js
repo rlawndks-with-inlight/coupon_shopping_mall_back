@@ -334,18 +334,23 @@ const shopCtrl = {
                     }));
             })
 
-            //상품카테고리처리
-            for (var i = 0; i < data?.product_category_groups.length; i++) {
-                let category_list = data?.product_categories.filter((item) => item?.product_category_group_id == data?.product_category_groups[i]?.id);
-                if (data?.product_category_groups[i]?.sort_type == 1) {
-                    category_list = category_list.sort((a, b) => {
-                        if (a.category_name > b.category_name) return 1
-                        if (a.category_name < b.category_name) return -1
-                        return 0
-                    })
-                }
-                category_list = await makeTree(category_list ?? []);
-                data.product_category_groups[i].product_categories = category_list;
+            //상품카테고리처리 — 단일 카테고리 트리 (그룹 레이어 폐지)
+            //  전환기 호환: themeCategoryList 소비부(flatMap / [0].product_categories)를 위해
+            //  전체 브랜드 트리를 '단일 합성 그룹' 하나로 래핑해 응답한다.
+            //  브랜드/부가축은 마이그레이션에서 상품속성(product_properties)으로 이전되고,
+            //  해당 facet 카테고리는 백필 시 soft-delete → 아래 트리(is_delete=0)에 포함되지 않는다.
+            {
+                let tree_categories = await makeTree(data?.product_categories ?? []);
+                data.product_category_groups = [{
+                    id: 0,
+                    brand_id: decode_dns?.id ?? 0,
+                    category_group_name: '카테고리',
+                    is_show_header_menu: 1,
+                    sort_type: 0,
+                    max_depth: 10,
+                    is_use_en_name: 0,
+                    product_categories: tree_categories,
+                }];
             }
             delete data.product_categories;
 

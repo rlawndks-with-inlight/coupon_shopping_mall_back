@@ -55,7 +55,7 @@ const utilCtrl = {
                 return lowLevelException(req, res);
             }
             const ALLOWED_STATUS_TABLES = ['products', 'product_categories', 'product_category_groups', 'post_categories', 'posts', 'brands', 'users'];
-            const ALLOWED_COLUMNS = ['status', 'is_delete', 'is_show', 'is_active'];
+            const ALLOWED_COLUMNS = ['status', 'is_delete', 'is_show', 'is_active', 'is_show_header_menu'];
             if (!ALLOWED_STATUS_TABLES.includes(table)) {
                 return response(req, res, -200, "허용되지 않은 테이블입니다.", false);
             }

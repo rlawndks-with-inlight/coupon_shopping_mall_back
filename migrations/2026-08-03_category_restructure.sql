@@ -232,6 +232,9 @@ WHERE is_reviewed = 0 AND suggested_role IS NOT NULL;
 --   DELETE FROM product_properties      WHERE id IN (SELECT property_id       FROM _mig_cat_to_prop);
 --   DELETE FROM product_property_groups WHERE id IN (SELECT property_group_id FROM _mig_group_to_propgroup);
 --
+--   -- 트리에서 숨겼던 facet 카테고리 복원(백필이 soft-delete 한 것 되돌리기)
+--   UPDATE product_categories SET is_delete=0 WHERE id IN (SELECT category_id FROM _mig_cat_to_prop);
+--
 --   -- Phase 5 헤더노출 정규화 원복(스냅샷에서 복원)
 --   UPDATE product_categories c
 --     JOIN _mig_category_header_snapshot s ON s.id=c.id
