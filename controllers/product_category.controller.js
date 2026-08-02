@@ -18,8 +18,12 @@ const productCategoryCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { product_category_group_id, page, page_size } = req.query;
 
-            let category_groups = await readPool.query(`SELECT sort_type FROM product_category_groups WHERE id=?`, [product_category_group_id]);
-            category_groups = category_groups[0][0];
+            // 단일 트리 전환: product_category_group_id 는 선택적. 없으면 브랜드 전체 트리 조회.
+            let category_groups = null;
+            if (product_category_group_id) {
+                let cg = await readPool.query(`SELECT sort_type FROM product_category_groups WHERE id=?`, [product_category_group_id]);
+                category_groups = cg[0][0];
+            }
 
             let columns = [
                 `${table_name}.*`,
@@ -28,8 +32,10 @@ const productCategoryCtrl = {
             let params = [];
             sql += ` WHERE ${table_name}.brand_id=? `;
             params.push(decode_dns?.id ?? 0);
-            sql += ` AND product_category_group_id=? `;
-            params.push(product_category_group_id);
+            if (product_category_group_id) {
+                sql += ` AND product_category_group_id=? `;
+                params.push(product_category_group_id);
+            }
 
             let req_query = req.query;
             if (category_groups?.sort_type == 1) {

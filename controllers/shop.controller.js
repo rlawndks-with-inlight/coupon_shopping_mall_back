@@ -38,6 +38,7 @@ const shopCtrl = {
                 'shop_obj',
                 'blog_obj',
                 'basic_info',
+                'is_category_migrated',   // 단계 이행: 1이면 단일 트리, 0/NULL이면 기존 그룹 유지
             ]
 
             let brand_data = await readPool.query(`SELECT ${brand_column.join()} FROM brands WHERE id=?`, [decode_dns?.id ?? 0]);
@@ -334,18 +335,35 @@ const shopCtrl = {
                     }));
             })
 
-            //상품카테고리처리
-            for (var i = 0; i < data?.product_category_groups.length; i++) {
-                let category_list = data?.product_categories.filter((item) => item?.product_category_group_id == data?.product_category_groups[i]?.id);
-                if (data?.product_category_groups[i]?.sort_type == 1) {
-                    category_list = category_list.sort((a, b) => {
-                        if (a.category_name > b.category_name) return 1
-                        if (a.category_name < b.category_name) return -1
-                        return 0
-                    })
+            //상품카테고리처리 (단계 이행 dual-mode)
+            if (brand_data?.is_category_migrated == 1) {
+                // 마이그레이션 완료: 단일 카테고리 트리(그룹 레이어 폐지) — 전체 브랜드 트리를 '단일 합성 그룹'으로 래핑.
+                //  facet 카테고리는 백필 시 soft-delete → is_delete=0 트리에 미포함.
+                let tree_categories = await makeTree(data?.product_categories ?? []);
+                data.product_category_groups = [{
+                    id: 0,
+                    brand_id: decode_dns?.id ?? 0,
+                    category_group_name: '카테고리',
+                    is_show_header_menu: 1,
+                    sort_type: 0,
+                    max_depth: 10,
+                    is_use_en_name: 0,
+                    product_categories: tree_categories,
+                }];
+            } else {
+                // 미마이그레이션: 기존 그룹 구조 유지(그룹명 분기하는 데모 등 기존 동작 보존).
+                for (var i = 0; i < data?.product_category_groups.length; i++) {
+                    let category_list = data?.product_categories.filter((item) => item?.product_category_group_id == data?.product_category_groups[i]?.id);
+                    if (data?.product_category_groups[i]?.sort_type == 1) {
+                        category_list = category_list.sort((a, b) => {
+                            if (a.category_name > b.category_name) return 1
+                            if (a.category_name < b.category_name) return -1
+                            return 0
+                        })
+                    }
+                    category_list = await makeTree(category_list ?? []);
+                    data.product_category_groups[i].product_categories = category_list;
                 }
-                category_list = await makeTree(category_list ?? []);
-                data.product_category_groups[i].product_categories = category_list;
             }
             delete data.product_categories;
 

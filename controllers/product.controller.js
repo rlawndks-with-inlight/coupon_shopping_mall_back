@@ -141,31 +141,28 @@ const productCtrl = {
                 where_sql += ` AND (${table_name}.id IN (${connect_data.join()})) `;
             }
             */
-            let category_group_sql = `SELECT * FROM product_category_groups WHERE brand_id=? AND is_delete=0 ORDER BY sort_idx DESC `;
-            let category_groups = await readPool.query(category_group_sql, [decode_dns?.id ?? 0]);
-            category_groups = category_groups[0];
-
-            let category_sql_list = [];
+            // 카테고리 LEFT JOIN (목록 표시용 en_name). category_id0/1/2 컬럼은 전환기 dual-write 로 유지.
             for (var i = 0; i < categoryDepth; i++) {
                 sql += ` LEFT JOIN product_categories AS product_categories${i} ON product_categories${i}.id=${table_name}.category_id${i}`
                 columns.push(`product_categories${i}.category_en_name AS category_en_name${i}`);
-                if (req.query[`category_id${i}`]) {
-                    category_sql_list.push({
-                        table: `category_id${i}`,
-                        sql: `SELECT * FROM product_categories WHERE product_category_group_id=? AND is_delete=0 ORDER BY sort_idx DESC`,
-                        params: [category_groups[i]?.id]
-                    })
-                }
             }
-            let category_obj = await getMultipleQueryByWhen(category_sql_list);
-
-            if (Object.keys(category_obj).length > 0) {
-                for (var i = 0; i < Object.keys(category_obj).length; i++) {
-                    let key = Object.keys(category_obj)[i];
-                    let category_ids = findChildIds(category_obj[key], req.query[key]);
-                    category_ids.unshift(parseInt(req.query[key]));
-                    where_sql += ` AND ${key} IN (${category_ids.map(() => '?').join(',')}) `;
-                    params.push(...category_ids);
+            // 카테고리 필터 — 단일 트리 + 연결테이블(products_categories) 기준(하위 카테고리 포함).
+            //   (구조: category_id0/1/2 위치컬럼 대신 단일 category_id 파라미터 사용)
+            if (req.query.category_id) {
+                let brand_tree = await readPool.query(`SELECT id, parent_id FROM product_categories WHERE brand_id=? AND is_delete=0`, [decode_dns?.id ?? 0]);
+                brand_tree = brand_tree[0];
+                let cat_ids = findChildIds(brand_tree, req.query.category_id);
+                cat_ids.unshift(parseInt(req.query.category_id));
+                cat_ids = cat_ids.filter(v => !isNaN(v));
+                if (cat_ids.length > 0) {
+                    const ph = cat_ids.map(() => '?').join(',');
+                    // dual-read(단계 이행): 연결테이블(마이그레이션 완료 테넌트) OR 위치컬럼 category_id0/1/2(미마이그레이션 폴백).
+                    //  → 미마이그레이션 테넌트는 연결테이블이 비어도 기존 위치컬럼으로 정상 필터.
+                    where_sql += ` AND ( ${table_name}.id IN (SELECT product_id FROM products_categories WHERE category_id IN (${ph}) AND is_delete=0)
+                                        OR ${table_name}.category_id0 IN (${ph})
+                                        OR ${table_name}.category_id1 IN (${ph})
+                                        OR ${table_name}.category_id2 IN (${ph}) ) `;
+                    params.push(...cat_ids, ...cat_ids, ...cat_ids, ...cat_ids);
                 }
             }
 
@@ -538,6 +535,12 @@ const productCtrl = {
                     sql: property_sql,
                     params: [productId],
                 },
+                {
+                    // 카테고리 연결테이블(단일 트리, 1상품 N카테고리) — 폼 다중선택 로드용
+                    table: 'category_links',
+                    sql: `SELECT category_id FROM products_categories WHERE product_id=? AND is_delete=0 ORDER BY sort_idx DESC, id ASC`,
+                    params: [productId],
+                },
             ];
 
             let when_data = await getMultipleQueryByWhen(sql_list);
@@ -599,6 +602,8 @@ const productCtrl = {
                 product_average_scope: when_data?.scope?.[0]?.product_average_scope,
                 product_review_count: when_data?.scope?.[0]?.product_review_count,
                 brand_name: when_data2?.brand_name,
+                // 단일 트리 연결테이블 카테고리 id 배열(폼 다중선택 로드). category_id0/1/2 는 dual-write 로 병존.
+                category_ids: (when_data?.category_links || []).map((r) => r.category_id),
             };
 
             // ─────────────────────────────
@@ -810,6 +815,21 @@ const productCtrl = {
                     sql: `INSERT INTO products_and_properties (product_id, property_group_id, property_id) VALUES ?`,
                     data: [insert_property_list]
                 })
+            }
+
+            // 카테고리 연결테이블(단일 트리, 1상품 N카테고리) — category_ids(JSON) → products_categories.
+            // (대표 카테고리 category_id0 위치컬럼은 위 dual-write 루프에서 유지)
+            let category_ids_input = req.body?.category_ids;
+            if (typeof category_ids_input == 'string') { try { category_ids_input = JSON.parse(category_ids_input); } catch (e) { category_ids_input = []; } }
+            if (Array.isArray(category_ids_input)) {
+                let pc_rows = category_ids_input.map(v => parseInt(v)).filter(v => !isNaN(v) && v > 0).map(cid => [brand_id, product_id, cid]);
+                if (pc_rows.length > 0) {
+                    sql_list.push({
+                        table: `products_categories`,
+                        sql: `INSERT IGNORE INTO products_categories (brand_id, product_id, category_id) VALUES ?`,
+                        data: [pc_rows]
+                    });
+                }
             }
 
             let when = await getMultipleQueryByWhen(sql_list);
@@ -1050,6 +1070,17 @@ const productCtrl = {
             }
             if (insert_property_list.length > 0) {
                 let property_result = await writePool.query(`INSERT INTO products_and_properties (product_id, property_group_id, property_id) VALUES ?`, [insert_property_list]);
+            }
+
+            //category (단일 트리, 1상품 N카테고리) — 연결테이블 재저장(delete → insert). category_id0 위치컬럼은 dual-write 로 유지.
+            await writePool.query(`DELETE FROM products_categories WHERE product_id=?`, [product_id]);
+            let category_ids_input = req.body?.category_ids;
+            if (typeof category_ids_input == 'string') { try { category_ids_input = JSON.parse(category_ids_input); } catch (e) { category_ids_input = []; } }
+            if (Array.isArray(category_ids_input)) {
+                let pc_rows = category_ids_input.map(v => parseInt(v)).filter(v => !isNaN(v) && v > 0).map(cid => [brand_id, product_id, cid]);
+                if (pc_rows.length > 0) {
+                    await writePool.query(`INSERT IGNORE INTO products_categories (brand_id, product_id, category_id) VALUES ?`, [pc_rows]);
+                }
             }
 
             // ─────────────────────────────
