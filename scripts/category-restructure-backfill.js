@@ -200,6 +200,23 @@ const run = async () => {
     await precheck();
     if (PHASE === 'tree' || PHASE === 'all') await backfillTree();
     if (PHASE === 'property' || PHASE === 'all') await backfillProperty();
+
+    // 단계 이행 플래그: 해당 브랜드를 단일트리로 전환(shop.controller 가 읽음).
+    //  'all'(트리+속성 전부) 완료 + 비 dry-run 에만 설정. tree/property 단독 실행 시엔 부분이라 미설정.
+    if (!DRY && PHASE === 'all') {
+        let brandIds;
+        if (BRAND != null) {
+            brandIds = [BRAND];
+        } else {
+            const [rows] = await readPool.query(`SELECT DISTINCT brand_id FROM _mig_group_role WHERE is_reviewed=1`);
+            brandIds = rows.map((r) => r.brand_id).filter((v) => v != null);
+        }
+        for (const bid of brandIds) {
+            await writePool.query(`UPDATE brands SET is_category_migrated=1 WHERE id=?`, [bid]);
+        }
+        console.log(`[flag] is_category_migrated=1 설정: ${brandIds.length}개 브랜드 (${brandIds.join(',')})`);
+    }
+
     console.log('DONE. 이후 migrations SQL 의 Phase 6 검증쿼리(V1~V6)를 실행해 무결성을 확인하세요.');
     process.exit(0);
 };

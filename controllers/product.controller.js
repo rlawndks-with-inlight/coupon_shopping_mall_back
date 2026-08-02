@@ -155,8 +155,14 @@ const productCtrl = {
                 cat_ids.unshift(parseInt(req.query.category_id));
                 cat_ids = cat_ids.filter(v => !isNaN(v));
                 if (cat_ids.length > 0) {
-                    where_sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_categories WHERE category_id IN (${cat_ids.map(() => '?').join(',')}) AND is_delete=0) `;
-                    params.push(...cat_ids);
+                    const ph = cat_ids.map(() => '?').join(',');
+                    // dual-read(단계 이행): 연결테이블(마이그레이션 완료 테넌트) OR 위치컬럼 category_id0/1/2(미마이그레이션 폴백).
+                    //  → 미마이그레이션 테넌트는 연결테이블이 비어도 기존 위치컬럼으로 정상 필터.
+                    where_sql += ` AND ( ${table_name}.id IN (SELECT product_id FROM products_categories WHERE category_id IN (${ph}) AND is_delete=0)
+                                        OR ${table_name}.category_id0 IN (${ph})
+                                        OR ${table_name}.category_id1 IN (${ph})
+                                        OR ${table_name}.category_id2 IN (${ph}) ) `;
+                    params.push(...cat_ids, ...cat_ids, ...cat_ids, ...cat_ids);
                 }
             }
 

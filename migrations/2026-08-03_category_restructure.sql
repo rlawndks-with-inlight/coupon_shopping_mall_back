@@ -65,6 +65,16 @@ CREATE TABLE IF NOT EXISTS products_categories (
   KEY idx_pc_brand (brand_id, is_delete)
 );
 
+-- 단계 이행 플래그: brands.is_category_migrated (1=단일트리 전환 완료). shop.controller 가 읽어
+--   1이면 단일트리, 0/NULL이면 기존 그룹 유지 → 브랜드별로 하나씩 이행 가능(빅뱅 회피).
+--   (MySQL은 ADD COLUMN IF NOT EXISTS 미지원 → INFORMATION_SCHEMA 가드. 기본 0 이라 배포 즉시엔 전 브랜드 기존동작.)
+SET @has_col := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='brands' AND COLUMN_NAME='is_category_migrated');
+SET @ddl := IF(@has_col=0,
+  'ALTER TABLE brands ADD COLUMN is_category_migrated TINYINT DEFAULT 0',
+  'DO 0');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- 그룹 역할 분류/검토 테이블 (Phase 2에서 시드, 운영자가 검토·확정).
 CREATE TABLE IF NOT EXISTS _mig_group_role (
   group_id              BIGINT PRIMARY KEY,
@@ -234,6 +244,9 @@ WHERE is_reviewed = 0 AND suggested_role IS NOT NULL;
 --
 --   -- 트리에서 숨겼던 facet 카테고리 복원(백필이 soft-delete 한 것 되돌리기)
 --   UPDATE product_categories SET is_delete=0 WHERE id IN (SELECT category_id FROM _mig_cat_to_prop);
+--
+--   -- 단계 이행 플래그 원복(해당 브랜드 shop.controller 를 기존 그룹 모드로)
+--   UPDATE brands SET is_category_migrated=0 WHERE id IN (SELECT DISTINCT brand_id FROM _mig_group_role WHERE is_reviewed=1);
 --
 --   -- Phase 5 헤더노출 정규화 원복(스냅샷에서 복원)
 --   UPDATE product_categories c
