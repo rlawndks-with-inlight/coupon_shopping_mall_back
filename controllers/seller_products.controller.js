@@ -151,8 +151,9 @@ const sellerProductsCtrl = {
                                 seller_categories.unshift(category_ids.join())
                             }
                             let catIds = seller_categories.join().split(',');
-                            sql += ` AND category_id0 IN (${catIds.map(() => '?').join(',')})`;
-                            params.push(...catIds);
+                            // dual-read(단계 이행): 연결테이블(products_categories) OR 위치컬럼 category_id0
+                            sql += ` AND (products.id IN (SELECT product_id FROM products_categories WHERE category_id IN (${catIds.map(() => '?').join(',')}) AND is_delete=0) OR category_id0 IN (${catIds.map(() => '?').join(',')}))`;
+                            params.push(...catIds, ...catIds);
                         }
                     }
 
@@ -178,8 +179,9 @@ const sellerProductsCtrl = {
                                 seller_categories.unshift(category_ids.join())
                             }
                             let catIds2 = seller_categories.join().split(',');
-                            sql += ` AND category_id0 IN (${catIds2.map(() => '?').join(',')})`;
-                            params.push(...catIds2);
+                            // dual-read(단계 이행): 연결테이블 OR 위치컬럼 category_id0
+                            sql += ` AND (products.id IN (SELECT product_id FROM products_categories WHERE category_id IN (${catIds2.map(() => '?').join(',')}) AND is_delete=0) OR category_id0 IN (${catIds2.map(() => '?').join(',')}))`;
+                            params.push(...catIds2, ...catIds2);
                             let brandIds2 = String(decode_user?.seller_brand).split(',');
                             sql += ` AND category_id1 IN (${brandIds2.map(() => '?').join(',')}) `;
                             params.push(...brandIds2);
