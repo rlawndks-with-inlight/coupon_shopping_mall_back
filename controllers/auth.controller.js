@@ -3,7 +3,7 @@ import { checkIsManagerUrl, differenceTwoDate, generateRandomCode, returnMoment 
 import { insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { createHashedPassword, checkLevel, makeUserToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
 import { encForSave, decRow, decRows, blindIndex } from "../utils.js/pii.js";
-import { isShopgoMerchant } from "../utils.js/is-shopgo.js";
+import { isShopgoBrand } from "../utils.js/is-shopgo.js";
 import {
     isValidSecurityQuestionId,
     normalizeAnswer,
@@ -20,7 +20,8 @@ import { readPool, writePool } from "../config/db-pool.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 보안질문(SMS 없는 아이디찾기·비밀번호 재설정) 공용 상수/헬퍼.
-// ⚠ 이 블록은 shopgo 하위 가맹점(brands.parent_id=98) 전용 신규 플로우에만 쓰인다.
+// ⚠ 이 블록은 shopgo 본사(brands.id=98)와 그 하위 가맹점(brands.parent_id=98) 전용 신규 플로우에만 쓰인다.
+//   (2026-08-06 사장님 결정: 본사 포함. shopgo.co.kr 자체도 SMS 게이트웨이가 없어 이 플로우를 써야 한다.)
 //   기존 SMS 엔드포인트(sendPhoneVerifyCode / checkPhoneVerifyCode / changePassword)는 손대지 않는다.
 // ─────────────────────────────────────────────────────────────────────────────
 const SECURITY_MAX_FAIL = 5;        // 연속 오답 허용 횟수
@@ -34,7 +35,19 @@ const SECURITY_GENERIC_MISMATCH = "아이디·이름·답변이 일치하지 않
 // 잠금 남은시간(초) → 사람이 읽는 분(최소 1분).
 const lockLeftMinutes = (left_sec) => Math.max(1, Math.ceil((Number(left_sec) || 0) / 60));
 
-// shopgo 하위 가맹점에서만 동작하는 비로그인 엔드포인트의 공통 가드.
+// 아이디 찾기 결과 마스킹.
+// 이 흐름은 문자 인증 없이 이름+휴대폰만으로 조회되므로, 아이디를 그대로 돌려주면
+// 지인이 남의 로그인 아이디를 알아낼 수 있다. 앞 3자만 남기고 나머지를 가린다(본인 식별은 가능).
+//   hongkildong -> hon********,  ab -> a*,  abcd -> abc*
+const maskUserName = (user_name) => {
+    const s = String(user_name ?? '');
+    if (!s) return '';
+    const visible = s.length <= 3 ? 1 : 3;
+    return s.slice(0, visible) + '*'.repeat(Math.max(1, s.length - visible));
+};
+
+// shopgo 본사(98) 및 그 하위 가맹점(parent_id=98)에서만 동작하는 비로그인 엔드포인트의 공통 가드.
+// (이름의 'ShopgoDns' 는 '본사+하위' 전체를 뜻한다 — 판정은 isShopgoBrand 하나뿐이다.)
 // 통과하면 decode_dns, 아니면 이미 응답을 보낸 뒤 null 을 돌려준다(호출부는 즉시 return).
 const guardShopgoDns = (req, res) => {
     const decode_dns = checkDns(req.cookies.dns);
@@ -42,7 +55,7 @@ const guardShopgoDns = (req, res) => {
         response(req, res, -100, "도메인 정보를 확인할 수 없습니다.", false);
         return null;
     }
-    if (!isShopgoMerchant(decode_dns)) {
+    if (!isShopgoBrand(decode_dns)) {
         response(req, res, -100, "지원하지 않는 기능입니다.", false);
         return null;
     }
@@ -202,10 +215,11 @@ const authCtrl = {
             if (!user_pw) {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
             }
-            // shopgo 하위 가맹점(brands.parent_id=98)만 보안질문 필수.
+            // shopgo 본사(brands.id=98)와 그 하위 가맹점(brands.parent_id=98)만 보안질문 필수.
+            // → 본사 스토어프론트(shopgo.co.kr)에서 가입하는 일반 회원도 보안질문 선택+답변이 필수가 된다.
             // 그 외 브랜드는 값이 와도 무시 → 기존 동작 100% 불변.
             let security_fields = {};
-            if (isShopgoMerchant(decode_dns)) {
+            if (isShopgoBrand(decode_dns)) {
                 const qid = parseInt(security_question_id, 10);
                 if (!isValidSecurityQuestionId(qid)) {
                     return response(req, res, -100, "보안질문을 선택해 주세요.", {});
@@ -520,7 +534,9 @@ const authCtrl = {
                 blindIndex(phone_num),
                 decode_dns?.id,
             ]);
-            users = users[0].map((item) => ({ user_name: item?.user_name })); // 그 외 컬럼(PII·해시)은 반환 금지
+            // 아이디 일부 마스킹. 이름+휴대폰만 알면 조회되는 흐름이라(문자 인증이 없다)
+            // 지인이 남의 로그인 아이디를 그대로 알아내는 것을 막는다. 본인은 앞자리로 식별 가능.
+            users = users[0].map((item) => ({ user_name: maskUserName(item?.user_name) })); // 그 외 컬럼(PII·해시)은 반환 금지
             if (users.length <= 0) {
                 return response(req, res, -100, SECURITY_GENERIC_NOT_FOUND, false)
             }
@@ -714,7 +730,7 @@ const authCtrl = {
             if (!decode_dns?.id) {
                 return response(req, res, -100, "도메인 정보를 확인할 수 없습니다.", false)
             }
-            if (!isShopgoMerchant(decode_dns)) {
+            if (!isShopgoBrand(decode_dns)) { // 본사(98) 포함
                 return response(req, res, -100, "지원하지 않는 기능입니다.", false)
             }
             const { security_question_id, security_answer } = req.body;

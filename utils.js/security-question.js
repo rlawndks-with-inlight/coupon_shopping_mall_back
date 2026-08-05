@@ -2,8 +2,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 보안질문(본인확인 질문) 공용 헬퍼 — 질문목록 / 답변정규화 / 해시 / 검증 / 응답필드제거.
 //
-// SMS 없이 아이디찾기·비밀번호 재설정을 하기 위한 기능. shopgo 하위 가맹점 전용
-// (isShopgoMerchant(decode_dns) === true 인 브랜드에서만 호출할 것).
+// SMS 없이 아이디찾기·비밀번호 재설정을 하기 위한 기능. shopgo 본사(id=98) 및 하위 가맹점(parent_id=98) 전용
+// (isShopgoBrand(decode_dns) === true 인 브랜드에서만 호출할 것. isShopgoMerchant 는 본사를 제외하므로 쓰지 말 것).
 // 그 외 브랜드는 기존 SMS 플로우(auth/code, auth/code/check, auth/change-password)를 그대로 쓴다.
 //
 // 저장 컬럼(users):
