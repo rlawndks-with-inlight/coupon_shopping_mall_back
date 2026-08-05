@@ -111,6 +111,35 @@ const payCtrl = {
           return response(req, res, -100, "셀러값이 잘못 되었습니다.", false)
         }
       }
+      // ── 구매 가능 상태 하드블록(서버측) ─────────────────────────────
+      // 주문 저장(persist) 전에, 주문에 포함된 상품들의 현재 status를 확인한다.
+      // 구매가능 = products.status IN (0 판매중, 3 새상품). 그 외(1 중단, 2 품절, 5 비공개 등)는 차단.
+      // 금액/PG 흐름은 건드리지 않고, 저장 전에 상태 가드만 추가한다.
+      {
+        let order_products = Array.isArray(products) ? products : [products];
+        let ordered_product_ids = order_products
+          .map((item) => parseInt(item?.id))
+          .filter((v) => Number.isInteger(v) && v > 0);
+        ordered_product_ids = [...new Set(ordered_product_ids)];
+        if (ordered_product_ids.length > 0) {
+          const statusPlaceholders = ordered_product_ids.map(() => '?').join(',');
+          let status_rows = await readPool.query(
+            `SELECT id, status FROM products WHERE id IN (${statusPlaceholders})`,
+            ordered_product_ids
+          );
+          status_rows = status_rows[0];
+          // 구매가능 상태(0 판매중, 3 새상품)가 아닌 상품이 하나라도 있으면 차단
+          const is_purchasable = (s) => (s == 0 || s == 3);
+          let has_blocked = status_rows.some((row) => !is_purchasable(row?.status));
+          // 요청한 상품 id가 products 테이블에 없으면(삭제/부재) 역시 차단 — 조용히 통과시키지 않는다
+          let existing_ids = new Set(status_rows.map((row) => parseInt(row?.id)));
+          let has_missing = ordered_product_ids.some((id) => !existing_ids.has(id));
+          if (has_blocked || has_missing) {
+            return response(req, res, -100, "구매할 수 없는 상품이 포함되어 있습니다. (품절/판매중단)", false);
+          }
+        }
+      }
+
       let obj = {
         brand_id,
         user_id,

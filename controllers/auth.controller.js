@@ -3,11 +3,97 @@ import { checkIsManagerUrl, differenceTwoDate, generateRandomCode, returnMoment 
 import { insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { createHashedPassword, checkLevel, makeUserToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
 import { encForSave, decRow, decRows, blindIndex } from "../utils.js/pii.js";
+import { isShopgoMerchant } from "../utils.js/is-shopgo.js";
+import {
+    isValidSecurityQuestionId,
+    normalizeAnswer,
+    hashAnswer,
+    verifyAnswer,
+    stripUserSecrets,
+    stripUserSecretsList,
+} from "../utils.js/security-question.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import axios from "axios";
 import speakeasy from 'speakeasy';
 import { readPool, writePool } from "../config/db-pool.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 보안질문(SMS 없는 아이디찾기·비밀번호 재설정) 공용 상수/헬퍼.
+// ⚠ 이 블록은 shopgo 하위 가맹점(brands.parent_id=98) 전용 신규 플로우에만 쓰인다.
+//   기존 SMS 엔드포인트(sendPhoneVerifyCode / checkPhoneVerifyCode / changePassword)는 손대지 않는다.
+// ─────────────────────────────────────────────────────────────────────────────
+const SECURITY_MAX_FAIL = 5;        // 연속 오답 허용 횟수
+const SECURITY_LOCK_MINUTES = 30;   // 초과 시 잠금 시간(분)
+
+// 계정 존재여부를 노출하지 않는 단일 실패 메시지(열거 공격 방지).
+const SECURITY_GENERIC_NOT_FOUND = "일치하는 회원 정보를 찾을 수 없습니다.";
+const SECURITY_GENERIC_NO_QUESTION = "일치하는 회원 정보를 찾을 수 없거나, 보안질문이 설정되어 있지 않습니다. 관리자에게 문의해 주세요.";
+const SECURITY_GENERIC_MISMATCH = "아이디·이름·답변이 일치하지 않습니다.";
+
+// 잠금 남은시간(초) → 사람이 읽는 분(최소 1분).
+const lockLeftMinutes = (left_sec) => Math.max(1, Math.ceil((Number(left_sec) || 0) / 60));
+
+// shopgo 하위 가맹점에서만 동작하는 비로그인 엔드포인트의 공통 가드.
+// 통과하면 decode_dns, 아니면 이미 응답을 보낸 뒤 null 을 돌려준다(호출부는 즉시 return).
+const guardShopgoDns = (req, res) => {
+    const decode_dns = checkDns(req.cookies.dns);
+    if (!decode_dns?.id) {
+        response(req, res, -100, "도메인 정보를 확인할 수 없습니다.", false);
+        return null;
+    }
+    if (!isShopgoMerchant(decode_dns)) {
+        response(req, res, -100, "지원하지 않는 기능입니다.", false);
+        return null;
+    }
+    return decode_dns;
+};
+
+// 로그인 토큰 payload. signIn 과 setSecurityQuestion 이 '반드시' 같은 모양을 만들도록 한 곳에 모았다.
+// (한쪽만 바뀌면 보안질문 저장 후 재발급된 토큰에서 필드가 사라져 화면이 깨진다.)
+const makeUserTokenPayload = (user, agent) => ({
+    id: user.id,
+    user_name: user.user_name,
+    name: user.name,
+    nickname: user.nickname,
+    parent_id: user.parent_id,
+    level: user.level,
+    phone_num: user.phone_num,
+    unipass: user.unipass,
+    profile_img: user.profile_img,
+    brand_id: user.brand_id,
+    company_name: user.company_name,
+    business_num: user.business_num,
+    contract_img: user.contract_img,
+    bsin_lic_img: user.bsin_lic_img,
+    oper_id: user.oper_id,
+    seller_trx_fee: user.seller_trx_fee,
+    seller_trx_fee_type: user.seller_trx_fee_type ?? 0,
+    seller_range_u: user.seller_range_u,
+    seller_range_o: user.seller_range_o,
+    seller_brand: user.seller_brand,
+    seller_category: user.seller_category,
+    seller_property: user.seller_property,
+    seller_point: user.seller_point,
+
+    // ⚠ 기존 signIn 코드 그대로(옵셔널체이닝 추가 금지) — level==10 일 때만 agent 를 참조한다.
+    oper_trx_fee: user.level == 10 ? agent.oper_trx_fee : user.oper_trx_fee,
+    oper_trx_fee_type: user.level == 10 ? (agent.oper_trx_fee_type ?? 0) : (user.oper_trx_fee_type ?? 0),
+
+    // 보안질문 설정 여부(1/0). 프론트 '보안질문 설정하기' 배너 노출 판단용.
+    // ⚠ 값이 아니라 '설정됐는지'만 담는다(질문 id 는 토큰에 넣지 않는다).
+    has_security_question: (user.security_question_id === null || user.security_question_id === undefined) ? 0 : 1,
+});
+
+// 토큰 쿠키 발급. signIn 의 res.cookie 옵션과 100% 동일해야 한다.
+const issueUserTokenCookie = (res, token) => {
+    res.cookie("token", token, {
+        httpOnly: true,
+        maxAge: (60 * 60 * 1000) * 12 * 2,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV !== 'development',
+    });
+};
 
 const authCtrl = {
     signIn: async (req, res, next) => {
@@ -59,40 +145,8 @@ const authCtrl = {
                 }
             }
             decRow('users', user); // 토큰에 담기 전 실명·전화 복호화
-            const token = makeUserToken({
-                id: user.id,
-                user_name: user.user_name,
-                name: user.name,
-                nickname: user.nickname,
-                parent_id: user.parent_id,
-                level: user.level,
-                phone_num: user.phone_num,
-                unipass: user.unipass,
-                profile_img: user.profile_img,
-                brand_id: user.brand_id,
-                company_name: user.company_name,
-                business_num: user.business_num,
-                contract_img: user.contract_img,
-                bsin_lic_img: user.bsin_lic_img,
-                oper_id: user.oper_id,
-                seller_trx_fee: user.seller_trx_fee,
-                seller_trx_fee_type: user.seller_trx_fee_type ?? 0,
-                seller_range_u: user.seller_range_u,
-                seller_range_o: user.seller_range_o,
-                seller_brand: user.seller_brand,
-                seller_category: user.seller_category,
-                seller_property: user.seller_property,
-                seller_point: user.seller_point,
-
-                oper_trx_fee: user.level == 10 ? agent.oper_trx_fee : user.oper_trx_fee,
-                oper_trx_fee_type: user.level == 10 ? (agent.oper_trx_fee_type ?? 0) : (user.oper_trx_fee_type ?? 0),
-            })
-            res.cookie("token", token, {
-                httpOnly: true,
-                maxAge: (60 * 60 * 1000) * 12 * 2,
-                sameSite: 'lax',
-                secure: process.env.NODE_ENV !== 'development',
-            });
+            const token = makeUserToken(makeUserTokenPayload(user, agent))
+            issueUserTokenCookie(res, token);
             let check_last_login_time = await updateQuery('users', {
                 last_login_time: returnMoment()
             }, user.id)
@@ -104,10 +158,10 @@ const authCtrl = {
             let wish_data = await readPool.query(wish_sql, [user?.id ?? 0]);
             wish_data = wish_data[0];
 
-            user = {
+            user = stripUserSecrets({
                 ...user,
                 wish_data
-            }
+            }) // ⚠ SELECT * 이므로 보안질문 해시/솔트 제거 후 반환(브라우저로 나가면 오프라인 대입 가능)
             return response(req, res, 100, "success", user)
         } catch (err) {
             console.log(err)
@@ -141,10 +195,31 @@ const authCtrl = {
                 bsin_lic_img,
                 shareholder_img,
                 register_img,
-                seller_id
+                seller_id,
+                security_question_id,
+                security_answer
             } = req.body;
             if (!user_pw) {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
+            }
+            // shopgo 하위 가맹점(brands.parent_id=98)만 보안질문 필수.
+            // 그 외 브랜드는 값이 와도 무시 → 기존 동작 100% 불변.
+            let security_fields = {};
+            if (isShopgoMerchant(decode_dns)) {
+                const qid = parseInt(security_question_id, 10);
+                if (!isValidSecurityQuestionId(qid)) {
+                    return response(req, res, -100, "보안질문을 선택해 주세요.", {});
+                }
+                if (normalizeAnswer(security_answer).length < 2) {
+                    return response(req, res, -100, "보안질문 답변을 2자 이상 입력해 주세요.", {});
+                }
+                const ans = await hashAnswer(security_answer); // 내부에서 normalizeAnswer 적용
+                security_fields = {
+                    security_question_id: qid,
+                    security_answer_hash: ans.hashedPassword,
+                    security_answer_salt: ans.salt,
+                    security_set_at: returnMoment(),
+                };
             }
             let pw_data = await createHashedPassword(user_pw);
             let is_exist_user_params = [user_name, decode_dns?.id ?? 0];
@@ -199,11 +274,17 @@ const authCtrl = {
                 bsin_lic_img,
                 shareholder_img,
                 register_img,
-                seller_id
+                seller_id,
+                ...security_fields
             }
 
-            obj = encForSave('users', obj); // 실명·전화 암호화 + blind-index
+            obj = encForSave('users', obj); // 실명·전화 암호화 + blind-index (신규 security_* 키는 그대로 통과)
             let result = await insertQuery('users', obj);
+            if (!result) {
+                // insertQuery 는 실패 시 false 를 돌려주고 삼킨다(query-util.js).
+                // 검사하지 않으면 '가입 성공' 응답을 주면서 실제로는 회원이 없는 무증상 유실이 된다.
+                return response(req, res, -100, "회원가입 중 에러가 발생했습니다.", false)
+            }
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(JSON.stringify(err))
@@ -385,12 +466,14 @@ const authCtrl = {
                 let users = await readPool.query(`SELECT * FROM users WHERE (phone_num=? OR phone_idx=?) AND brand_id=? AND status=0 `, [send_log?.phone_num, blindIndex(send_log?.phone_num), decode_dns?.id]);
                 users = users[0];
                 decRows('users', users); // 읽기 복호화
+                stripUserSecretsList(users); // ⚠ 보안질문 해시/솔트는 클라이언트로 내보내지 않는다
                 data['users'] = users;
             }
             if (find_password) {
                 let user = await readPool.query(`SELECT * FROM users WHERE (phone_num=? OR phone_idx=?) AND user_name=? AND brand_id=? AND status=0 `, [send_log?.phone_num, blindIndex(send_log?.phone_num), user_name, decode_dns?.id]);
                 user = user[0][0];
                 decRow('users', user); // 읽기 복호화
+                stripUserSecrets(user); // ⚠ 보안질문 해시/솔트는 클라이언트로 내보내지 않는다
                 if (user?.status == 1) {
                     return response(req, res, -100, "승인 대기중입니다.", {})
                 }
@@ -405,6 +488,150 @@ const authCtrl = {
                 ];
             }
             return response(req, res, 100, "success", data);
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    // ─────────────────────────────────────────────────────────────────────────
+    // [신규] SMS 없이 아이디찾기 — POST /api/auth/find-id
+    // body: { name, phone_num }  →  data: { users: [{ user_name }] }
+    // 이름과 휴대폰번호 '둘 다' 일치해야 한다(아이디 열거 방지). user_name 외 컬럼은 절대 반환하지 않는다.
+    // ─────────────────────────────────────────────────────────────────────────
+    findId: async (req, res, next) => {
+        try {
+            const decode_dns = guardShopgoDns(req, res);
+            if (!decode_dns) return;
+            let { name, phone_num } = req.body;
+            name = String(name ?? '').trim();
+            phone_num = String(phone_num ?? '').trim();
+            if (!name || !phone_num) {
+                return response(req, res, -100, "이름과 휴대폰번호를 모두 입력해 주세요.", false)
+            }
+            // 이름·전화 모두 dual leg: 평문(백필 전 행) OR blind-index(암호화된 행).
+            // blindIndex 는 공백/하이픈을 제거하므로 010-1234-5678 과 01012345678 이 같이 잡힌다.
+            let users = await readPool.query(`SELECT user_name FROM users WHERE (name=? OR name_idx=?) AND (phone_num=? OR phone_idx=?) AND brand_id=? AND status=0 AND is_delete=0 ORDER BY id ASC LIMIT 20`, [
+                name,
+                blindIndex(name),
+                phone_num,
+                blindIndex(phone_num),
+                decode_dns?.id,
+            ]);
+            users = users[0].map((item) => ({ user_name: item?.user_name })); // 그 외 컬럼(PII·해시)은 반환 금지
+            if (users.length <= 0) {
+                return response(req, res, -100, SECURITY_GENERIC_NOT_FOUND, false)
+            }
+            return response(req, res, 100, "success", { users })
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    // ─────────────────────────────────────────────────────────────────────────
+    // [신규] 보안질문 조회(비로그인) — POST /api/auth/security-question
+    // body: { user_name, name }  →  data: { security_question_id }
+    // 아이디+이름 두 가지를 모두 알아야 질문을 볼 수 있다. 없는 계정/이름 불일치/질문 미설정은
+    // 전부 같은 메시지로 응답해 어느 경우인지 구분되지 않게 한다(계정 열거 방지).
+    // ─────────────────────────────────────────────────────────────────────────
+    getSecurityQuestion: async (req, res, next) => {
+        try {
+            const decode_dns = guardShopgoDns(req, res);
+            if (!decode_dns) return;
+            let { user_name, name } = req.body;
+            user_name = String(user_name ?? '').trim();
+            name = String(name ?? '').trim();
+            if (!user_name || !name) {
+                return response(req, res, -100, "아이디와 이름을 모두 입력해 주세요.", false)
+            }
+            // 잠금 판정은 반드시 DB NOW() 기준(노드↔DB 시간대 어긋남 방지).
+            let rows = await readPool.query(`SELECT security_question_id, (security_locked_until IS NOT NULL AND security_locked_until > NOW()) AS is_locked, TIMESTAMPDIFF(SECOND, NOW(), security_locked_until) AS lock_left_sec FROM users WHERE user_name=? AND (name=? OR name_idx=?) AND brand_id=? AND status=0 AND is_delete=0 LIMIT 1`, [
+                user_name,
+                name,
+                blindIndex(name),
+                decode_dns?.id,
+            ]);
+            let row = rows[0][0];
+            if (!row || !(row?.security_question_id > 0)) {
+                return response(req, res, -100, SECURITY_GENERIC_NO_QUESTION, false)
+            }
+            if (Number(row?.is_locked) === 1) {
+                return response(req, res, -100, `답변을 ${SECURITY_MAX_FAIL}회 틀려 잠겨 있습니다. ${lockLeftMinutes(row?.lock_left_sec)}분 후 다시 시도하거나 관리자에게 문의해 주세요.`, false)
+            }
+            return response(req, res, 100, "success", { security_question_id: Number(row?.security_question_id) })
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    // ─────────────────────────────────────────────────────────────────────────
+    // [신규] 보안질문 답변으로 비밀번호 재설정 — POST /api/auth/reset-password-by-answer
+    // body: { user_name, name, security_answer, new_password }
+    // 잠금 정책: 연속 오답 5회 → 30분 잠금(카운트는 0으로 리셋). 성공 시 카운트·잠금 모두 해제.
+    // 시간 계산은 전부 DB의 NOW()/DATE_ADD 로만 한다.
+    // ─────────────────────────────────────────────────────────────────────────
+    resetPasswordByAnswer: async (req, res, next) => {
+        try {
+            const decode_dns = guardShopgoDns(req, res);
+            if (!decode_dns) return;
+            let { user_name, name, security_answer, new_password } = req.body;
+            user_name = String(user_name ?? '').trim();
+            name = String(name ?? '').trim();
+            new_password = String(new_password ?? ''); // 비밀번호는 trim 하지 않는다(공백도 유효 문자)
+            if (!user_name || !name || !normalizeAnswer(security_answer) || !new_password) {
+                return response(req, res, -100, "입력값을 모두 입력해 주세요.", false)
+            }
+            if (new_password.length < 8) {
+                return response(req, res, -100, "비밀번호는 8자 이상으로 입력해 주세요.", false)
+            }
+            if (new_password.length > 100) {
+                return response(req, res, -100, "비밀번호는 100자 이하로 입력해 주세요.", false)
+            }
+            let rows = await readPool.query(`SELECT id, security_answer_hash, security_answer_salt, security_fail_count, (security_locked_until IS NOT NULL AND security_locked_until > NOW()) AS is_locked, TIMESTAMPDIFF(SECOND, NOW(), security_locked_until) AS lock_left_sec FROM users WHERE user_name=? AND (name=? OR name_idx=?) AND brand_id=? AND status=0 AND is_delete=0 LIMIT 1`, [
+                user_name,
+                name,
+                blindIndex(name),
+                decode_dns?.id,
+            ]);
+            let user = rows[0][0];
+            if (!user || !user?.security_answer_hash || !user?.security_answer_salt) {
+                // 존재하지 않는 계정 / 보안질문 미설정 계정 — 동일 메시지
+                return response(req, res, -100, SECURITY_GENERIC_NO_QUESTION, false)
+            }
+            if (Number(user?.is_locked) === 1) {
+                return response(req, res, -100, `답변을 ${SECURITY_MAX_FAIL}회 틀려 잠겨 있습니다. ${lockLeftMinutes(user?.lock_left_sec)}분 후 다시 시도하거나 관리자에게 문의해 주세요.`, false)
+            }
+            let is_correct = await verifyAnswer(security_answer, user?.security_answer_hash, user?.security_answer_salt);
+            if (!is_correct) {
+                // 원자적 1문장. MySQL 은 SET 을 좌→우로 평가하므로 첫 줄 시점의 security_fail_count 는 아직 '이전 값'.
+                await writePool.query(`UPDATE users SET security_locked_until = IF(security_fail_count + 1 >= ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), security_locked_until), security_fail_count = IF(security_fail_count + 1 >= ?, 0, security_fail_count + 1) WHERE id=?`, [
+                    SECURITY_MAX_FAIL,
+                    SECURITY_LOCK_MINUTES,
+                    SECURITY_MAX_FAIL,
+                    user?.id,
+                ]);
+                let fail_count = (Number(user?.security_fail_count) || 0) + 1;
+                if (fail_count >= SECURITY_MAX_FAIL) {
+                    return response(req, res, -100, `${SECURITY_GENERIC_MISMATCH} ${SECURITY_MAX_FAIL}회 틀려 ${SECURITY_LOCK_MINUTES}분간 잠겼습니다. ${SECURITY_LOCK_MINUTES}분 후 다시 시도하거나 관리자에게 문의해 주세요.`, false)
+                }
+                return response(req, res, -100, `${SECURITY_GENERIC_MISMATCH} 남은 시도 횟수 ${SECURITY_MAX_FAIL - fail_count}회 (${SECURITY_MAX_FAIL}회 틀리면 ${SECURITY_LOCK_MINUTES}분간 잠깁니다.)`, false)
+            }
+            // 성공 — 비밀번호는 파일 전체와 동일한 방식(PBKDF2 + 새 salt → users.user_salt)으로 저장하고 실패/잠금 해제.
+            let pw_data = await createHashedPassword(new_password);
+            await writePool.query(`UPDATE users SET user_pw=?, user_salt=?, security_fail_count=0, security_locked_until=NULL WHERE id=?`, [
+                pw_data.hashedPassword,
+                pw_data.salt,
+                user?.id,
+            ]);
+            return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
@@ -462,6 +689,68 @@ const authCtrl = {
                 user_salt: pw_data.salt,
             }, user?.id);
 
+            return response(req, res, 100, "success", {})
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
+    // ─────────────────────────────────────────────────────────────────────────
+    // [신규] 보안질문 설정/변경(로그인 상태) — PUT /api/auth/security-question
+    // body: { security_question_id, security_answer }
+    // 권한 근거는 쿠키 토큰뿐이다(대상 id 를 body 로 받지 않는다).
+    // 저장 후 토큰을 재발급해 has_security_question 이 재로그인 없이 1 로 바뀌게 한다.
+    // ─────────────────────────────────────────────────────────────────────────
+    setSecurityQuestion: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            if (!decode_user?.id) {
+                return lowLevelException(req, res);
+            }
+            if (!decode_dns?.id) {
+                return response(req, res, -100, "도메인 정보를 확인할 수 없습니다.", false)
+            }
+            if (!isShopgoMerchant(decode_dns)) {
+                return response(req, res, -100, "지원하지 않는 기능입니다.", false)
+            }
+            const { security_question_id, security_answer } = req.body;
+            const qid = parseInt(security_question_id, 10); // multipart 라 body 는 전부 문자열
+            if (!isValidSecurityQuestionId(qid)) {
+                return response(req, res, -100, "보안질문을 선택해 주세요.", false)
+            }
+            if (normalizeAnswer(security_answer).length < 2) {
+                return response(req, res, -100, "답변을 2자 이상 입력해 주세요.", false)
+            }
+            let user = await readPool.query(`SELECT * FROM users WHERE id=? AND is_delete=0 LIMIT 1`, [decode_user?.id]);
+            user = user[0][0];
+            if (!user) {
+                return lowLevelException(req, res);
+            }
+            // 토큰 재발급에 필요한 상위(오퍼레이터) 정보는 저장 '전에' 읽는다(signIn 과 동일한 조회).
+            let agent = '';
+            if (user?.level == 10) {
+                agent = await readPool.query(`SELECT * FROM users WHERE id=?`, [user?.oper_id]);
+                agent = agent[0][0]
+            }
+            const ans = await hashAnswer(security_answer); // 내부에서 normalizeAnswer 적용
+            // security_set_at 도 DB NOW() 로 기록(노드 로컬시각 사용 금지).
+            await writePool.query(`UPDATE users SET security_question_id=?, security_answer_hash=?, security_answer_salt=?, security_fail_count=0, security_locked_until=NULL, security_set_at=NOW() WHERE id=?`, [
+                qid,
+                ans.hashedPassword,
+                ans.salt,
+                user?.id,
+            ]);
+
+            // 토큰 재발급 — signIn 과 동일한 payload/쿠키 옵션.
+            // 이걸 빼면 has_security_question 이 옛 토큰 값(0)으로 남아 재로그인 전까지 배너가 계속 뜬다.
+            decRow('users', user); // 토큰에 담기 전 실명·전화 복호화(signIn 과 동일)
+            user.security_question_id = qid; // 방금 저장한 값을 payload 에 반영
+            const token = makeUserToken(makeUserTokenPayload(user, agent))
+            issueUserTokenCookie(res, token);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
