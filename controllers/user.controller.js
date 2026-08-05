@@ -6,6 +6,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { encForSave, decRow, decRows, decListContent } from "../utils.js/pii.js";
+import { stripUserSecrets, stripUserSecretsList } from "../utils.js/security-question.js";
 const table_name = 'users';
 
 const userCtrl = {
@@ -49,6 +50,7 @@ const userCtrl = {
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             decListContent('users', data); // 읽기 복호화(실명·전화)
+            stripUserSecretsList(data?.content); // ⚠ users.* 이므로 보안질문 해시/솔트 제거 후 반환
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -66,6 +68,7 @@ const userCtrl = {
 
             let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
             decRows('users', user_list[0]); // 읽기 복호화(실명·전화)
+            stripUserSecretsList(user_list[0]); // ⚠ SELECT * 이므로 보안질문 해시/솔트 제거 후 반환
             let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -90,6 +93,7 @@ const userCtrl = {
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
             decRow('users', data); // 읽기 복호화(실명·전화)
+            stripUserSecrets(data); // ⚠ SELECT * 이므로 보안질문 해시/솔트 제거 후 반환
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
@@ -302,7 +306,26 @@ const userCtrl = {
 
             let user = await selectQuerySimple(table_name, id);
             user = user[0];
-            if (!user || decode_user?.level < user?.level) {
+            // ⚠ 로그인 필수. decode_user가 false면 decode_user?.level 은 undefined 이고
+            //    undefined < 40 은 false 라서, 이 가드가 없으면 비로그인 요청이 레벨 비교를 통과한다.
+            if (!decode_user || !user || decode_user?.level < user?.level) {
+                return response(req, res, -100, "잘못된 접근입니다.", false)
+            }
+            // 브랜드 스코프 검증: 레벨 체크만으로는 다른 가맹점 계정의 비밀번호까지 바꿀 수 있었다.
+            // 본사/마스터(레벨50 이상)는 전 브랜드 허용, 그 외(가맹점 관리자 등)는 자기 브랜드 소속 계정만 허용.
+            // ⚠ 기준은 '토큰의 brand_id'(서명됨)다. dns 쿠키는 GET /api/domain?dns=... 로 누구나
+            //    임의 브랜드 것을 발급받을 수 있어, dns만 비교하면 가맹점 관리자가 다른 브랜드의
+            //    dns 쿠키를 붙여 그 브랜드 계정 비밀번호를 바꿀 수 있다. (토큰 brand_id + dns 둘 다 일치 요구)
+            const user_brand_id = Number(decode_user?.brand_id ?? 0);
+            const dns_brand_id = Number(decode_dns?.id ?? 0);
+            const target_brand_id = Number(user?.brand_id ?? 0);
+            if (!(decode_user?.level >= 50)
+                && (!user_brand_id || user_brand_id !== target_brand_id || dns_brand_id !== target_brand_id)) {
+                return response(req, res, -100, "잘못된 접근입니다.", false)
+            }
+            // 일반 회원(레벨10 미만)은 '본인' 비밀번호만 변경 가능.
+            // (레벨 비교는 '<' 라서 같은 레벨끼리는 통과 → 같은 브랜드 회원끼리 계정 탈취가 가능했다)
+            if (!(decode_user?.level >= 10) && Number(decode_user?.id) !== Number(id)) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
             let pw_data = await createHashedPassword(user_pw);

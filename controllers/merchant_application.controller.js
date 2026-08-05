@@ -118,6 +118,39 @@ const isMasterManager = (req) => {
     return root && decode_dns.dns === root;
 };
 
+// 마스터(본사) 브랜드 조회. 못 찾으면 null.
+const getMasterBrand = async () => {
+    const rootDomain = getRootDomain();
+    if (!rootDomain) return null;
+    const masterRes = await readPool.query(
+        `SELECT id FROM brands WHERE dns=? AND is_main_dns=1 LIMIT 1`, [rootDomain]
+    );
+    return masterRes[0][0] || null;
+};
+
+// 본사(마스터) 전용 가드.
+// ⚠ dns 쿠키는 '신원'이 아니다: GET /api/domain?dns=... 는 인증 없이 누구나 호출할 수 있어
+//    가맹점 관리자(레벨40)도 [자기 로그인 토큰 + 마스터 dns 쿠키] 조합을 손쉽게 만들 수 있다.
+//    따라서 isMasterManager(=지금 보고 있는 사이트가 마스터냐)만으로는 인가가 성립하지 않는다.
+// → (1) 유효한 로그인 토큰, (2) 요구 레벨, (3) '본사 브랜드 소속' 또는 플랫폼 관리자(레벨50+)까지 확인한다.
+//    가맹점 관리자는 brand_id가 자기 하위 브랜드이고 레벨이 40이므로 (3)에서 차단된다.
+// 통과 시 { decode_user, master }(master는 못 찾으면 null), 실패 시 응답을 보내고 null 반환.
+const requireMasterManager = async (req, res, minLevel = 10) => {
+    const decode_user = checkLevel(req.cookies.token, minLevel, res);
+    if (!decode_user || !isMasterManager(req)) {
+        await response(req, res, -403, "권한이 없습니다", false);
+        return null;
+    }
+    const master = await getMasterBrand();
+    const isHqUser = decode_user?.level >= 50
+        || (master && Number(decode_user?.brand_id) === Number(master.id));
+    if (!isHqUser) {
+        await response(req, res, -403, "권한이 없습니다", false);
+        return null;
+    }
+    return { decode_user, master };
+};
+
 // 선택 프레임("shop:1" / "blog:4") → 데모번호 매핑
 const frameToDemo = (frame) => {
     const [category, num] = String(frame || '').split(':');
@@ -399,10 +432,7 @@ const merchantApplicationCtrl = {
     // 매니저 전용: 신청 목록
     list: async (req, res, next) => {
         try {
-            checkLevel(req.cookies.token, 10, res);
-            if (!isMasterManager(req)) {
-                return response(req, res, -403, "권한이 없습니다", false);
-            }
+            if (!await requireMasterManager(req, res)) return;
             let columns = [`${table_name}.*`];
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` WHERE 1=1 `;
@@ -423,16 +453,10 @@ const merchantApplicationCtrl = {
     // 매니저 전용: 개설된 하위 가맹점 현황 + 매출 집계 (마스터 대시보드 / 가맹점 현황 페이지용)
     merchants: async (req, res, next) => {
         try {
-            checkLevel(req.cookies.token, 10, res);
-            if (!isMasterManager(req)) {
-                return response(req, res, -403, "권한이 없습니다", false);
-            }
+            const auth = await requireMasterManager(req, res);
+            if (!auth) return;
+            const { master } = auth;
             const { s_dt, e_dt } = req.query;
-            const rootDomain = getRootDomain();
-            const masterRes = await readPool.query(
-                `SELECT id FROM brands WHERE dns=? AND is_main_dns=1 LIMIT 1`, [rootDomain]
-            );
-            const master = masterRes[0][0];
             if (!master) {
                 return response(req, res, 100, "success", { merchants: [], summary: { merchant_count: 0, total_sales: 0, order_count: 0 } });
             }
@@ -443,10 +467,18 @@ const merchantApplicationCtrl = {
             if (s_dt) { joinDate += ` AND t.created_at >= ? `; params.push(`${s_dt} 00:00:00`); }
             if (e_dt) { joinDate += ` AND t.created_at <= ? `; params.push(`${e_dt} 23:59:59`); }
             params.push(master.id);
+            // 가맹점 관리자(레벨40) 계정은 상관 서브쿼리로 가져온다.
+            // - 브랜드당 레벨40이 여러 개여도 항상 1행(id 최소값)만 나오도록 ORDER BY id ASC LIMIT 1.
+            // - 관리자가 없는 브랜드는 NULL.
+            // - JOIN이 아닌 서브쿼리라서 매출 SUM/COUNT가 부풀지 않고 GROUP BY도 그대로 유효하다
+            //   (서브쿼리는 GROUP BY 키인 b.id에만 의존 → ONLY_FULL_GROUP_BY 안전).
+            // - user_name(아이디)은 암호화 대상이 아니라 반환 가능. name/phone_num/비밀번호 해시는 절대 반환하지 않는다.
             const sql = `
                 SELECT b.id, b.name, b.dns, b.created_at, b.logo_img,
                        COALESCE(SUM(t.amount), 0) AS sales,
-                       COUNT(t.id) AS order_count
+                       COUNT(t.id) AS order_count,
+                       (SELECT u.id        FROM users u WHERE u.brand_id=b.id AND u.level=40 AND u.is_delete=0 ORDER BY u.id ASC LIMIT 1) AS admin_user_id,
+                       (SELECT u.user_name FROM users u WHERE u.brand_id=b.id AND u.level=40 AND u.is_delete=0 ORDER BY u.id ASC LIMIT 1) AS admin_user_name
                 FROM brands b
                 LEFT JOIN transactions t
                   ON t.brand_id = b.id AND t.trx_status >= 5 AND t.is_cancel = 0${joinDate}
@@ -462,6 +494,8 @@ const merchantApplicationCtrl = {
                 logo_img: r.logo_img,
                 sales: Number(r.sales) || 0,
                 order_count: Number(r.order_count) || 0,
+                admin_user_id: r.admin_user_id ?? null,
+                admin_user_name: r.admin_user_name ?? null,
             }));
             const summary = {
                 merchant_count: merchants.length,
@@ -479,17 +513,11 @@ const merchantApplicationCtrl = {
     // 매니저 전용: 특정 하위 가맹점의 상세 내역 (상태별 집계 + 최근 주문). 마스터의 하위 가맹점만 조회 허용.
     merchantDetail: async (req, res, next) => {
         try {
-            checkLevel(req.cookies.token, 10, res);
-            if (!isMasterManager(req)) {
-                return response(req, res, -403, "권한이 없습니다", false);
-            }
+            const auth = await requireMasterManager(req, res);
+            if (!auth) return;
+            const { master } = auth;
             const { id } = req.params;
             const { s_dt, e_dt } = req.query;
-            const rootDomain = getRootDomain();
-            const masterRes = await readPool.query(
-                `SELECT id FROM brands WHERE dns=? AND is_main_dns=1 LIMIT 1`, [rootDomain]
-            );
-            const master = masterRes[0][0];
             if (!master) {
                 return response(req, res, -404, "마스터 브랜드를 찾을 수 없습니다", false);
             }
@@ -542,6 +570,53 @@ const merchantApplicationCtrl = {
                 },
                 orders,
             });
+        } catch (err) {
+            console.log(err);
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err));
+            return response(req, res, -200, "서버 에러 발생", false);
+        }
+    },
+
+    // 매니저 전용(본사/마스터): 하위 가맹점 관리자(레벨40) 비밀번호를 "본인 아이디"로 초기화.
+    // 개설 시 초기 비밀번호 규칙(비밀번호=아이디)과 동일하게 되돌리는 동작.
+    // 마스터의 하위 가맹점만 대상 → 무관한 브랜드 계정 초기화 차단.
+    resetMerchantAdminPassword: async (req, res, next) => {
+        try {
+            // 다른 가맹점 계정을 탈취할 수 있는 동작이므로 관리자급(40+) 본사 계정만 허용.
+            const auth = await requireMasterManager(req, res, 40);
+            if (!auth) return;
+            const { decode_user, master } = auth;
+            const { id } = req.params;
+            if (!master) {
+                return response(req, res, -404, "마스터 브랜드를 찾을 수 없습니다", false);
+            }
+            // 대상이 마스터의 하위 가맹점인지 검증 (무관 브랜드 초기화 차단)
+            const brandRes = await readPool.query(
+                `SELECT id, name, dns FROM brands WHERE id=? AND parent_id=? AND is_delete=0 LIMIT 1`,
+                [id, master.id]
+            );
+            const brand = brandRes[0][0];
+            if (!brand) {
+                return response(req, res, -100, "가맹점을 찾을 수 없습니다.", false);
+            }
+            // 해당 가맹점의 관리자(레벨40) 계정 — 여러 개면 id 최소값 1개 (목록 API와 동일 기준)
+            const adminRes = await readPool.query(
+                `SELECT id, user_name FROM users WHERE brand_id=? AND level=40 AND is_delete=0 ORDER BY id ASC LIMIT 1`,
+                [brand.id]
+            );
+            const admin = adminRes[0][0];
+            if (!admin || !admin.user_name) {
+                return response(req, res, -100, "가맹점 관리자 계정을 찾을 수 없습니다.", false);
+            }
+            // 초기화 값 = 관리자 본인 아이디(user_name). salt도 새로 발급해 user_pw와 함께 갱신.
+            const pw_data = await createHashedPassword(admin.user_name);
+            await updateQuery('users', {
+                user_pw: pw_data.hashedPassword,
+                user_salt: pw_data.salt,
+            }, admin.id);
+            // 감사 로그: 누가 어떤 가맹점의 어떤 계정을 초기화했는지
+            logger.info(`[merchant-admin-pw-reset] by user_id=${decode_user?.id} (level=${decode_user?.level}) ip=${extractIp(req)} -> brand_id=${brand.id} (${brand.dns}) target_user_id=${admin.id} user_name=${admin.user_name}`);
+            return response(req, res, 100, "success", { user_name: admin.user_name });
         } catch (err) {
             console.log(err);
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
@@ -625,10 +700,7 @@ const merchantApplicationCtrl = {
     // 매니저 전용: 신청 단건
     get: async (req, res, next) => {
         try {
-            checkLevel(req.cookies.token, 10, res);
-            if (!isMasterManager(req)) {
-                return response(req, res, -403, "권한이 없습니다", false);
-            }
+            if (!await requireMasterManager(req, res)) return;
             const { id } = req.params;
             const result = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
             const data = result[0][0];
@@ -643,10 +715,7 @@ const merchantApplicationCtrl = {
     // 매니저 전용: 상태 변경
     updateStatus: async (req, res, next) => {
         try {
-            checkLevel(req.cookies.token, 10, res);
-            if (!isMasterManager(req)) {
-                return response(req, res, -403, "권한이 없습니다", false);
-            }
+            if (!await requireMasterManager(req, res)) return;
             const { id, status, memo, brand_id, admin_id } = req.body;
             if (!id || !status) {
                 return response(req, res, -100, "필수 항목이 누락되었습니다", false);
@@ -710,10 +779,7 @@ const merchantApplicationCtrl = {
     // 매니저 전용: 삭제
     remove: async (req, res, next) => {
         try {
-            checkLevel(req.cookies.token, 10, res);
-            if (!isMasterManager(req)) {
-                return response(req, res, -403, "권한이 없습니다", false);
-            }
+            if (!await requireMasterManager(req, res)) return;
             const { id } = req.params;
             await deleteQuery(`${table_name}`, { id });
             return response(req, res, 100, "success", {});
