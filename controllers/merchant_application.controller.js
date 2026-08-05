@@ -490,20 +490,23 @@ const merchantApplicationCtrl = {
             // → 브랜드 id들을 모아 '한 번만' 조회한 뒤 decRows('users', ...)로 복호화해서 매핑한다(N+1 방지).
             // ⚠ 조회 컬럼은 id/brand_id/user_name/phone_num 뿐 — user_pw/user_salt/otp_token 등 자격증명은 애초에 SELECT하지 않는다.
             const brandIds = rows.map((r) => r.id);
-            const adminPhoneByBrand = {};
+            const adminInfoByBrand = {};
             if (brandIds.length > 0) {
                 const ph = brandIds.map(() => '?').join();
                 const adminRows = (await readPool.query(
-                    `SELECT id, brand_id, user_name, phone_num FROM users
+                    `SELECT id, brand_id, user_name, name, phone_num FROM users
                      WHERE brand_id IN (${ph}) AND level=40 AND is_delete=0 ORDER BY id ASC`,
                     brandIds
                 ))[0];
-                decRows('users', adminRows); // 전화번호 복호화(평문/암호문 자동판별)
-                // 브랜드당 id 최소값 1건만 사용 → 목록의 admin_user_id·비밀번호 초기화 대상과 '같은 계정'의 연락처가 된다.
+                decRows('users', adminRows); // 실명·전화번호 복호화(평문/암호문 자동판별)
+                // 브랜드당 id 최소값 1건만 사용 → 목록의 admin_user_id·비밀번호 초기화 대상과 '같은 계정'의 정보가 된다.
                 // (ORDER BY id ASC 이므로 먼저 만나는 행이 최소 id)
                 adminRows.forEach((u) => {
-                    if (adminPhoneByBrand[u.brand_id] === undefined) {
-                        adminPhoneByBrand[u.brand_id] = u.phone_num || null;
+                    if (adminInfoByBrand[u.brand_id] === undefined) {
+                        adminInfoByBrand[u.brand_id] = {
+                            name: u.name || null,
+                            phone_num: u.phone_num || null,
+                        };
                     }
                 });
             }
@@ -518,7 +521,10 @@ const merchantApplicationCtrl = {
                 admin_user_id: r.admin_user_id ?? null,
                 admin_user_name: r.admin_user_name ?? null,
                 // 레벨40 관리자가 없는 브랜드는 admin_user_id와 동일하게 null.
-                admin_phone_num: adminPhoneByBrand[r.id] ?? null,
+                // admin_name(실명)은 '아이디 찾기'가 매칭에 쓰는 값이라, 비어 있으면 그 계정은
+                // 아이디 찾기가 불가능하다 → 본사가 화면에서 바로 알아볼 수 있도록 함께 내려준다.
+                admin_name: adminInfoByBrand[r.id]?.name ?? null,
+                admin_phone_num: adminInfoByBrand[r.id]?.phone_num ?? null,
             }));
             const summary = {
                 merchant_count: merchants.length,
@@ -559,12 +565,14 @@ const merchantApplicationCtrl = {
             // users.name/phone_num은 암호화 저장이므로 decRow('users', ...)로 복호화한다.
             // ⚠ 자격증명(user_pw/user_salt/otp_token)은 SELECT 자체를 하지 않는다.
             const adminRes = await readPool.query(
-                `SELECT id, user_name, phone_num FROM users WHERE brand_id=? AND level=40 AND is_delete=0 ORDER BY id ASC LIMIT 1`,
+                `SELECT id, user_name, name, phone_num FROM users WHERE brand_id=? AND level=40 AND is_delete=0 ORDER BY id ASC LIMIT 1`,
                 [brand.id]
             );
             const admin = decRow('users', adminRes[0][0]);
             brand.admin_user_id = admin?.id ?? null;
             brand.admin_user_name = admin?.user_name ?? null;
+            // 실명(name)은 '아이디 찾기'의 매칭 기준이라 비어 있으면 그 계정은 아이디 찾기가 불가능하다.
+            brand.admin_name = admin?.name || null;
             brand.admin_phone_num = admin?.phone_num || null;
 
             let dateWhere = '';
