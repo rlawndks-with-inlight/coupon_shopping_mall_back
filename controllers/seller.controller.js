@@ -49,7 +49,7 @@ const sellerCtrl = {
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             decListContent('users', data); // 셀러(users) 실명·전화 복호화
-            stripUserSecretsList(data?.content); // ⚠ users.* 이므로 보안질문 해시/솔트 제거 후 반환
+            stripUserSecretsList(data?.content); // ⚠ users.* 이므로 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트 제거 후 반환
             (data?.content || []).forEach((r) => { if (r.agent_name) r.agent_name = decField(r.agent_name); }); // 상위 영업자 실명 복호화
             return response(req, res, 100, "success", data);
         } catch (err) {
@@ -68,7 +68,7 @@ const sellerCtrl = {
 
             let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
             decRows('users', user_list[0]); // 이름·전화 복호화(암호문 노출 방지) — 라우팅된 user.organizationalChart와 동일
-            stripUserSecretsList(user_list[0]); // ⚠ SELECT * 이므로 보안질문 해시/솔트 제거 후 반환
+            stripUserSecretsList(user_list[0]); // ⚠ SELECT * 이므로 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트 제거 후 반환
             let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -96,7 +96,7 @@ const sellerCtrl = {
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
             //data["slider_css"] = JSON.parse(data?.slider_css ?? "{}");
             decRow('users', data); // 셀러(users) 실명·전화 복호화
-            stripUserSecrets(data); // ⚠ SELECT * 이므로 보안질문 해시/솔트 제거 후 반환
+            stripUserSecrets(data); // ⚠ SELECT * 이므로 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트 제거 후 반환
             return response(req, res, 100, "success", { ...data, products })
         } catch (err) {
             console.log(err)
@@ -150,6 +150,11 @@ const sellerCtrl = {
             }
             if (seller_point > 1) {
                 return response(req, res, -100, "포인트 적립률이 100%보다 큽니다", false)
+            }
+            // 빈 비밀번호를 그대로 해싱하면 hash('') 가 저장된다 → signIn 에 빈값 체크가 없어 아이디만 알면 로그인된다.
+            user_pw = typeof user_pw === 'string' ? user_pw.trim() : user_pw;
+            if (!user_pw) {
+                return response(req, res, -100, "비밀번호를 입력해 주세요.", false)
             }
             let pw_data = await createHashedPassword(user_pw);
             user_pw = pw_data.hashedPassword;
@@ -219,6 +224,7 @@ const sellerCtrl = {
                 product_ids = [],
                 id
             } = req.body;
+            // ⚠ user_pw 는 아래 obj 에 그대로 넣지 않는다. 저장 여부·해싱은 encForSave 직전의 가드에서만 처리한다.
             if (seller_trx_fee_type == 0 && seller_trx_fee > 1) {
                 return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
             }
@@ -233,7 +239,7 @@ const sellerCtrl = {
                 bsin_lic_img,
                 id_img,
                 profile_img,
-                name, phone_num, user_name, user_pw, oper_id, seller_trx_fee, seller_trx_fee_type, seller_point,
+                name, phone_num, user_name, oper_id, seller_trx_fee, seller_trx_fee_type, seller_point,
                 seller_range_u, seller_range_o, seller_brand, seller_category, seller_property, seller_demo_num, seller_color, seller_logo_img,
                 seller_name, addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj, theme_css, dns,
             };
@@ -242,7 +248,7 @@ const sellerCtrl = {
             obj = { ...obj, ...files };
 
             let [sellerData] = await writePool.query(
-                `SELECT seller_brand, seller_category, seller_trx_fee, seller_trx_fee_type, oper_id FROM ${table_name} WHERE id = ?`,
+                `SELECT seller_brand, seller_category, seller_trx_fee, seller_trx_fee_type, oper_id, user_pw, level, brand_id FROM ${table_name} WHERE id = ?`,
                 [id]
             );
             // 영업자의 기존 수수료도 조회
@@ -313,6 +319,48 @@ const sellerCtrl = {
                 }
             }
 
+            // ── 비밀번호는 '새로 입력했을 때만' 갱신한다 ─────────────────────────────────────
+            // (구) 이 핸들러는 req.body.user_pw 를 해싱 없이 users.user_pw 에 그대로 덮어썼다.
+            //      프론트가 GET 으로 받은 '해시'를 그대로 되돌려 보내서 우연히 동작했을 뿐이라,
+            //      - 값이 비거나 키가 없으면 user_pw 가 ''/NULL 로 덮어써져 그 계정은 영구 로그인 불가,
+            //      - 새 비밀번호를 입력하면 '평문'이 저장돼 signIn(해시 비교)에서 항상 실패했다.
+            // (신) 규칙 — 이 세 갈래 외에는 user_pw/user_salt 를 절대 UPDATE 문에 넣지 않는다.
+            //      1) 값이 없거나 공백뿐  → 건드리지 않음(기존 비밀번호 유지). ← 계정 잠김 원천 차단
+            //      2) 저장된 해시와 동일  → 구버전 프론트가 조회값을 되돌려준 것 → 건드리지 않음
+            //      3) 그 외(새 비밀번호)  → createHashedPassword 로 해싱 + 새 salt 를 '항상 함께' 저장
+            //      비밀번호만 바꾸는 정식 경로는 PUT /api/sellers/change-pw/:id (changePassword) 다.
+            const target_user = sellerData?.[0] ?? {};
+            const input_user_pw = typeof user_pw === 'string' ? user_pw.trim() : user_pw;
+            if (input_user_pw && input_user_pw !== target_user?.user_pw) {
+                // ⚠ 여기서부터가 '실제로 비밀번호를 바꾸는' 유일한 분기다.
+                //    이 핸들러는 진입 조건이 checkLevel(token, 0) 뿐이라 '로그인한 아무나' 통과한다.
+                //    해싱을 붙이면서 권한 검사를 같이 넣지 않으면, 아무 회원이나 남의 비밀번호를
+                //    원하는 값으로 바꿔 그 계정으로 로그인할 수 있게 된다(= 계정 탈취).
+                //    검사 규칙은 이미 강화된 user.controller.js changePassword 와 동일하게 맞춘다.
+                //    (위의 1)빈값 / 2)저장된 해시 되돌림 은 이 검사 '이전'에 걸러지므로,
+                //     비밀번호를 건드리지 않는 일반 수정 저장은 이 가드의 영향을 전혀 받지 않는다.)
+                const target_level = Number(target_user?.level ?? 0);
+                const user_brand_id = Number(decode_user?.brand_id ?? 0);
+                const dns_brand_id = Number(decode_dns?.id ?? 0);
+                const target_brand_id = Number(target_user?.brand_id ?? 0);
+                if (!decode_user || decode_user?.level < target_level) {
+                    return response(req, res, -100, "잘못된 접근입니다.", false)
+                }
+                // 본사/마스터(50 이상)는 전 브랜드 허용. 그 외는 '토큰의 brand_id(서명됨)' 와 dns 가 모두 대상과 같아야 한다.
+                // (dns 쿠키는 GET /api/domain?dns=... 로 누구나 임의 브랜드 것을 받을 수 있어 단독 기준이 될 수 없다)
+                if (!(decode_user?.level >= 50)
+                    && (!user_brand_id || user_brand_id !== target_brand_id || dns_brand_id !== target_brand_id)) {
+                    return response(req, res, -100, "잘못된 접근입니다.", false)
+                }
+                // 일반 회원(레벨10 미만)은 '본인' 비밀번호만 변경 가능.
+                if (!(decode_user?.level >= 10) && Number(decode_user?.id) !== Number(id)) {
+                    return response(req, res, -100, "잘못된 접근입니다.", false)
+                }
+                let pw_data = await createHashedPassword(input_user_pw);
+                obj['user_pw'] = pw_data.hashedPassword;
+                obj['user_salt'] = pw_data.salt; // ⚠ salt 없이 user_pw 만 갱신하면 로그인이 깨진다. 반드시 쌍으로.
+            }
+
             obj = encForSave('users', obj); // 셀러(users) 실명·전화 암호화 + blind-index(부분 업데이트)
             let result = await updateQuery(`${table_name}`, obj, id);
             //let delete_connect = await writePool.query(`DELETE FROM products_and_sellers WHERE seller_id=${id}`);
@@ -348,6 +396,11 @@ const sellerCtrl = {
             user = user[0];
             if (!user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
+            }
+            // 빈 비밀번호로 덮어쓰지 않는다. hash('') 가 저장되면 그 계정은 사실상 비밀번호 없이 열린다.
+            user_pw = typeof user_pw === 'string' ? user_pw.trim() : user_pw;
+            if (!user_pw) {
+                return response(req, res, -100, "새 비밀번호를 입력해 주세요.", false)
             }
             let pw_data = await createHashedPassword(user_pw);
             user_pw = pw_data.hashedPassword;

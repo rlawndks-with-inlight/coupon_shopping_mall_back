@@ -274,7 +274,7 @@ const shopCtrl = {
             }
             //셀러처리
             decRows('users', data?.sellers || []); // 셀러(users) 실명·전화 복호화
-            stripUserSecretsList(data?.sellers || []); // ⚠ users.* 이므로 보안질문 해시/솔트 제거(비로그인 스토어프론트 응답 + 3분 Redis 캐시로 나간다)
+            stripUserSecretsList(data?.sellers || []); // ⚠ users.* 이므로 자격증명(user_pw/user_salt/otp_token) + 보안질문 해시/솔트 제거(비로그인 스토어프론트 응답 + 3분 Redis 캐시로 나간다)
             // ⚠ 이 응답은 비로그인 방문자에게 그대로 나가고 Redis 에 3분 캐시된다.
             //    seller_sql 이 users.* 라서 자격증명·개인정보까지 실려 나가므로 반드시 제거한다.
             //    - 자격증명: 조회 응답의 해시는 어디에서도 재사용되지 않는다(user.controller 의 create/update/
@@ -282,6 +282,8 @@ const shopCtrl = {
             //    - 개인정보: 스토어프론트 셀러 카드/셀러몰은 nickname·profile_img·seller_name 만 사용하므로
             //      복호화된 실명·휴대폰을 내려줄 이유가 없다(개인정보 암호화 취지 무력화 방지).
             //    ※ 근본 해법은 seller_sql 을 users.* 대신 필요한 컬럼만 SELECT 하도록 바꾸는 것.
+            // user_pw/user_salt/otp_token 은 위 stripUserSecretsList 가 이미 지운다(중복이지만 이중 안전장치로 남겨둔다).
+            // name/phone_num(복호화된 개인정보)은 헬퍼가 지우지 않으므로 여기서 반드시 지워야 한다.
             (data?.sellers || []).forEach((seller) => {
                 delete seller.user_pw;
                 delete seller.user_salt;

@@ -2,8 +2,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 보안질문(본인확인 질문) 공용 헬퍼 — 질문목록 / 답변정규화 / 해시 / 검증 / 응답필드제거.
 //
-// SMS 없이 아이디찾기·비밀번호 재설정을 하기 위한 기능. shopgo 하위 가맹점 전용
-// (isShopgoMerchant(decode_dns) === true 인 브랜드에서만 호출할 것).
+// SMS 없이 아이디찾기·비밀번호 재설정을 하기 위한 기능. shopgo 본사(id=98) 및 하위 가맹점(parent_id=98) 전용
+// (isShopgoBrand(decode_dns) === true 인 브랜드에서만 호출할 것. isShopgoMerchant 는 본사를 제외하므로 쓰지 말 것).
 // 그 외 브랜드는 기존 SMS 플로우(auth/code, auth/code/check, auth/change-password)를 그대로 쓴다.
 //
 // 저장 컬럼(users):
@@ -64,15 +64,36 @@ export const verifyAnswer = async (answer, hash, salt) => {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
 
-// SELECT * 로 읽은 users 행에서 신규 비밀필드 제거 — 클라이언트로 내보내기 직전 '필수'.
-// (해시+salt 가 브라우저로 나가면 엔트로피 낮은 한글 답변을 오프라인 무차별 대입할 수 있다.)
+// ─────────────────────────────────────────────────────────────────────────────
+// SELECT * / users.* 로 읽은 users 행에서 '자격증명 필드'를 제거 — 응답을 내보내기 직전 '필수'.
+//
+// 제거 대상(5개)과 이유:
+//   user_pw               비밀번호 PBKDF2 해시. 나가면 오프라인 무차별 대입 대상이 된다.
+//   user_salt             비밀번호 salt.       해시+salt 가 함께 나가면 사전공격 비용이 사실상 0이 된다.
+//                         (또한 salt 를 알면 임의 비밀번호의 해시를 직접 계산할 수 있다)
+//   otp_token             TOTP base32 시크릿.  나가면 누구나 유효한 6자리 OTP 를 생성할 수 있어 2단계 인증이 무력화된다.
+//   security_answer_hash  보안질문 답변 해시.  엔트로피 낮은 한글 답변이라 오프라인 대입이 특히 쉽다.
+//   security_answer_salt  보안질문 답변 salt.  위와 동일.
+//
+// ⚠ 왜 '응답 직전'인가: users 를 SELECT * 하는 조회 핸들러는 로그인만 하면 누구나 호출할 수 있어서,
+//    이 제거가 없으면 아무 회원이나 남의 비밀번호 해시·salt·OTP 시크릿을 그대로 읽을 수 있었다.
+// ⚠ 반드시 '서버가 그 값을 다 쓴 뒤'에 호출할 것. (예: auth signIn 은 비밀번호 비교와 토큰 발급을
+//    끝낸 다음에 호출한다. 토큰 payload(makeUserTokenPayload)에는 이 5개 필드가 들어가지 않는다.)
+// ⚠ 이 필드들이 응답에서 빠져도 어떤 화면도 깨지지 않는다: 프론트의 비밀번호 입력칸은 전부
+//    '새로 입력받는 칸'이고(조회값을 다시 보내지 않는다), OTP 시크릿은 가입 시 POST /api/brands/otp 로
+//    새로 발급받아 쓴다. 수정 저장 API 들도 값이 없으면 비밀번호를 건드리지 않는다.
+// ─────────────────────────────────────────────────────────────────────────────
 export const stripUserSecrets = (row) => {
     if (!row) return row;
+    delete row.user_pw;
+    delete row.user_salt;
+    delete row.otp_token;
     delete row.security_answer_hash;
     delete row.security_answer_salt;
     return row;
 };
 
+// 배열(목록 응답)용. 원소를 그 자리에서 수정하고 같은 배열을 돌려준다.
 export const stripUserSecretsList = (rows) => {
     if (Array.isArray(rows)) rows.forEach(stripUserSecrets);
     return rows;

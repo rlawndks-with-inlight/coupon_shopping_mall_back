@@ -126,6 +126,7 @@ const utilCtrl = {
                 sender_brand_id = 0,
                 dns = "",
                 is_copy_brand_setting = 0,
+                is_copy_main_obj = 0,//메인페이지(배너)·블로그 구성 복사 여부. 명시적으로 1일때만 덮어씀
                 is_copy_product = 0,
                 is_copy_post = 0,
                 is_use_tikitaka = 0,
@@ -152,8 +153,10 @@ const utilCtrl = {
             if (!manager) {
                 return response(req, res, -100, "관리자 계정이 없는 브랜드입니다.", false);
             }
+            let brand_setting_obj = {};
             if (is_copy_brand_setting == 1) {//브랜드 기본세팅 복사 원할시
-                let result = await updateQuery('brands', {
+                brand_setting_obj = {
+                    ...brand_setting_obj,
                     name: sender_brand?.name,
                     logo_img: sender_brand?.logo_img,
                     dark_logo_img: sender_brand?.dark_logo_img,
@@ -162,10 +165,18 @@ const utilCtrl = {
                     og_description: sender_brand?.og_description,
                     theme_css: sender_brand?.theme_css,
                     //slider_css: sender_brand?.slider_css,
+                    brand_type: sender_brand?.brand_type,
+                }
+            }
+            if (is_copy_main_obj == 1) {//메인페이지(배너)·블로그 구성 복사 원할시에만 덮어씀 (대상 몰의 기존 배너가 사라지는것 방지)
+                brand_setting_obj = {
+                    ...brand_setting_obj,
                     blog_obj: sender_brand?.blog_obj,
                     shop_obj: sender_brand?.shop_obj,
-                    brand_type: sender_brand?.brand_type,
-                }, dns_data?.id)
+                }
+            }
+            if (Object.keys(brand_setting_obj).length > 0) {
+                let result = await updateQuery('brands', brand_setting_obj, dns_data?.id)
             }
             if (is_copy_product == 1) {//상품 복사 원할시
 
