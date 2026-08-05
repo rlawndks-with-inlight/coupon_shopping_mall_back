@@ -174,7 +174,8 @@ const authCtrl = {
             user = stripUserSecrets({
                 ...user,
                 wish_data
-            }) // ⚠ SELECT * 이므로 보안질문 해시/솔트 제거 후 반환(브라우저로 나가면 오프라인 대입 가능)
+            }) // ⚠ SELECT * 이므로 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트 제거 후 반환
+            //    (비밀번호 비교·OTP 검증·토큰 발급을 모두 끝낸 '뒤'라서 로그인 동작에는 영향이 없다)
             return response(req, res, 100, "success", user)
         } catch (err) {
             console.log(err)
@@ -480,14 +481,14 @@ const authCtrl = {
                 let users = await readPool.query(`SELECT * FROM users WHERE (phone_num=? OR phone_idx=?) AND brand_id=? AND status=0 `, [send_log?.phone_num, blindIndex(send_log?.phone_num), decode_dns?.id]);
                 users = users[0];
                 decRows('users', users); // 읽기 복호화
-                stripUserSecretsList(users); // ⚠ 보안질문 해시/솔트는 클라이언트로 내보내지 않는다
+                stripUserSecretsList(users); // ⚠ 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트는 클라이언트로 내보내지 않는다
                 data['users'] = users;
             }
             if (find_password) {
                 let user = await readPool.query(`SELECT * FROM users WHERE (phone_num=? OR phone_idx=?) AND user_name=? AND brand_id=? AND status=0 `, [send_log?.phone_num, blindIndex(send_log?.phone_num), user_name, decode_dns?.id]);
                 user = user[0][0];
                 decRow('users', user); // 읽기 복호화
-                stripUserSecrets(user); // ⚠ 보안질문 해시/솔트는 클라이언트로 내보내지 않는다
+                stripUserSecrets(user); // ⚠ 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트는 클라이언트로 내보내지 않는다
                 if (user?.status == 1) {
                     return response(req, res, -100, "승인 대기중입니다.", {})
                 }
@@ -699,8 +700,15 @@ const authCtrl = {
                 return response(req, res, -100, "탈퇴회원입니다.", {})
             }
 
+            // 빈 새 비밀번호로 덮어쓰지 않는다. hash('') 가 저장되면 signIn 에 빈값 체크가 없어서
+            // 그 계정은 아이디만 알면 비밀번호 없이 열린다(프론트 화면들의 검증만 믿으면 안 된다).
+            // ⚠ 비밀번호는 trim 하지 않는다(공백도 유효 문자) — resetPasswordByAnswer 와 동일 규칙.
+            if (!new_password) {
+                return response(req, res, -100, "새 비밀번호를 입력해 주세요.", false)
+            }
             let pw_data = await createHashedPassword(new_password);
-            let result = updateQuery('users', {
+            // ⚠ user_pw 와 user_salt 는 항상 쌍으로 갱신한다(salt 만 옛 값이면 로그인 불가).
+            let result = await updateQuery('users', {
                 user_pw: pw_data.hashedPassword,
                 user_salt: pw_data.salt,
             }, user?.id);

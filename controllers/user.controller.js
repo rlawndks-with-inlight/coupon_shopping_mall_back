@@ -50,7 +50,7 @@ const userCtrl = {
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
             decListContent('users', data); // 읽기 복호화(실명·전화)
-            stripUserSecretsList(data?.content); // ⚠ users.* 이므로 보안질문 해시/솔트 제거 후 반환
+            stripUserSecretsList(data?.content); // ⚠ users.* 이므로 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트 제거 후 반환
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
@@ -68,7 +68,7 @@ const userCtrl = {
 
             let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
             decRows('users', user_list[0]); // 읽기 복호화(실명·전화)
-            stripUserSecretsList(user_list[0]); // ⚠ SELECT * 이므로 보안질문 해시/솔트 제거 후 반환
+            stripUserSecretsList(user_list[0]); // ⚠ SELECT * 이므로 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트 제거 후 반환
             let user_tree = makeTree(user_list[0], decode_user);
             return response(req, res, 100, "success", user_tree);
         } catch (err) {
@@ -93,7 +93,7 @@ const userCtrl = {
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
             data['theme_css'] = JSON.parse(data?.theme_css ?? '{}');
             decRow('users', data); // 읽기 복호화(실명·전화)
-            stripUserSecrets(data); // ⚠ SELECT * 이므로 보안질문 해시/솔트 제거 후 반환
+            stripUserSecrets(data); // ⚠ SELECT * 이므로 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트 제거 후 반환
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
@@ -146,6 +146,11 @@ const userCtrl = {
             }
             if (seller_point > 1) {
                 return response(req, res, -100, "포인트 적립률이 100%보다 큽니다", false)
+            }
+            // 빈 비밀번호를 그대로 해싱하면 hash('') 가 저장된다 → signIn 에 빈값 체크가 없어 아이디만 알면 로그인된다.
+            user_pw = typeof user_pw === 'string' ? user_pw.trim() : user_pw;
+            if (!user_pw) {
+                return response(req, res, -100, "비밀번호를 입력해 주세요.", false)
             }
             let pw_data = await createHashedPassword(user_pw);
             user_pw = pw_data.hashedPassword;
@@ -327,6 +332,11 @@ const userCtrl = {
             // (레벨 비교는 '<' 라서 같은 레벨끼리는 통과 → 같은 브랜드 회원끼리 계정 탈취가 가능했다)
             if (!(decode_user?.level >= 10) && Number(decode_user?.id) !== Number(id)) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
+            }
+            // 빈 비밀번호로 덮어쓰지 않는다. hash('') 가 저장되면 그 계정은 사실상 비밀번호 없이 열린다.
+            user_pw = typeof user_pw === 'string' ? user_pw.trim() : user_pw;
+            if (!user_pw) {
+                return response(req, res, -100, "새 비밀번호를 입력해 주세요.", false)
             }
             let pw_data = await createHashedPassword(user_pw);
             user_pw = pw_data.hashedPassword;

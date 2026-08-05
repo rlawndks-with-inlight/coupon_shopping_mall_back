@@ -132,6 +132,14 @@ const brandCtrl = {
         is_use_otp = 0,
         is_closure = 0,
       } = req.body;
+      // 브랜드 생성은 곧바로 그 몰의 '본사 관리자(레벨40)' 계정까지 만든다.
+      // 빈 비밀번호를 그대로 해싱하면 hash('') 가 저장되는데, signIn 에는 빈값 체크가 없어서
+      // 아이디만 알면 비밀번호 없이 그 관리자 계정으로 로그인된다. → 인서트 '전에' 막는다.
+      // (brands / product_category_groups 인서트보다 위에 두어야 반쪽짜리 브랜드가 남지 않는다)
+      const admin_user_pw = typeof user_pw === 'string' ? user_pw.trim() : user_pw;
+      if (!admin_user_pw) {
+        return response(req, res, -100, "본사 비밀번호를 입력해 주세요.", false);
+      }
       let files = settingFiles(req.files);
       let obj = {
         logo_img,
@@ -189,17 +197,17 @@ const brandCtrl = {
       });
       let user_obj = {
         user_name: user_name,
-        user_pw: user_pw,
         name: seller_name,
         nickname: seller_name,
         seller_name: seller_name,
         level: 40,
         brand_id: result?.insertId,
       };
-      let pw_data = await createHashedPassword(user_obj.user_pw);
-      user_obj.user_pw = pw_data.hashedPassword;
-      let user_salt = pw_data.salt;
-      user_obj["user_salt"] = user_salt;
+      // ⚠ 평문을 user_obj 에 먼저 넣지 않는다(넣으면 해싱 누락 시 평문이 그대로 저장된다).
+      //    user_pw 와 user_salt 는 반드시 '쌍으로' 세팅한다 — salt 없이 저장하면 signIn 이 깨진다.
+      let pw_data = await createHashedPassword(admin_user_pw);
+      user_obj["user_pw"] = pw_data.hashedPassword;
+      user_obj["user_salt"] = pw_data.salt;
       let user_sign_up = await insertQuery("users", encForSave("users", user_obj)); // 판매자 실명(name) 암호화 + name_idx 세팅
       return response(req, res, 100, "success", {});
     } catch (err) {
