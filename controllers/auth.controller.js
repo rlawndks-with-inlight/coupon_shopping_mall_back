@@ -133,6 +133,10 @@ const authCtrl = {
             if (!user || (is_manager && user.level <= 0)) {
                 return response(req, res, -100, "가입되지 않은 회원입니다.", {})
             }
+            // 비밀번호가 없으면 createHashedPassword 가 TypeError 로 죽어 500 이 난다(계정이 실재할 때).
+            if (!user_pw) {
+                return response(req, res, -100, "아이디와 비밀번호를 입력해 주세요.", {})
+            }
             user_pw = (await createHashedPassword(user_pw, user.user_salt)).hashedPassword;
             if (user_pw != user.user_pw) {
                 return response(req, res, -100, "가입되지 않은 회원입니다.", {})
@@ -402,6 +406,11 @@ const authCtrl = {
             const {
                 phone_num,
             } = req.body;
+            // 값이 없으면 아래 createHashedPassword(phone_num) 에서 pbkdf2 가 TypeError 로 죽는다
+            // (ERR_INVALID_ARG_TYPE → 500 "서버 에러 발생"). 입력 검증으로 먼저 걸러낸다.
+            if (!phone_num) {
+                return response(req, res, -100, "휴대폰 번호를 입력해 주세요.", false)
+            }
             let return_moment = returnMoment();
             let already_phone_send_list = await readPool.query(`SELECT * FROM phone_check_tokens WHERE phone_num=? AND brand_id=? ORDER BY id DESC LIMIT 0, 5 `, [phone_num, decode_dns?.id ?? 0]);
             already_phone_send_list = already_phone_send_list[0];
@@ -673,7 +682,15 @@ const authCtrl = {
             let return_moment = returnMoment();
             let user = await readPool.query(`SELECT * FROM users WHERE ((phone_num=? OR phone_idx=?) AND user_name=? AND brand_id=? AND status=0) OR (id=?) `, [phone_num, blindIndex(phone_num), user_name, decode_dns?.id, decode_user?.id ?? 0]);
             user = user[0][0];
+            // 회원을 못 찾으면 아래 user.user_salt 에서, 비밀번호가 비면 createHashedPassword 에서 각각
+            // TypeError 로 죽는다(→ 500 "서버 에러 발생"). 두 경우 모두 명시적으로 먼저 걸러낸다.
+            if (!user) {
+                return response(req, res, -100, "일치하는 회원 정보를 찾을 수 없습니다.", false)
+            }
             if (decode_user?.id == user?.id) {//개인정보 변경일때
+                if (!password) {
+                    return response(req, res, -100, "현재 비밀번호를 입력해 주세요.", false)
+                }
                 let user_pw = (await createHashedPassword(password, user.user_salt)).hashedPassword;
                 if (user_pw != user.user_pw) {
                     return response(req, res, -100, "현재비밀번호가 일치하지 않습니다.", {})
@@ -794,6 +811,14 @@ const authCtrl = {
             } = req.body;
             let user = await readPool.query(`SELECT * FROM users WHERE id=? `, [decode_user?.id ?? 0]);
             user = user[0][0];
+            // 토큰이 없거나 만료돼 회원을 못 찾으면 user.user_salt 에서, 비밀번호가 비면
+            // createHashedPassword 에서 TypeError 로 죽는다(→ 500). 먼저 걸러낸다.
+            if (!user) {
+                return response(req, res, -100, "로그인 정보를 확인할 수 없습니다. 다시 로그인해 주세요.", false)
+            }
+            if (!password) {
+                return response(req, res, -100, "비밀번호를 입력해 주세요.", false)
+            }
             let user_pw = (await createHashedPassword(password, user.user_salt)).hashedPassword;
             if (user_pw != user.user_pw) {
                 return response(req, res, -100, "비밀번호가 일치하지 않습니다.", {})
