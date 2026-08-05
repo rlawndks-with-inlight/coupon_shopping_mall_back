@@ -5,7 +5,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { sendMail } from "../utils.js/mail.js";
-import { encForSave, decRows } from "../utils.js/pii.js";
+import { encForSave, decRow, decRows } from "../utils.js/pii.js";
 
 // ── ShopGo 브랜드 이메일 템플릿 ─────────────────────────────────────────────
 // 다크 헤더(ShopGo 워드마크) + 본문 + 회사정보/면책 푸터로 감싸는 공통 셸.
@@ -486,6 +486,27 @@ const merchantApplicationCtrl = {
                 GROUP BY b.id, b.name, b.dns, b.created_at, b.logo_img
                 ORDER BY sales DESC, b.created_at DESC`;
             const rows = (await readPool.query(sql, params))[0];
+            // 가맹점 관리자 연락처(users.phone_num)는 AES 암호화 저장이라 위 SQL의 서브쿼리로 뽑으면 암호문이 그대로 나온다.
+            // → 브랜드 id들을 모아 '한 번만' 조회한 뒤 decRows('users', ...)로 복호화해서 매핑한다(N+1 방지).
+            // ⚠ 조회 컬럼은 id/brand_id/user_name/phone_num 뿐 — user_pw/user_salt/otp_token 등 자격증명은 애초에 SELECT하지 않는다.
+            const brandIds = rows.map((r) => r.id);
+            const adminPhoneByBrand = {};
+            if (brandIds.length > 0) {
+                const ph = brandIds.map(() => '?').join();
+                const adminRows = (await readPool.query(
+                    `SELECT id, brand_id, user_name, phone_num FROM users
+                     WHERE brand_id IN (${ph}) AND level=40 AND is_delete=0 ORDER BY id ASC`,
+                    brandIds
+                ))[0];
+                decRows('users', adminRows); // 전화번호 복호화(평문/암호문 자동판별)
+                // 브랜드당 id 최소값 1건만 사용 → 목록의 admin_user_id·비밀번호 초기화 대상과 '같은 계정'의 연락처가 된다.
+                // (ORDER BY id ASC 이므로 먼저 만나는 행이 최소 id)
+                adminRows.forEach((u) => {
+                    if (adminPhoneByBrand[u.brand_id] === undefined) {
+                        adminPhoneByBrand[u.brand_id] = u.phone_num || null;
+                    }
+                });
+            }
             const merchants = rows.map((r) => ({
                 id: r.id,
                 name: r.name,
@@ -496,6 +517,8 @@ const merchantApplicationCtrl = {
                 order_count: Number(r.order_count) || 0,
                 admin_user_id: r.admin_user_id ?? null,
                 admin_user_name: r.admin_user_name ?? null,
+                // 레벨40 관리자가 없는 브랜드는 admin_user_id와 동일하게 null.
+                admin_phone_num: adminPhoneByBrand[r.id] ?? null,
             }));
             const summary = {
                 merchant_count: merchants.length,
@@ -522,14 +545,27 @@ const merchantApplicationCtrl = {
                 return response(req, res, -404, "마스터 브랜드를 찾을 수 없습니다", false);
             }
             // 대상이 마스터의 하위 가맹점인지 검증 (무관 브랜드 조회 차단)
+            // brands.phone_num = 쇼핑몰 자체 고객센터 번호(공개용). PII_FIELDS에 brands가 없으므로 평문 → 복호화 불필요.
             const brandRes = await readPool.query(
-                `SELECT id, name, dns, created_at FROM brands WHERE id=? AND parent_id=? AND is_delete=0 LIMIT 1`,
+                `SELECT id, name, dns, created_at, phone_num FROM brands WHERE id=? AND parent_id=? AND is_delete=0 LIMIT 1`,
                 [id, master.id]
             );
             const brand = brandRes[0][0];
             if (!brand) {
                 return response(req, res, -403, "해당 가맹점을 조회할 권한이 없습니다", false);
             }
+
+            // 가맹점 관리자(레벨40) 계정 연락처 — 목록/비밀번호 초기화와 동일 기준(id 최소값 1건).
+            // users.name/phone_num은 암호화 저장이므로 decRow('users', ...)로 복호화한다.
+            // ⚠ 자격증명(user_pw/user_salt/otp_token)은 SELECT 자체를 하지 않는다.
+            const adminRes = await readPool.query(
+                `SELECT id, user_name, phone_num FROM users WHERE brand_id=? AND level=40 AND is_delete=0 ORDER BY id ASC LIMIT 1`,
+                [brand.id]
+            );
+            const admin = decRow('users', adminRes[0][0]);
+            brand.admin_user_id = admin?.id ?? null;
+            brand.admin_user_name = admin?.user_name ?? null;
+            brand.admin_phone_num = admin?.phone_num || null;
 
             let dateWhere = '';
             const dateParams = [];
