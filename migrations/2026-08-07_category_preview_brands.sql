@@ -203,26 +203,16 @@ DROP TEMPORARY TABLE IF EXISTS _preview_brand;
 --     '브랜드' 그룹의 항목들은 카테고리 트리에 합치지 말고 속성으로 옮기는 것이 맞다.
 --     다만 그 이관은 상품-속성 연결까지 따라가야 해서 화면 확인 후 개별로 진행한다.
 --
--- 그룹을 최상위 카테고리로 승격시키는(=이름을 살리는) 일반적인 절차:
---   ※ 최상위는 parent_id = 0 이 아니라 -1 이다(utils.js/util.js makeTree 가 '-1' 을 루트로 본다).
+-- ※ 이 부록의 절차는 migrations/2026-08-07_category_remaining_brands.sql [3] 으로 옮겼다.
+--   실행 가능한 형태(멱등, @brand 파라미터)로 그쪽에 있으니 그것을 쓸 것.
+--
+-- 실 스키마 주의사항 (여기서 한 번 틀렸던 것들):
+--   ※ 최상위는 parent_id = 0 이 아니라 -1 이다.
+--     makeTree 가 '-1' 을 트리 시작점으로 쓰므로 0 으로 넣으면 화면에 안 나온다(utils.js/util.js:376).
 --   ※ 컬럼명은 category_group_id 가 아니라 product_category_group_id 다.
+--   ※ product_categories 에 depth 컬럼은 없다.
+--     깊이는 parent_id 사슬로 그때그때 계산된다(utils.js/util.js findParents).
+--     product_category_groups.max_depth 는 '그룹별 최대 깊이 제한'으로 이름만 비슷한 별개 값이다.
+--     → 트리를 옮길 때 맞춰야 할 것은 parent_id 뿐이다.
 --   ※ status 는 0 이 노출. 비회원 조회 SQL 이 status=0 만 가져간다(shop.controller.js:150).
---
---   ① 그룹 이름과 같은 최상위 카테고리를 만든다
---        INSERT INTO product_categories
---          (brand_id, product_category_group_id, category_name, parent_id, depth, sort_idx, status)
---        VALUES (<brand_id>, <group_id>, '<그룹명>', -1, 0, 0, 0);
---   ② 그 그룹에 속한 기존 최상위 카테고리들을 ①의 자식으로 옮긴다
---        UPDATE product_categories SET parent_id = <①의 id>, depth = depth + 1
---        WHERE brand_id = <brand_id> AND product_category_group_id = <group_id>
---          AND parent_id = -1 AND id <> <①의 id> AND is_delete = 0;
---        ※ depth 를 쓰는 화면이 있으므로 그 아래 하위 카테고리도 전부 +1 해야 한다.
---          깊이별로 나눠 실행할 것(한 번에 하면 방금 옮긴 것을 또 세게 된다).
---   ③ 브랜드 전환
---        UPDATE brands SET is_category_migrated = 1 WHERE id = <brand_id>;
---
--- 실행 전 해당 브랜드의 트리를 먼저 눈으로 확인할 것:
---   SELECT id, parent_id, depth, product_category_group_id, category_name, sort_idx, status
---   FROM product_categories WHERE brand_id = <brand_id> AND is_delete = 0
---   ORDER BY product_category_group_id, depth, sort_idx, id;
 -- ============================================================================

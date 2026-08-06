@@ -33,6 +33,16 @@
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
+-- [0] 스키마 확인 (변경 없음)
+--     [3] 의 INSERT 가 쓰는 컬럼이 실제로 있는지 눈으로 확인한다.
+--     쓰는 컬럼: brand_id, product_category_group_id, category_name,
+--                parent_id, category_type, sort_idx, status
+--     ※ depth 는 컬럼이 아니다(parent_id 사슬로 계산). 목록에 없는 게 정상.
+-- ═════════════════════════════════════════════════════════════════════════════
+SHOW COLUMNS FROM product_categories;
+
+
+-- ═════════════════════════════════════════════════════════════════════════════
 -- [1] 진단 — 남은 브랜드의 그룹별 카테고리 분포 (변경 없음)
 --     '카테고리있는그룹수'가 0 또는 1이면 아래 [2]가 자동 전환한다.
 --     2 이상이면 [3] 승격 대상이다.
@@ -44,9 +54,7 @@ SELECT
   (SELECT COUNT(*) FROM product_categories c
     WHERE c.product_category_group_id = g.id AND c.is_delete = 0)                       AS 카테고리수,
   (SELECT COUNT(*) FROM product_categories c
-    WHERE c.product_category_group_id = g.id AND c.is_delete = 0 AND c.parent_id = -1)  AS 최상위수,
-  (SELECT MAX(c.depth) FROM product_categories c
-    WHERE c.product_category_group_id = g.id AND c.is_delete = 0)                       AS 최대깊이
+    WHERE c.product_category_group_id = g.id AND c.is_delete = 0 AND c.parent_id = -1)  AS 최상위수
 FROM brands b
 JOIN product_category_groups g ON g.brand_id = b.id AND g.is_delete = 0
 WHERE b.is_delete = 0
@@ -104,7 +112,14 @@ WHERE b.is_delete = 0
 --                                                └ SUV
 --
 --     ※ 이미 그 이름의 최상위 카테고리가 있으면 만들지 않는다(멱등).
---     ※ depth 는 그룹 전체에 한 번씩만 +1 된다(행마다 정확히 1회) — 중복 가산 없음.
+--
+--     ※ depth 는 건드리지 않는다 — product_categories 에 depth 컬럼은 없다.
+--       깊이는 parent_id 사슬로 그때그때 계산된다(utils.js/util.js findParents).
+--       product_category_groups.max_depth 는 '그룹별 최대 깊이 제한'으로 이름만 비슷한 별개 값이다.
+--       즉 이 작업에서 맞춰야 할 것은 parent_id 뿐이다.
+--
+--     ※ 최상위는 parent_id = -1 이어야 한다. makeTree 가 '-1' 을 트리 시작점으로 쓰므로
+--       0 으로 넣으면 그 카테고리는 화면에 아예 안 나온다(utils.js/util.js:376).
 -- ═════════════════════════════════════════════════════════════════════════════
 
 SET @brand := 50;   -- ★★★ 대상 브랜드 ★★★
@@ -112,7 +127,7 @@ SET @brand := 50;   -- ★★★ 대상 브랜드 ★★★
 -- 3-1) 그룹 이름과 같은 최상위 카테고리 생성 (그룹당 1개, 없을 때만)
 --      status=0 이어야 고객 화면에 보인다(shop.controller 가 status=0 만 가져간다).
 INSERT INTO product_categories
-  (brand_id, product_category_group_id, category_name, parent_id, depth, sort_idx, status)
+  (brand_id, product_category_group_id, category_name, parent_id, category_type, sort_idx, status)
 SELECT g.brand_id, g.id, g.category_group_name, -1, 0, g.sort_idx, 0
 FROM product_category_groups g
 WHERE g.brand_id = @brand
@@ -123,16 +138,19 @@ WHERE g.brand_id = @brand
                    WHERE c.product_category_group_id = g.id AND c.is_delete = 0
                      AND c.parent_id = -1 AND c.category_name = g.category_group_name);
 
--- 3-2) 방금 만든 승격 노드를 기억해 둔다 (아래 두 UPDATE 에서 자기 자신을 건드리지 않도록)
+-- 3-2) 승격 노드를 기억해 둔다 (3-3 에서 자기 자신을 자기 밑으로 넣지 않도록)
+--      group_id 를 PK 로 둬서 그룹당 반드시 1개만 잡히게 한다 —
+--      브랜드가 이미 그룹명과 같은 최상위 카테고리를 둘 이상 갖고 있어도 안전하다.
 DROP TEMPORARY TABLE IF EXISTS _promoted;
-CREATE TEMPORARY TABLE _promoted (category_id BIGINT PRIMARY KEY, group_id BIGINT);
+CREATE TEMPORARY TABLE _promoted (group_id BIGINT PRIMARY KEY, category_id BIGINT);
 
-INSERT INTO _promoted (category_id, group_id)
-SELECT c.id, c.product_category_group_id
+INSERT INTO _promoted (group_id, category_id)
+SELECT c.product_category_group_id, MIN(c.id)
 FROM product_categories c
 JOIN product_category_groups g
   ON g.id = c.product_category_group_id AND g.category_group_name = c.category_name
-WHERE c.brand_id = @brand AND c.is_delete = 0 AND c.parent_id = -1 AND g.is_delete = 0;
+WHERE c.brand_id = @brand AND c.is_delete = 0 AND c.parent_id = -1 AND g.is_delete = 0
+GROUP BY c.product_category_group_id;
 
 SELECT * FROM _promoted;   -- 확인: 그룹 수만큼 나와야 한다
 
@@ -145,22 +163,24 @@ WHERE c.brand_id = @brand
   AND c.parent_id = -1
   AND c.id <> p.category_id;
 
--- 3-4) 그 그룹의 나머지 전부 depth +1 (승격 노드만 0 으로 남는다)
-UPDATE product_categories c
-JOIN _promoted p ON p.group_id = c.product_category_group_id
-SET c.depth = c.depth + 1
-WHERE c.brand_id = @brand
-  AND c.is_delete = 0
-  AND c.id <> p.category_id;
-
 DROP TEMPORARY TABLE IF EXISTS _promoted;
 
--- 3-5) 트리 확인 — parent_id=-1 인 것이 '그룹명'들뿐인지, depth 가 부모+1 인지 본다
-SELECT c.id, c.parent_id, c.depth, c.product_category_group_id AS 그룹id,
-       c.category_name, c.sort_idx, c.status
+-- 3-4) 트리 확인 — parent_id = -1 인 것이 '그룹명'들뿐이어야 한다.
+--      (부모이름이 NULL 인 행 = 최상위. 그룹 수만큼만 나와야 정상)
+SELECT c.id, c.parent_id, c.product_category_group_id AS 그룹id,
+       c.category_name, (SELECT p.category_name FROM product_categories p WHERE p.id = c.parent_id) AS 부모이름,
+       c.sort_idx, c.status
 FROM product_categories c
 WHERE c.brand_id = @brand AND c.is_delete = 0
-ORDER BY c.product_category_group_id, c.depth, c.sort_idx, c.id;
+ORDER BY c.product_category_group_id, (c.parent_id = -1) DESC, c.sort_idx DESC, c.id;
+
+-- 3-5) 고아 확인 — 부모가 없거나 삭제된 카테고리 (0 이어야 정상)
+SELECT COUNT(*) AS 고아
+FROM product_categories c
+LEFT JOIN product_categories p ON p.id = c.parent_id
+WHERE c.brand_id = @brand AND c.is_delete = 0
+  AND c.parent_id <> -1
+  AND (p.id IS NULL OR p.is_delete = 1);
 
 -- 3-6) 이상 없으면 전환
 UPDATE brands SET is_category_migrated = 1 WHERE id = @brand;
