@@ -197,6 +197,21 @@ WHERE p.brand_id = @brand AND p.is_delete = 0
 LIMIT 20000;
 
 
+-- B7-확인. 아직 안 넣은 링크가 몇 개 남았는지 (0 이 될 때까지 B7 을 더 돌린다)
+--   B8 이 facet 카테고리를 숨긴 뒤에도 이 쿼리와 B7 은 정상 동작한다 —
+--   둘 다 product_categories 가 아니라 _mig_cat_to_prop 을 참조하기 때문이다.
+SELECT COUNT(*) AS 남은링크
+FROM products p
+JOIN _mig_cat_to_prop cp
+  ON cp.category_id IN (p.category_id0, p.category_id1, p.category_id2)
+JOIN _mig_group_to_propgroup m
+  ON m.property_group_id = cp.property_group_id AND m.brand_id = @brand
+LEFT JOIN products_and_properties pap
+  ON pap.product_id = p.id AND pap.property_id = cp.property_id
+WHERE p.brand_id = @brand AND p.is_delete = 0
+  AND pap.product_id IS NULL;
+
+
 -- ═════════════════════════════════════════════════════════════════════════════
 -- B8. facet 카테고리를 트리에서 숨김 (soft-delete, 되돌릴 수 있음)
 --     ★ 새 코드가 배포돼 있어야 한다.
