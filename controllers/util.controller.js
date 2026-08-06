@@ -17,7 +17,9 @@ const utilCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             let { source_id, source_sort_idx, dest_id, dest_sort_idx } = req.body;
             const { table } = req.params;
-            const ALLOWED_SORT_TABLES = ['products', 'product_categories', 'product_category_groups', 'post_categories', 'posts', 'brands', 'users'];
+            // product_properties/product_property_groups 누락으로 특성관리의 순서 이동 버튼이
+            // 항상 '허용되지 않은 테이블입니다' 로 실패했다(pages/manager/products/properties/[id].js:248).
+            const ALLOWED_SORT_TABLES = ['products', 'product_categories', 'product_category_groups', 'post_categories', 'posts', 'brands', 'users', 'product_properties', 'product_property_groups'];
             if (!ALLOWED_SORT_TABLES.includes(table)) {
                 return response(req, res, -200, "허용되지 않은 테이블입니다.", false);
             }
@@ -54,8 +56,11 @@ const utilCtrl = {
             if (!decode_user) {
                 return lowLevelException(req, res);
             }
-            const ALLOWED_STATUS_TABLES = ['products', 'product_categories', 'product_category_groups', 'post_categories', 'posts', 'brands', 'users', 'transactions', 'seller_products'];
-            const ALLOWED_COLUMNS = ['status', 'is_delete', 'is_show', 'is_active', 'is_show_header_menu', 'trx_status', 'seller_price'];
+            // 같은 이유로 특성관리의 노출/숨김(눈 아이콘)도 실패했다(properties/[id].js:271).
+            const ALLOWED_STATUS_TABLES = ['products', 'product_categories', 'product_category_groups', 'post_categories', 'posts', 'brands', 'users', 'transactions', 'seller_products', 'product_properties', 'product_property_groups', 'consignments'];
+            // is_confirm: 위탁 목록의 '처리여부' 스위치. 테이블·컬럼 모두 누락돼 항상 거부됐다
+            //   (pages/manager/products/consignments/list/[type].js:144 → util/consignments/is_confirm)
+            const ALLOWED_COLUMNS = ['status', 'is_delete', 'is_show', 'is_active', 'is_show_header_menu', 'trx_status', 'seller_price', 'is_confirm'];
             if (!ALLOWED_STATUS_TABLES.includes(table)) {
                 return response(req, res, -200, "허용되지 않은 테이블입니다.", false);
             }
