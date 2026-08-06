@@ -363,15 +363,27 @@ const authCtrl = {
                 register_img
             } = req.body
             let return_moment = returnMoment();
-            let send_log = await readPool.query(`SELECT * FROM phone_check_tokens WHERE phone_token=? ORDER BY id DESC LIMIT 1`, [
-                phone_token,
-            ])
-            send_log = send_log[0][0];
-            if (!send_log) {
-                return response(req, res, -100, "토큰을 찾을 수 없습니다.", false)
-            }
-            if (differenceTwoDate(return_moment, send_log?.created_at).second > 180) {
-                return response(req, res, -100, "인증시간이 지났습니다. 다시 인증해 주세요.", false)
+            // 휴대폰 인증 토큰은 '보내온 경우에만' 검증한다.
+            //
+            // 기존엔 phone_token 을 무조건 요구했다. 그런데 이 API 를 부르는 화면 중
+            // 인증칸이 있는 곳은 프레임3 정보수정 하나뿐이고, 블로그형 마이페이지
+            // 회원정보 수정(프레임4~11)은 nickname·phone_num 만 보낸다.
+            // 그래서 닉네임 한 글자 바꾸는 것도 "토큰을 찾을 수 없습니다." 로 거절됐다 —
+            // 블로그형 프레임 전체에서 회원정보 수정이 아예 불가능했다.
+            // 게다가 문자 게이트웨이(bonaeja)를 쓰지 않기로 해서 토큰을 받을 방법 자체가 없다.
+            //
+            // 토큰을 함께 보내는 브랜드에서는 검증이 그대로 동작한다(기존 동작 보존).
+            if (phone_token) {
+                let send_log = await readPool.query(`SELECT * FROM phone_check_tokens WHERE phone_token=? ORDER BY id DESC LIMIT 1`, [
+                    phone_token,
+                ])
+                send_log = send_log[0][0];
+                if (!send_log) {
+                    return response(req, res, -100, "토큰을 찾을 수 없습니다.", false)
+                }
+                if (differenceTwoDate(return_moment, send_log?.created_at).second > 180) {
+                    return response(req, res, -100, "인증시간이 지났습니다. 다시 인증해 주세요.", false)
+                }
             }
             let result = await updateQuery('users', encForSave('users', {
                 nickname,
@@ -387,7 +399,24 @@ const authCtrl = {
                 shareholder_img,
                 register_img
             }), decode_user?.id); // phone_num 암호화 + phone_idx 세팅(부분 업데이트 안전, name 없음)
-            await res.clearCookie('token');
+
+            // 토큰 재발급 — payload 에 nickname·phone_num·profile_img 가 들어 있어서
+            // 저장만 하고 두면 화면이 옛 값을 계속 보여준다.
+            // 기존에는 clearCookie 로 강제 로그아웃시켰는데, 블로그형 마이페이지는
+            // 성공 토스트만 띄우고 그 자리에 머물러서 이후 요청이 전부 실패했다.
+            // setSecurityQuestion 과 같은 방식으로 재발급한다(payload 모양도 한 곳에서 관리).
+            let fresh_user = await readPool.query(`SELECT * FROM users WHERE id=? AND is_delete=0 LIMIT 1`, [decode_user?.id]);
+            fresh_user = fresh_user[0][0];
+            if (fresh_user) {
+                let agent = '';
+                if (fresh_user?.level == 10) {
+                    agent = await readPool.query(`SELECT * FROM users WHERE id=?`, [fresh_user?.oper_id]);
+                    agent = agent[0][0]
+                }
+                decRow('users', fresh_user); // 토큰에 담기 전 실명·전화 복호화(signIn 과 동일)
+                const token = makeUserToken(makeUserTokenPayload(fresh_user, agent));
+                issueUserTokenCookie(res, token);
+            }
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
