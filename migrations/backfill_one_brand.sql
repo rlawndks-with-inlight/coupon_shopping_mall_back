@@ -1,4 +1,16 @@
 -- ============================================================================
+-- ⚠ 2026-08-07: property(브랜드축) 그룹이 있는 브랜드(id 5 · 74)는 이 파일 말고
+--   migrations/2026-08-07_backfill_property_brand.sql 을 쓸 것.
+--
+--   이 파일의 Phase 4b 매핑은 카테고리와 속성을 '이름' 으로 조인하면서
+--   "그룹 내 이름 유일" 을 가정하는데 실데이터가 그렇지 않았다.
+--   '브랜드' 그룹에 같은 이름이 두 번 이상 있어서
+--     SQL 오류 (1062): Duplicate entry '589' for key '_mig_cat_to_prop.PRIMARY'
+--   가 났다. 아래 Phase 4b 는 GROUP BY 로 고쳤지만, 실패한 실행이 남긴
+--   고아 속성을 치우는 단계가 없다 → 새 파일이 P1 에서 그것까지 처리한다.
+--
+--   tree 전용 브랜드에는 이 파일을 그대로 써도 된다.
+-- ============================================================================
 -- 카테고리 정규화 — 브랜드별 백필 (HeidiSQL용, 파라미터화). 멱등·재실행 안전.
 -- 사용: 맨 아래 @brand 값만 바꿔 브랜드 하나씩 실행. (선행: 역할 검토 is_reviewed=1)
 --
@@ -44,16 +56,24 @@ WHERE gr.role='property' AND gr.brand_id=@brand
   AND NOT EXISTS (SELECT 1 FROM _mig_group_to_propgroup m WHERE m.group_id=gr.group_id);
 
 -- ── Phase 4b. facet 카테고리 → 속성값 생성 (멱등)
+--    ★ 이름당 하나만 만든다(GROUP BY). 같은 이름의 카테고리 둘은 같은 브랜드를
+--      가리키므로 속성 하나로 합치는 것이 맞고, 아래 매핑이 이름으로 조인하기 때문에
+--      같은 이름의 속성이 둘 생기면 매핑 PK(category_id)가 충돌한다.
+--      (실제로 났던 에러: Duplicate entry '589' for key '_mig_cat_to_prop.PRIMARY')
 INSERT INTO product_properties
   (property_img, property_type, property_name, property_description, product_property_group_id, brand_id)
-SELECT c.category_img, 0, c.category_name, c.category_description, m.property_group_id, c.brand_id
+SELECT MIN(c.category_img), 0, c.category_name, MIN(c.category_description),
+       m.property_group_id, c.brand_id
 FROM product_categories c
 JOIN _mig_group_role gr ON gr.group_id=c.product_category_group_id
 JOIN _mig_group_to_propgroup m ON m.group_id=gr.group_id
 WHERE gr.role='property' AND gr.brand_id=@brand AND c.is_delete=0
-  AND NOT EXISTS (SELECT 1 FROM _mig_cat_to_prop cp WHERE cp.category_id=c.id);
+  AND NOT EXISTS (SELECT 1 FROM _mig_cat_to_prop cp WHERE cp.category_id=c.id)
+GROUP BY m.property_group_id, c.brand_id, c.category_name;
 
--- 매핑 기록: 생성된 속성 ↔ 원본 카테고리 (그룹 내 이름 유일 가정 — 브랜드명은 유일)
+-- 매핑 기록: 생성된 속성 ↔ 원본 카테고리
+--   이름당 속성이 하나뿐이므로 카테고리 하나는 속성 하나에만 걸린다.
+--   같은 이름의 카테고리 둘은 같은 속성을 함께 가리킨다(PK 는 category_id 라 문제없음).
 INSERT INTO _mig_cat_to_prop (category_id, brand_id, property_id, property_group_id)
 SELECT c.id, c.brand_id, pp.id, m.property_group_id
 FROM product_categories c
