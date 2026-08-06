@@ -6,6 +6,7 @@ import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { sendMail } from "../utils.js/mail.js";
 import { encForSave, decRow, decRows } from "../utils.js/pii.js";
+import { defaultShopObj, defaultBlogObj } from "../utils.js/default-home.js";
 
 // ── ShopGo 브랜드 이메일 템플릿 ─────────────────────────────────────────────
 // 다크 헤더(ShopGo 워드마크) + 본문 + 회사정보/면책 푸터로 감싸는 공통 셸.
@@ -46,7 +47,7 @@ const buildApplicationMailHtml = (obj) => mailShell(`
     mailRow('고객센터', obj.cs_phone) +
     mailRow('영업추천인', obj.referrer_name) +
     mailRow('희망 URL', obj.desired_slug) +
-    mailRow('프레임', obj.selected_frame)
+    mailRow('프레임', frameLabel(obj.selected_frame))
   )}
 `);
 
@@ -67,7 +68,7 @@ const buildApplicantReceiptHtml = (obj, shopUrl) => mailShell(`
     mailRow('담당자', `${obj.manager_name} / ${obj.manager_phone}`) +
     mailRow('고객센터', obj.cs_phone) +
     mailRow('희망 URL', shopUrl || obj.desired_slug) +
-    mailRow('프레임', obj.selected_frame)
+    mailRow('프레임', frameLabel(obj.selected_frame))
   )}
 `);
 
@@ -151,9 +152,37 @@ const requireMasterManager = async (req, res, minLevel = 10) => {
     return { decode_user, master };
 };
 
+// 신청서에서 고를 수 있는 프레임 화이트리스트.
+// front src/components/main-site/frameList.js 의 FRAMES key 목록과 반드시 일치시킬 것.
+// 여기 없는 값(shop:7·8 = 예전 클라이언트 이미지 하드코딩, shop:10 = 빈 홈 컴포넌트,
+// blog:3 = 미노출 등)은 신청 단계에서 거부한다. 프론트 Select는 FRAMES만 노출하지만
+// API로 임의값을 보내면 그대로 브랜드가 만들어지므로 서버에서도 막는다.
+// 프레임 키 → 신청 화면에 표기되는 이름. front frameList.js 의 no/title 과 반드시 동일하게 유지할 것.
+// 메일에 'blog:1' 같은 내부 키가 그대로 나가면 사장님이 무엇을 신청했는지 알 수 없다.
+const FRAME_LABELS = {
+    'shop:1': '01 탐색 중심형',
+    'shop:2': '02 브랜드 무드형',
+    'shop:4': '03 다카테고리 잡화몰',
+    'blog:1': '04 매거진 에디토리얼',
+    'blog:2': '05 종합 그리드',
+    'blog:4': '06 럭셔리 미니멀',
+    'blog:5': '07 다크 럭셔리',
+    'blog:6': '08 신뢰형 단일 브랜드',
+    'blog:7': '09 동양 미니멀',
+    'blog:8': '10 트렌디 그래픽',
+    'blog:9': '11 파스텔 감성',
+};
+const ALLOWED_FRAMES = Object.keys(FRAME_LABELS);
+const isAllowedFrame = (frame) => ALLOWED_FRAMES.includes(String(frame || ''));
+// 메일 표기용. 알 수 없는 값이면 원본을 그대로 보여 준다(정보를 잃지 않도록).
+const frameLabel = (frame) => FRAME_LABELS[String(frame || '')] || (frame || '-');
+
 // 선택 프레임("shop:1" / "blog:4") → 데모번호 매핑
+// 화이트리스트에 없는 값이 어떤 경로로든 들어오면 shop:1로 떨어뜨린다.
+// (기존엔 0/0이 되어 쇼핑몰이 404로 뜨지 않는 브랜드가 만들어졌다)
 const frameToDemo = (frame) => {
-    const [category, num] = String(frame || '').split(':');
+    const safeFrame = isAllowedFrame(frame) ? String(frame) : 'shop:1';
+    const [category, num] = safeFrame.split(':');
     const n = parseInt(num) || 0;
     if (category === 'blog') return { shop_demo_num: '0', blog_demo_num: String(n) };
     return { shop_demo_num: String(n), blog_demo_num: '0' };
@@ -250,8 +279,11 @@ const createSubBrandFromApplication = async (app, adminId) => {
         business_num: app.business_number || '',
         mail_order_num: app.mail_order_number || '',
         theme_css: JSON.stringify({ main_color: '#111111' }),
-        blog_obj: '[]',
-        shop_obj: '[]',
+        // 개설 직후 홈이 백지가 되지 않도록 기본 배너슬라이드 섹션을 심는다.
+        // 실제 섹션으로 저장되므로 가맹점이 디자인관리 › 메인페이지관리에서 이미지만 교체하면 된다.
+        // 섹션 빌더가 아닌 데모(shop 7·8·10, blog 4~9)는 '[]' 그대로 — 심어도 화면에 안 나온다.
+        blog_obj: defaultBlogObj(demo.blog_demo_num),
+        shop_obj: defaultShopObj(demo.shop_demo_num),
         setting_obj,
         none_use_column_obj: '{}',
         seo_obj: JSON.stringify({ naver_token: '', google_token: '' }),
@@ -259,6 +291,12 @@ const createSubBrandFromApplication = async (app, adminId) => {
         is_delete: 0,
         is_main_dns: 0,
         brand_type: 0,
+        // 신규 몰은 단일 카테고리 트리로 시작(레거시 그룹 모델 안 씀).
+        // 이 값이 빠져 DEFAULT 0 이 되면 쇼핑몰은 옛 그룹 모델로 동작하는데
+        // 관리자 카테고리 화면은 이미 단일 트리로 동작해 서로 어긋난다.
+        // (그 결과 그룹을 대분류로 만들게 되고, 그룹 이름이 화면에 안 나오는 혼란이 생겼다)
+        // 개발자 경로(brand.controller.js create)와 동일하게 맞춘다.
+        is_category_migrated: 1,
     };
 
     const result = await insertQuery('brands', obj);
@@ -269,6 +307,21 @@ const createSubBrandFromApplication = async (app, adminId) => {
             await seedDefaultBoards(newBrandId);
         } catch (e) {
             logger.error('기본 게시판 시드 실패: ' + (e?.message || e));
+        }
+        // 단일 트리의 컨테이너 그룹 1개. 스토어는 합성 트리로 노출되지만
+        // 카테고리를 만들 때 유효한 product_category_group_id 가 필요하다.
+        // 이게 없으면 가맹점이 '그룹'부터 만들어야 하고, 그 그룹을 대분류로 오해하게 된다.
+        try {
+            await insertQuery('product_category_groups', {
+                category_group_name: '카테고리',
+                brand_id: newBrandId,
+                max_depth: 10,
+                sort_type: 0,
+                is_show_header_menu: 1,
+                is_use_en_name: 0,
+            });
+        } catch (e) {
+            logger.error('기본 카테고리 그룹 시드 실패: ' + (e?.message || e));
         }
         // 가맹점 관리자 계정 생성 (레벨40). 초기 비밀번호 = 아이디 → 가맹점이 로그인 후 변경.
         const pw = await createHashedPassword(finalAdminId);
@@ -313,6 +366,9 @@ const merchantApplicationCtrl = {
             const bizNo = String(business_number || '').replace(/-/g, '');
             if (!BIZNO_RE.test(bizNo)) {
                 return response(req, res, -102, "사업자번호 형식이 올바르지 않습니다", false);
+            }
+            if (!isAllowedFrame(selected_frame)) {
+                return response(req, res, -103, "선택하신 디자인 프레임을 확인할 수 없습니다. 다시 선택해 주세요.", false);
             }
             if (!ceo_email || !EMAIL_RE.test(ceo_email)) {
                 return response(req, res, -103, "대표자 이메일을 정확히 입력해 주세요", false);

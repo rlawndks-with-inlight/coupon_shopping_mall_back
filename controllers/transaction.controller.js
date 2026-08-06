@@ -8,6 +8,7 @@ import XLSX from 'xlsx';
 import fs from 'fs';
 import { readPool } from "../config/db-pool.js";
 import { decRow, decRows, decListContent, blindIndex, encForSave } from "../utils.js/pii.js";
+import { orderPasswordCandidates } from "../utils.js/order-password.js";
 const table_name = 'transactions';
 
 const transactionCtrl = {
@@ -54,7 +55,15 @@ const transactionCtrl = {
                 sql += ` AND transactions.seller_id=? `;
                 params.push(decode_user?.id);
             }
-            if ((type == 'user' && decode_dns?.id != 84 && decode_user?.level < 50) || !decode_user || type == 'user') {
+            // 본인 주문만 보이도록 스코프.
+            // 기존 조건은 `(type=='user' && ...) || !decode_user || type=='user'` 였는데
+            // !decode_user 는 위 21행 early return 때문에 도달 불가라 사실상 `type=='user'` 하나였다.
+            // 그런데 쇼핑몰 주문내역 화면 9개 중 8개가 type을 안 보내서,
+            // 로그인한 일반 고객이 '브랜드의 모든 주문'을 복호화된 이름·연락처·주소까지 그대로 받고 있었다.
+            // → 프론트가 무엇을 보내든 서버에서 고객 등급(level<10)은 항상 본인 것만 보도록 강제한다.
+            //   판매자(10)·영업자(15)·관리자(40+)의 기존 동작은 그대로 둔다.
+            const isCustomer = !(decode_user?.level >= 10);
+            if (type == 'user' || isCustomer) {
                 sql += ` AND user_id=? `;
                 params.push(decode_user?.id ?? -1);
             }
@@ -70,7 +79,16 @@ const transactionCtrl = {
                     sql += ` AND trx_status=1 AND is_cancel=0  `;
                 } else if (cancel_status == 2) {
                     sql += ` AND is_cancel=1 `;
+                } else if (cancel_status == 5) {
+                    // 고객 '반품/환불조회' — 취소요청(trx_status=1) + 취소완료(is_cancel/is_cancel_trans) 전부.
+                    // 프론트(shop demo-4·5·9 history.js)가 예전부터 5를 보내왔는데 여기 분기가 없었다.
+                    // if(cancel_status)가 참이라 아래 else의 기본 필터도 건너뛰어, 결과적으로
+                    // 필터가 통째로 사라져 '주문/배송조회'와 똑같이 전체 주문이 나오고 있었다.
+                    sql += ` AND (trx_status=1 OR is_cancel=1 OR is_cancel_trans=1) `;
                 } else if (cancel_status == 0) {
+                    sql += ` AND is_cancel=0 AND is_cancel_trans=0 `;
+                } else {
+                    // 알 수 없는 값이 와도 필터가 사라지지 않게 기본값으로 되돌린다.
                     sql += ` AND is_cancel=0 AND is_cancel_trans=0 `;
                 }
             } else {
@@ -167,11 +185,15 @@ const transactionCtrl = {
                     return response(req, res, -100, "주문 비밀번호를 입력해 주세요.", [])
                 }
                 const phoneDigits = String(buyer_phone).replace(/[^0-9]/g, '');
+                // 비밀번호는 해시로 저장된다(order-password.js). 이 기능 이전 주문은 평문이라
+                // 두 형태를 모두 후보로 넣어 기존 주문 조회가 깨지지 않게 한다.
+                const pwCandidates = orderPasswordCandidates(password);
+                const pwPlaceholders = pwCandidates.map(() => '?').join(',');
                 let list = await readPool.query(
                     `SELECT * FROM ${table_name}
                      WHERE (REPLACE(REPLACE(REPLACE(buyer_phone,'-',''),' ',''),'.','') = ? OR buyer_phone_idx = ?)
-                       AND password=? AND brand_id=? ORDER BY id DESC LIMIT 50`,
-                    [phoneDigits, blindIndex(buyer_phone), password, brandId]
+                       AND password IN (${pwPlaceholders}) AND brand_id=? ORDER BY id DESC LIMIT 50`,
+                    [phoneDigits, blindIndex(buyer_phone), ...pwCandidates, brandId]
                 );
                 list = list[0];
                 for (const row of list) {
@@ -181,20 +203,45 @@ const transactionCtrl = {
                 return response(req, res, 100, "success", list) // 배열
             }
 
-            let sql = `SELECT * FROM ${table_name} WHERE id=?`;
-            let queryParams = [id];
+            // ⚠ 여기부터는 '주문 한 건'을 직접 지목해 가져오는 경로다.
+            //   기존엔 인증·브랜드 스코프·소유자 확인이 하나도 없어서
+            //   GET /api/transactions/1,2,3... 로 순번만 훑으면 브랜드 구분 없이 모든 주문의
+            //   복호화된 이름·연락처·주소·품목을 누구나 받아갈 수 있었다(decRow 로 복호화까지 됨).
+            //   → 모든 경로에 brand_id 스코프를 걸고, 아래 세 가지 중 하나를 만족할 때만 반환한다.
+            //     (a) 주문번호 + 주문비밀번호가 맞는 비회원 조회
+            //     (b) 본인(user_id) 주문
+            //     (c) 그 브랜드의 운영자(level>=10)
+            let sql;
+            let queryParams;
             if (ord_num) {
-                sql = `SELECT * FROM ${table_name} WHERE ord_num=? AND password=?`;
-                queryParams = [ord_num, password];
+                if (!password) {
+                    return response(req, res, -100, "주문 비밀번호를 입력해 주세요.", {})
+                }
+                // 위와 같은 이유로 해시/평문 두 형태를 후보로 둔다.
+                const pwCandidates2 = orderPasswordCandidates(password);
+                const pwPlaceholders2 = pwCandidates2.map(() => '?').join(',');
+                sql = `SELECT * FROM ${table_name} WHERE ord_num=? AND password IN (${pwPlaceholders2}) AND brand_id=?`;
+                queryParams = [ord_num, ...pwCandidates2, brandId];
             } else {
                 if (!id) {
                     return response(req, res, -100, "존재하지 않는 주문입니다.", false)
                 }
+                sql = `SELECT * FROM ${table_name} WHERE id=? AND brand_id=?`;
+                queryParams = [id, brandId];
             }
             let data = await readPool.query(sql, queryParams)
             data = data[0][0];
             if (!data) {
                 return response(req, res, -100, "존재하지 않는 주문번호 입니다.", {})
+            }
+            // id 로 직접 지목한 경우엔 소유자이거나 운영자여야 한다.
+            // (ord_num 경로는 주문비밀번호 일치로 이미 본인 확인이 끝났다)
+            if (!ord_num) {
+                const isStaff = decode_user?.level >= 10;
+                const isOwner = decode_user?.id && data?.user_id && data.user_id == decode_user.id;
+                if (!isStaff && !isOwner) {
+                    return lowLevelException(req, res);
+                }
             }
             await attachOrders(data);
 
@@ -333,8 +380,28 @@ const transactionCtrl = {
             const { id } = req.params;
             let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
             data = data[0][0];
-            if (data?.user_id != decode_user?.id) {
+            if (!data) {
+                return response(req, res, -100, "주문을 찾을 수 없습니다.", false)
+            }
+            // 로그인 사용자 본인 주문 + 같은 브랜드에서만. (기존엔 브랜드 확인이 없었다)
+            if (!decode_user?.id || data?.user_id != decode_user?.id) {
                 return lowLevelException(req, res);
+            }
+            if (decode_dns?.id && data?.brand_id != decode_dns?.id) {
+                return lowLevelException(req, res);
+            }
+            // 취소 요청이 가능한 상태만. 출고 이후(15·20·25)는 취소가 아니라 반품 절차로 가야 하고,
+            // 이미 취소요청(1)이거나 취소완료된 건은 중복 요청을 막는다.
+            // 0=결제대기, 1=취소요청, 5=결제완료, 10=입고, 15=출고, 20=배송중, 25=배송완료
+            const CANCELABLE_STATUS = [0, 5, 10];
+            if (data?.is_cancel == 1 || data?.is_cancel_trans == 1) {
+                return response(req, res, -100, "이미 취소 처리된 주문입니다.", false)
+            }
+            if (data?.trx_status == 1) {
+                return response(req, res, -100, "이미 취소 요청된 주문입니다.", false)
+            }
+            if (!CANCELABLE_STATUS.includes(Number(data?.trx_status))) {
+                return response(req, res, -100, "출고된 주문은 취소할 수 없습니다. 반품/환불은 판매자에게 문의해 주세요.", false)
             }
             let result = await updateQuery(`${table_name}`, {
                 trx_status: 1,
