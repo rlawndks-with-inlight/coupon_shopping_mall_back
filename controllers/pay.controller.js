@@ -1,6 +1,7 @@
 "use strict";
 import axios from "axios";
 import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
+import { hashOrderPassword } from "../utils.js/order-password.js";
 import {
   deleteQuery,
   getSelectQueryList,
@@ -97,6 +98,17 @@ const payCtrl = {
         //console.log(trx_type);
         return response(req, res, -100, "잘못된 결제타입 입니다.", false)
       }
+      // 비회원 주문 비밀번호 길이 검증.
+      // DB 컬럼이 varchar(8) 이던 시절 프론트 maxLength 가 20 이라
+      // 9자 이상이면 INSERT 가 'Data too long' 으로 터져 결제가 500 으로 끝났다.
+      // 컬럼을 넓혔지만(2026-08-07_widen_transactions_password.sql) 프론트만 믿을 수 없으므로
+      // 서버에서도 같은 규칙(6~16자)을 강제한다. 회원 주문은 password 가 빈 값이라 검사 대상 아님.
+      if (!(user_id > 0)) {
+        const pw = String(password ?? '');
+        if (pw.length < 6 || pw.length > 16) {
+          return response(req, res, -100, "비회원 주문 비밀번호는 6~16자로 입력해 주세요.", false)
+        }
+      }
       let files = settingFiles(req.files);
       if (seller_id > 0) {
         let seller_columns = [
@@ -143,7 +155,10 @@ const payCtrl = {
       let obj = {
         brand_id,
         user_id,
-        password,
+        // 비회원 주문조회 비밀번호는 평문으로 저장하지 않는다.
+        // 주문번호에 비밀번호가 박히던 문제와 함께 정리(주문번호 형식도 변경됨).
+        // 회원 주문은 password 가 빈 값이라 그대로 '' 로 저장된다.
+        password: hashOrderPassword(password),
         ord_num,
         amount,
         item_name,
