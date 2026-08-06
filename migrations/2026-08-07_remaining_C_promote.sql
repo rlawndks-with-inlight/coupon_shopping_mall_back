@@ -1,12 +1,31 @@
 -- ============================================================================
 -- 3차 C · 그룹명을 최상위 카테고리로 승격 — 브랜드 하나씩
 --
+-- ┌──────────────────────────────────────────────────────────────────────────┐
+-- │ ⚠ 2026-08-07 현재 이 파일의 실행 대상은 없다. 그냥 돌리지 말 것.          │
+-- │                                                                          │
+-- │ 원래 대상이던 id 50 은 이미 전환됐다(크래시한 통합 스크립트가 튕기기 전   │
+-- │ [2] UPDATE 를 실행함). 카테고리가 한 그룹에만 있어 규칙대로 걸린 것이라   │
+-- │ 결과는 맞지만, 그래서 승격은 더 이상 필요 없다.                          │
+-- │                                                                          │
+-- │ 이미 전환된 브랜드에 이 파일을 돌리면 C-2 가 없던 최상위 카테고리를       │
+-- │ 새로 만들고 C-4 가 기존 카테고리를 그 밑으로 넣는다. 정상 동작 중인       │
+-- │ 몰의 트리가 한 단계 깊어질 뿐 얻는 것이 없다.                            │
+-- │                                                                          │
+-- │ 그래서 C-0 의 기본값을 0(대상 없음)으로 두고 C-00 안전검사를 넣었다.      │
+-- │ 남은 id 54·71 은 그룹명이 '카테고리'/'category' 라 승격하면 무의미한      │
+-- │ 최상위가 생긴다 — 승격 대상이 아니다. D 파일 진단으로 처리 방법을 정한다. │
+-- │                                                                          │
+-- │ 나중에 '그룹을 진짜 대분류로 써 온' 브랜드가 나오면 그때 쓰는 파일이다.   │
+-- └──────────────────────────────────────────────────────────────────────────┘
+--
 -- ※ 쿼리 하나씩 실행할 것. 한 번에 다 돌리지 말 것.
 -- ※ 실행 전 백업: brands, product_categories
 -- ※ @brand 는 접속(세션)마다 살아 있다. HeidiSQL 을 닫았다 열거나 재접속하면
 --   C-0 을 다시 실행할 것. 안 그러면 @brand 가 NULL 이라 아무것도 안 바뀐다.
 --
--- 대상: A 파일 진단에서 'C 파일 — 승격' 이 나온 브랜드 (현재 id 50)
+-- 대상: A 파일 진단에서 'C 파일 — 승격' 이 나온 브랜드
+--       (= 그룹 이름이 진짜 대분류라서 트리에 남겨야 하는 경우)
 --
 -- 하는 일: 그룹마다 그 이름의 최상위 카테고리를 하나 만들고,
 --          그 그룹의 기존 최상위들을 그 아래로 옮긴다. 그룹 이름이 트리에 남는다.
@@ -28,7 +47,28 @@
 
 
 -- ── C-0. 대상 브랜드 지정 ★★★ ─────────────────────────────────────────────
-SET @brand := 50;
+--   기본값 0 = 대상 없음. 0 인 채로 아래를 다 돌려도 아무것도 바뀌지 않는다.
+--   승격이 필요한 브랜드가 확정됐을 때만 그 id 로 바꿀 것.
+SET @brand := 0;
+
+
+-- ── C-00. 안전검사 ★ C-2 로 넘어가기 전 반드시 확인 ────────────────────────
+--   '판정' 이 '진행 가능' 일 때만 C-2 부터 실행할 것.
+--   이미 전환된 브랜드에 돌리면 없던 최상위 카테고리가 생긴다.
+SELECT b.id, b.dns, b.name,
+       b.is_category_migrated                                            AS 전환여부,
+       (SELECT COUNT(DISTINCT c.product_category_group_id) FROM product_categories c
+         WHERE c.brand_id = b.id AND c.is_delete = 0)                    AS 카테고리있는그룹수,
+       CASE
+         WHEN b.is_category_migrated = 1
+              THEN '중단 — 이미 전환된 브랜드다. 승격하면 트리만 깊어진다'
+         WHEN (SELECT COUNT(DISTINCT c.product_category_group_id) FROM product_categories c
+                WHERE c.brand_id = b.id AND c.is_delete = 0) < 2
+              THEN '중단 — 그룹이 실질 1개다. 승격 없이 전환하면 된다(B 파일)'
+         ELSE '진행 가능'
+       END                                                                AS 판정
+FROM brands b
+WHERE b.id = @brand;
 
 
 -- ── C-1. 현재 트리 확인 (변경 없음) ─────────────────────────────────────────
@@ -53,6 +93,10 @@ SELECT g.brand_id, g.id, g.category_group_name, -1, 0, g.sort_idx, 0
 FROM product_category_groups g
 WHERE g.brand_id = @brand
   AND g.is_delete = 0
+  -- 안전장치: 이미 전환된 브랜드에는 아무것도 만들지 않는다(C-00 을 건너뛰어도 막힌다)
+  AND EXISTS (SELECT 1 FROM brands b
+               WHERE b.id = @brand
+                 AND (b.is_category_migrated IS NULL OR b.is_category_migrated = 0))
   AND EXISTS (SELECT 1 FROM product_categories c
                WHERE c.product_category_group_id = g.id AND c.is_delete = 0)
   AND NOT EXISTS (SELECT 1 FROM product_categories c
@@ -95,7 +139,11 @@ SET c.parent_id = r.root_id
 WHERE c.brand_id = @brand
   AND c.is_delete = 0
   AND c.parent_id = -1
-  AND c.id <> r.root_id;
+  AND c.id <> r.root_id
+  -- 안전장치: 이미 전환된 브랜드의 트리는 건드리지 않는다
+  AND EXISTS (SELECT 1 FROM brands b
+               WHERE b.id = @brand
+                 AND (b.is_category_migrated IS NULL OR b.is_category_migrated = 0));
 
 
 -- ── C-5. 결과 확인 ──────────────────────────────────────────────────────────
