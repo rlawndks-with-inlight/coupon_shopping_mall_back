@@ -637,6 +637,13 @@ const shopCtrl = {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { category_id } = req.body;
+                // 비회원 1:1문의 작성 차단. 프론트는 로그인 화면으로 보내지만 백엔드가 막지 않아서
+                // API 를 직접 부르면 postCtrl.create 가 user_id=undefined 인 글을 그대로 저장했다.
+                // 소유자가 없는 글은 '작성자만 열람' 판정도 헐거워진다.
+                // (아래 productFaq.create 는 상품문의라 정책이 다르므로 여기만 막는다)
+                if (!decode_user?.id) {
+                    return lowLevelException(req, res);
+                }
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
                 category_sql += ` WHERE post_categories.brand_id=? `;

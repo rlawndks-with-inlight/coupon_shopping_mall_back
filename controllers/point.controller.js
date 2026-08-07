@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -27,9 +27,14 @@ const pointCtrl = {
             let params = [];
             sql += ` WHERE ${table_name}.brand_id=? `;
             params.push(decode_dns?.id ?? 0);
-            if (decode_user.level < 10) {
+            // checkLevel 은 실패하면 false 를 반환할 뿐 throw 하지 않는다.
+            // false.level 은 TypeError 가 아니라 undefined 이고 undefined < 10 은 false 라,
+            // 비로그인 요청이 이 '내 것만 보기' 좁히기를 건너뛰고 브랜드 전체 포인트 내역을 받아갔다.
+            // !decode_user 를 먼저 본다.
+            if (!decode_user || decode_user?.level < 10) {
                 sql += ` AND ${table_name}.user_id=? `;
-                params.push(decode_user.id);
+                // undefined 를 바인딩하면 쿼리가 터지므로 0 으로 (비로그인은 0건이 된다)
+                params.push(decode_user?.id ?? 0);
             }
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
 
@@ -67,7 +72,8 @@ const pointCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            if (decode_user.level < 10) {
+            // false.level 은 undefined 이고 undefined < 10 은 false 라 비로그인이 통과했다(fail-open).
+            if (!decode_user || decode_user?.level < 10) {
                 return lowLevelException(req, res);
             }
             let type = undefined;
@@ -92,7 +98,9 @@ const pointCtrl = {
                 type,
                 user_id: user?.id,
                 sender_id,
-                brand_id
+                // body 의 brand_id 를 그대로 insert 하면 남의 가맹점 앞으로 포인트 행을 만들 수 있다.
+                // 쓰기 대상 브랜드는 로그인 토큰 기준으로 확정한다(레벨50 이상만 교차 브랜드 허용).
+                brand_id: resolveWriteBrandId(decode_user, brand_id)
             };
             obj = { ...obj, ...files };
             let result = await insertQuery(`${table_name}`, obj);
@@ -111,7 +119,8 @@ const pointCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            if (decode_user.level < 10) {
+            // false.level 은 undefined 이고 undefined < 10 은 false 라 비로그인이 통과했다(fail-open).
+            if (!decode_user || decode_user?.level < 10) {
                 return lowLevelException(req, res);
             }
             const {
@@ -154,8 +163,14 @@ const pointCtrl = {
             const { id } = req.params;
             let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
-            if (decode_user.level < 10) {
-                if (data?.user_id != id) {
+            // false.level 은 undefined 이고 undefined < 10 은 false 라 비로그인이 통과했다(fail-open).
+            if (!decode_user || decode_user?.level < 10) {
+                // 소유자 비교 대상이 잘못돼 있었다. id 는 '포인트 행의 id' 라
+                // data.user_id 와 비교하면 우연히 값이 같은 행에서만 통과/차단이 갈렸다.
+                // 비교해야 할 것은 요청자의 user id 다.
+                // 또한 느슨비교라 null != undefined 가 false 다 —
+                // user_id 가 NULL 인 행을 비로그인이 지울 수 있으므로 '로그인 + 일치' 를 양성 조건으로 쓴다.
+                if (!(decode_user?.id > 0 && data?.user_id == decode_user?.id)) {
                     return lowLevelException(req, res);
                 }
             }

@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -63,7 +63,10 @@ const popupCtrl = {
                 popup_title, popup_content, open_s_dt, open_e_dt, brand_id
             } = req.body;
             let obj = {
-                popup_title, popup_content, open_s_dt, open_e_dt, brand_id
+                popup_title, popup_content, open_s_dt, open_e_dt,
+                // body 의 brand_id 를 그대로 insert 하면 남의 가맹점 화면에 팝업을 띄울 수 있다.
+                // 쓰기 대상 브랜드는 로그인 토큰 기준으로 확정한다(레벨50 이상만 교차 브랜드 허용).
+                brand_id: resolveWriteBrandId(decode_user, brand_id)
             };
 
             let result = await insertQuery(`${table_name}`, obj);
@@ -86,6 +89,9 @@ const popupCtrl = {
                 popup_title, popup_content, open_s_dt, open_e_dt,
                 id
             } = req.body;
+            // updateQuery 는 WHERE id=? 만 걸어 브랜드 스코프가 없다. 소유 검증을 먼저 한다.
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
             let obj = {
                 popup_title, popup_content, open_s_dt, open_e_dt
             };
@@ -107,6 +113,9 @@ const popupCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // deleteQuery 도 WHERE id=? 만 걸어 브랜드 스코프가 없다. 소유 검증을 먼저 한다.
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
             let result = await deleteQuery(`${table_name}`, {
                 id
             })

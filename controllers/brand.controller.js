@@ -342,9 +342,14 @@ const brandCtrl = {
     try {
       const decode_user = await checkLevel(req.cookies.token, 0, req);
       const decode_dns = checkDns(req.cookies.dns);
-      const { brand_id } = req.body;
-      let dns_data = await readPool.query(`SELECT ${table_name}.* FROM ${table_name} WHERE id=?`, [brand_id]);
+      // ⚠ 레벨 가드는 넣지 않는다. 프레임1·2 고객 회원가입 화면이 비로그인으로 이 엔드포인트를 부른다.
+      // 대신 body 의 brand_id 를 무시하고 접속한 도메인(decode_dns) 기준으로만 조회한다.
+      // body brand_id 를 신뢰하면 임의 브랜드의 시크릿을 발급받을 수 있었다.
+      let dns_data = await readPool.query(`SELECT ${table_name}.* FROM ${table_name} WHERE id=?`, [decode_dns?.id ?? 0]);
       dns_data = dns_data[0][0];
+      if (!dns_data) {
+        return response(req, res, -100, "브랜드 정보를 찾을 수 없습니다.", false)
+      }
       const secret = speakeasy.generateSecret({
         length: 20, // 비밀키의 길이를 설정 (20자리)
         name: dns_data?.dns, // 사용자 아이디를 비밀키의 이름으로 설정

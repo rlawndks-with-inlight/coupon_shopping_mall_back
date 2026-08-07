@@ -3,7 +3,7 @@ import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 // lowLevelException 은 45행에서 이미 쓰고 있었는데 import 가 빠져 있었다.
 // try/catch 가 ReferenceError 를 삼켜 '서버 에러 발생'으로 보였을 뿐, 의도한 403 이 아니었다.
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -83,7 +83,10 @@ const paymentModuleCtrl = {
             } = req.body;
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url
+                // body 의 brand_id 를 그대로 insert 하면 다른 가맹점 앞으로 PG 자격증명 행을 만들 수 있다.
+                // 쓰기 대상 브랜드는 로그인 토큰 기준으로 확정한다(레벨50 이상만 교차 브랜드 허용).
+                brand_id: resolveWriteBrandId(decode_user, brand_id),
+                pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url
             };
             if (forspay_config !== undefined) obj.forspay_config = forspay_config; // 포스페이 수단별 PG 라우팅(JSON). 컬럼 필요(ALTER).
             let columns = [
@@ -124,6 +127,10 @@ const paymentModuleCtrl = {
                 pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url, forspay_config,
                 id
             } = req.body;
+            // updateQuery 는 WHERE id=? 만 걸어 브랜드 스코프가 없다.
+            // 소유 검증 없이는 남의 가맹점 PG 자격증명을 id 만 바꿔 덮어쓸 수 있었다.
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
             let files = settingFiles(req.files);
             let obj = {
                 pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url
@@ -158,6 +165,9 @@ const paymentModuleCtrl = {
                 return lowLevelException(req, res);
             }
             const { id } = req.params;
+            // deleteQuery 도 WHERE id=? 만 걸어 브랜드 스코프가 없다. 소유 검증을 먼저 한다.
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
             let result = await deleteQuery(`${table_name}`, {
                 id
             }, true)

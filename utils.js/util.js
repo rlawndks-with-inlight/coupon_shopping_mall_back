@@ -491,3 +491,25 @@ export const isTruthyFlag = (v) => {
     if (s === '' || s === 'false' || s === '0' || s === 'null' || s === 'undefined') return false;
     return true;
 };
+
+// ── 테넌트(브랜드) 경계 가드 ──────────────────────────────────────
+// 신원의 근거는 로그인 토큰(token 쿠키)뿐이다. dns 쿠키는 GET /api/domain 으로
+// 누구나 발급받으므로 '쓰기 권한' 판단에 써서는 안 된다.
+// checkLevel 은 실패 시 false 를 반환할 뿐 throw 하지 않으므로 !decode_user 를 먼저 본다.
+export const canWriteBrand = (decode_user, target_brand_id) => {
+    if (!decode_user) return false;
+    if (Number(decode_user.level) >= 50) return true;      // 개발사만 교차 브랜드 허용
+    return Number(decode_user.brand_id) === Number(target_brand_id);
+};
+// 쓰기에 쓸 brand_id 를 확정한다. body/query 의 brand_id 는 신뢰하지 않는다.
+export const resolveWriteBrandId = (decode_user, requested) => {
+    if (Number(decode_user?.level) >= 50 && Number(requested) > 0) return Number(requested);
+    return Number(decode_user?.brand_id ?? 0);
+};
+// 대상 행이 호출자 브랜드 소속인지 DB 로 확인한다. 아니면 null.
+export const loadOwnedRow = async (pool, table, id, decode_user) => {
+    const rows = await pool.query(`SELECT id, brand_id FROM ${table} WHERE id=? LIMIT 1`, [id]);
+    const row = rows[0][0];
+    if (!row) return null;
+    return canWriteBrand(decode_user, row.brand_id) ? row : null;
+};

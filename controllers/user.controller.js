@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, isTruthyFlag, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
+import { canWriteBrand, checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, isTruthyFlag, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
@@ -225,7 +225,18 @@ const userCtrl = {
                 seller_trx_fee, seller_trx_fee_type = 0, seller_point,
                 oper_id, oper_trx_fee, oper_trx_fee_type = 0,
             } = req.body;
-            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0 AND id!=?`, [user_name, brand_id, id]);
+            // updateQuery 는 WHERE id=? 만 걸어 브랜드 스코프가 없다.
+            // 소유 검증이 없으면 가맹점 관리자가 id 만 바꿔 다른 가맹점 회원을 수정할 수 있었다.
+            const t = await readPool.query(`SELECT id, brand_id, level FROM ${table_name} WHERE id=? LIMIT 1`, [id]);
+            const target = t[0][0];
+            if (!target || !canWriteBrand(decode_user, target.brand_id)) return lowLevelException(req, res);
+            // 자기 레벨보다 높은 레벨을 부여하는 권한상승을 막는다.
+            if (Number(level) > Number(decode_user?.level)) return lowLevelException(req, res);
+            // 쓰기 대상 브랜드는 로그인 토큰 기준으로 확정한다(레벨50 이상만 교차 브랜드 허용).
+            // 아이디 중복 검사도 같은 브랜드 기준으로 봐야 한다 —
+            // body 의 brand_id 로 검사하면 엉뚱한 브랜드에서 검사해 통과한 뒤 실제로는 강제된 브랜드에 중복이 생긴다.
+            const write_brand_id = resolveWriteBrandId(decode_user, brand_id);
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0 AND id!=?`, [user_name, write_brand_id, id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
@@ -239,7 +250,9 @@ const userCtrl = {
 
             let obj = {
                 profile_img,
-                brand_id, user_name, name, nickname, level, phone_num, note,
+                // body 의 brand_id 를 그대로 쓰면 임의 회원을 다른 브랜드로 옮길 수 있었다.
+                brand_id: write_brand_id,
+                user_name, name, nickname, level, phone_num, note,
                 company_name, business_num, contract_img, bsin_lic_img,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
                 seller_trx_fee, seller_trx_fee_type, seller_point,
