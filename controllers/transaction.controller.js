@@ -304,6 +304,12 @@ const transactionCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 주문 수정은 관리자 전용이다(프론트 호출부는 pages/manager/orders/** 뿐).
+            // 검사가 없어서 무인증으로 남의 주문 금액·상태·승인번호를 바꿀 수 있었다.
+            // (고객의 취소요청은 cancelRequest 가 따로 처리하며 본인·브랜드 검증이 들어 있다)
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const {
                 id,
                 trx_dt,
@@ -342,6 +348,10 @@ const transactionCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 검사 없이 삭제로 직행했다 — id 만 알면 남의 주문이 지워졌다.
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             let result = await deleteQuery(`${table_name}`, {
                 id
             })
@@ -361,6 +371,10 @@ const transactionCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             const { invoice_num } = req.body;
+            // 송장번호 변경도 관리자 전용이다. 검사가 없어 아무나 남의 주문 송장을 바꿀 수 있었다.
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             let result = await updateQuery(`${table_name}`, {
                 invoice_num
             }, id)
