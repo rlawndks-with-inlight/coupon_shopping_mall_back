@@ -50,7 +50,12 @@ const postCtrl = {
             }
 
             if (category_id == 91) {
-                if (decode_user?.level < 20) {
+                // 비로그인이면 undefined < 20 이 false 라 '좁히기'가 통째로 건너뛰어져
+                // 이 카테고리 글이 전부 보였다. 비로그인은 가장 좁게(아무것도 못 봄) 잡는다.
+                if (!decode_user) {
+                    sql += ` AND ${table_name}.user_id = ? `
+                    params.push(0);
+                } else if (decode_user?.level < 20) {
                     if (decode_user?.level == 15) {
                         sql += ` AND ${table_name}.user_id IN (SELECT id FROM users WHERE oper_id=?)`
                         params.push(decode_user?.id ?? 0);

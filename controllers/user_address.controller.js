@@ -56,15 +56,22 @@ const userAddressCtrl = {
             const loginUserId = decode_user?.id ?? 0;
             const loginLevel = decode_user?.level ?? 0;
 
-            // 조회 대상 유저
-            const targetUserId = user_id ? Number(user_id) : loginUserId;
+            // 배송지는 개인정보다. 로그인은 무조건 먼저 요구한다.
+            //
+            // 예전 검사는 `if (!user_id && loginLevel < 1)` 이었다. 즉 쿼리에 user_id 를
+            // 실어 보내면 그 검사 자체가 건너뛰어졌고, 비로그인이라도 임의 회원의 배송지를
+            // (아래에서 decListContent 로 복호화까지 해서) 그대로 받아갈 수 있었다.
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
 
-            // 권한 체크
+            // 조회 대상 유저. user_id 를 안 주면 본인.
+            const targetUserId = user_id ? Number(user_id) : loginUserId;
             if (!targetUserId) {
                 return lowLevelException(req, res);
             }
-            // user_id가 없는 경우: 로그인한 유저 본인만 허용 (level < 10 이면 남의 주소는 당연히 안 됨)
-            if (!user_id && loginLevel < 1) {
+            // 남의 주소를 보려면 관리자·셀러여야 한다.
+            if (targetUserId !== loginUserId && loginLevel < 10) {
                 return lowLevelException(req, res);
             }
 

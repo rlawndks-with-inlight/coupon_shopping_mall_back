@@ -631,7 +631,8 @@ const productCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            if (decode_user?.level < 10) {
+            // 비로그인이면 undefined < 10 이 false 라 이 가드가 열렸다(로그인한 하위등급만 막혔다).
+            if (!decode_user || decode_user?.level < 10) {
                 return lowLevelException(req, res);
             }
             let {
@@ -847,7 +848,8 @@ const productCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            if (decode_user?.level < 40) {
+            // 비로그인이면 undefined < 40 이 false 라 이 가드가 열렸다.
+            if (!decode_user || decode_user?.level < 40) {
                 return lowLevelException(req, res);
             }
             let {

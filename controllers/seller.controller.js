@@ -394,7 +394,9 @@ const sellerCtrl = {
 
             let user = await selectQuerySimple(table_name, id);
             user = user[0];
-            if (!user || decode_user?.level < user?.level) {
+            // !user 는 '대상'만 확인한다. 요청자 로그인 여부를 안 봐서 비로그인이면
+            // undefined < user.level 이 false → 남의 계정 비밀번호·상태를 바꿀 수 있었다.
+            if (!decode_user || !user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
             // 빈 비밀번호로 덮어쓰지 않는다. hash('') 가 저장되면 그 계정은 사실상 비밀번호 없이 열린다.
@@ -427,7 +429,9 @@ const sellerCtrl = {
             let { status } = req.body;
             let user = await selectQuerySimple(table_name, id);
             user = user[0];
-            if (!user || decode_user?.level < user?.level) {
+            // !user 는 '대상'만 확인한다. 요청자 로그인 여부를 안 봐서 비로그인이면
+            // undefined < user.level 이 false → 남의 계정 비밀번호·상태를 바꿀 수 있었다.
+            if (!decode_user || !user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
             let obj = {

@@ -223,7 +223,12 @@ const brandCtrl = {
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { id } = req.params;
+      // checkLevel 은 실패 시 false 를 반환한다(예외를 던지지 않는다).
+      // 그래서 비로그인이면 decode_user?.level 이 undefined 이고, undefined < 50 은 false 라
+      // '막으려던' 조건이 통째로 거짓이 되어 오히려 비로그인만 통과했다.
+      // 로그인 여부를 먼저 본다.
       if (
+        !decode_user ||
         (decode_user?.level < 50 && decode_user?.brand_id != id) ||
         decode_user?.level < 40
       ) {

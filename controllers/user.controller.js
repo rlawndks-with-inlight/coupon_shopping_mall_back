@@ -15,6 +15,13 @@ const userCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 회원 목록은 관리자 화면 전용이다(프론트 호출부가 전부 pages/manager/**).
+            // 예전엔 checkLevel 결과를 담아만 두고 한 번도 보지 않았다. dns 쿠키는 사이트에
+            // 접속만 하면 발급되므로, 누구든 그 가맹점 전 회원 명단을 받아갈 수 있었다.
+            // 게다가 아래에서 decListContent 로 실명·전화를 복호화해 응답에 실어 보낸다.
+            if (!decode_user || decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
             const { is_user, is_seller, is_agent } = req.query;
             let columns = [
                 `${table_name}.*`,
@@ -138,7 +145,10 @@ const userCtrl = {
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
-            if (level > 0 && decode_user?.level < level) {
+            // 관리자가 회원을 만드는 경로다(일반 회원가입은 auth.controller 의 signUp 이 따로 처리).
+            // 예전엔 level>0 일 때만, 그것도 undefined < level 이 false 라 비로그인이 통과했다.
+            // 로그인 자체를 먼저 요구한다.
+            if (!decode_user || (level > 0 && decode_user?.level < level)) {
                 return lowLevelException(req, res);
             }
             if (seller_trx_fee_type == 0 && seller_trx_fee > 1) {
@@ -363,7 +373,9 @@ const userCtrl = {
             let { status } = req.body;
             let user = await selectQuerySimple(table_name, id);
             user = user[0];
-            if (!user || decode_user?.level < user?.level) {
+            // !user 는 '대상'만 본다. 요청자 로그인 여부를 안 봐서 비로그인이면
+            // undefined < user.level 이 false → 아무나 남의 계정 상태를 바꿀 수 있었다.
+            if (!decode_user || !user || decode_user?.level < user?.level) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
             let obj = {
