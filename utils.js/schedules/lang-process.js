@@ -1,6 +1,7 @@
 import { readPool, writePool } from "../../config/db-pool.js";
 import { deleteQuery, updateQuery } from "../query-util.js";
-import { settingLangs } from "../util.js";
+import { LANG_STATS, settingLangs } from "../util.js";
+import logger from "../winston/index.js";
 
 const table_name = 'lang_processes';
 
@@ -32,50 +33,100 @@ export const lang_obj_columns = {
     ]
 }
 
-export const langProcess = async () => {
-    let process_items = await readPool.query(`SELECT * FROM lang_processes WHERE is_confirm=0`);
-    process_items = process_items[0];
-    if (process_items.length > 0) {
-        let brand_ids = process_items.map(itm => {
-            return itm?.brand_id
-        })
-        brand_ids = new Set(brand_ids);
-        brand_ids = [...brand_ids];
+// 이전 틱이 아직 돌고 있는지. 스케줄러가 1분마다 부르는데 한 틱이 1분을 넘길 수 있다.
+let isRunning = false;
 
-        let brands = await readPool.query(`SELECT * FROM brands WHERE id IN (${brand_ids.map(() => '?').join()})`, brand_ids);
-        brands = brands[0];
+// 번역 대기열 소비자.
+//
+// 예전 구현은 미처리 전량을 한 틱에 직렬 처리했다. 대형몰이 언어팩을 켜면
+// brandSettingLang 이 수천 건을 한꺼번에 적재하는데, 그걸 그대로 돌면
+// 요청이 폭주하고(무료 gtx 엔드포인트라 차단 위험) 한 건이 실패하면
+// 루프가 통째로 죽어 나머지가 처리되지 않았다.
+// 재시도 상한도 없어서, 영원히 실패하는 행이 매분 다시 시도됐다.
+//
+// 그래서 (1) 건수·요청수 두 가지로 예산을 두고 (2) 실패는 그 행만 격리하고
+// (3) 겹쳐 도는 것을 막는다.
+export const langProcess = async (opts = {}) => {
+    if (isRunning) {
+        logger.info('[lang] 이전 처리가 아직 진행 중이라 이번 틱은 건너뜀');
+        return;
+    }
+    const maxItems = parseInt(opts.maxItems ?? process.env.LANG_BATCH_ITEMS ?? '20') || 20;
+    const maxCalls = parseInt(opts.maxCalls ?? process.env.LANG_BATCH_CALLS ?? '60') || 60;
+    const maxTries = parseInt(process.env.LANG_MAX_TRIES ?? '3') || 3;
 
+    isRunning = true;
+    const startCalls = LANG_STATS.calls;
+    let done = 0, failed = 0, skipped = 0;
+    try {
+        let process_items = await readPool.query(
+            `SELECT * FROM ${table_name} WHERE is_confirm=0 AND COALESCE(try_count,0) < ? ORDER BY id ASC LIMIT ?`,
+            [maxTries, maxItems]
+        );
+        process_items = process_items[0];
+        if (process_items.length == 0) return;
+
+        // 브랜드 설정을 한 번에 읽어 캐시한다(항목마다 조회하지 않는다).
+        let brand_ids = [...new Set(process_items.map((itm) => itm?.brand_id).filter((v) => v > 0))];
         let brand_obj = {};
-
-        for (var i = 0; i < brands.length; i++) {
-            brands[i].setting_obj = JSON.parse(brands[i]?.setting_obj ?? '{}')
-            brand_obj[brands[i]?.id] = brands[i];
-        }
-
-        let table_obj = {};
-        for (var i = 0; i < process_items.length; i++) {
-            if (!table_obj[process_items[i]?.table_name]) {
-                table_obj[process_items[i]?.table_name] = [];
-            }
-            process_items[i].obj = JSON.parse(process_items[i]?.obj ?? '{}');
-            table_obj[process_items[i]?.table_name].push(process_items[i]);
-        }
-        for (var i = 0; i < Object.keys(table_obj).length; i++) {
-            let table = Object.keys(table_obj)[i];
-            for (var j = 0; j < table_obj[table].length; j++) {
-
-                let langs = await settingLangs(lang_obj_columns[table], table_obj[table][j].obj, brand_obj[table_obj[table][j].brand_id], table, table_obj[table][j]?.item_id, true);
-
-                let update_result = await updateQuery(table, {
-                    lang_obj: langs.lang_obj
-                }, table_obj[table][j]?.item_id);
-
-                let delete_result = await deleteQuery('lang_processes', {
-                    table_name: table,
-                    item_id: table_obj[table][j]?.item_id,
-                }, true)
+        if (brand_ids.length > 0) {
+            let brands = await readPool.query(
+                `SELECT * FROM brands WHERE id IN (${brand_ids.map(() => '?').join()})`, brand_ids);
+            brands = brands[0];
+            for (var i = 0; i < brands.length; i++) {
+                brands[i].setting_obj = JSON.parse(brands[i]?.setting_obj ?? '{}');
+                brand_obj[brands[i]?.id] = brands[i];
             }
         }
+
+        // 더 시도할 가치가 없는 행은 is_confirm=2 로 격리한다(삭제하지 않는다 — 원인 추적용).
+        const quarantine = async (row, reason) => {
+            skipped++;
+            logger.info(`[lang] 격리 id=${row?.id} table=${row?.table_name} item=${row?.item_id} :: ${reason}`);
+            await writePool.query(`UPDATE ${table_name} SET is_confirm=2 WHERE id=?`, [row?.id]);
+        };
+
+        for (const row of process_items) {
+            // 요청 예산 소진 — 남은 건은 다음 틱으로 넘긴다.
+            if (LANG_STATS.calls - startCalls >= maxCalls) {
+                logger.info(`[lang] 요청 예산(${maxCalls}) 소진, 남은 건은 다음 틱으로`);
+                break;
+            }
+            const columns = lang_obj_columns[row?.table_name];
+            if (!columns) { await quarantine(row, '번역 대상 컬럼 정의 없음'); continue; }
+            const brand = brand_obj[row?.brand_id];
+            if (!brand) { await quarantine(row, '브랜드를 찾을 수 없음'); continue; }
+            if (brand?.setting_obj?.is_use_lang != 1) { await quarantine(row, '브랜드 언어팩 꺼짐'); continue; }
+
+            try {
+                const obj = JSON.parse(row?.obj ?? '{}');
+                const langs = await settingLangs(columns, obj, brand, row?.table_name, row?.item_id, true);
+                if (!langs?.lang_obj) { await quarantine(row, '번역 결과 없음'); continue; }
+                await updateQuery(row?.table_name, { lang_obj: langs.lang_obj }, row?.item_id);
+                await writePool.query(`DELETE FROM ${table_name} WHERE id=?`, [row?.id]);
+                done++;
+            } catch (err) {
+                // 이 행만 실패로 기록한다. 루프는 계속 돈다.
+                failed++;
+                const msg = String(err?.message || err).slice(0, 240);
+                logger.error(`[lang] 처리 실패 id=${row?.id} table=${row?.table_name} item=${row?.item_id} :: ${msg}`);
+                await writePool.query(
+                    `UPDATE ${table_name} SET try_count=COALESCE(try_count,0)+1, last_error=? WHERE id=?`,
+                    [msg, row?.id]
+                );
+            }
+        }
+        logger.info(`[lang] 처리 완료 성공=${done} 실패=${failed} 격리=${skipped} 요청수=${LANG_STATS.calls - startCalls}`);
+    } catch (err) {
+        const msg = String(err?.message || err);
+        // 마이그레이션을 안 돌린 채 배포하면 여기로 떨어진다. 원인을 바로 알 수 있게 따로 안내한다.
+        if (msg.includes('Unknown column') && msg.includes('try_count')) {
+            logger.error('[lang] migrations/2026-08-07_lang_queue_retry.sql 을 먼저 실행해야 한다 (lang_processes.try_count 컬럼 없음)');
+        } else {
+            logger.error(`[lang] langProcess 오류 :: ${msg}`);
+        }
+    } finally {
+        isRunning = false;
     }
 }
 

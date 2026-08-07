@@ -7,6 +7,7 @@ import when from 'when';
 import _ from 'lodash';
 import logger from './winston/index.js';
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { deleteQuery, insertQuery, updateQuery } from './query-util.js';
 import { writePool } from '../config/db-pool.js';
 
@@ -184,6 +185,106 @@ export const imageFieldList = [
     }
 })
 
+// ── 다국어 번역 ────────────────────────────────────────────────────────────
+// 엔진은 구글 무료 gtx 엔드포인트다(API 키 없음).
+// package.json 에 @google-cloud/translate 가 있지만 사용처도 자격증명도 없다.
+
+// 지원 언어(gtx 코드). ko 는 원문이라 번역 대상이 아니다.
+export const LANG_TARGETS = [
+    { value: 'en', use_value: 'en' },
+    { value: 'ja', use_value: 'ja' },
+    { value: 'cn', use_value: 'zh-CN' },
+    { value: 'es', use_value: 'es' },
+];
+
+// 본문이 HTML 인 컬럼. 태그를 보존하고 텍스트 노드만 번역해야 한다.
+// (Quill 에디터가 만든 마크업이라 통째로 번역기에 넣으면 태그가 깨진다)
+export const HTML_LANG_COLUMNS = {
+    posts: ['post_content'],
+};
+
+// 호출량 관측 — 스케줄러가 한 틱의 요청 예산을 지키는 데 쓴다.
+export const LANG_STATS = { calls: 0, fails: 0, htmlGiveUps: 0 };
+
+const GTRANS_MIN_GAP_MS = parseInt(process.env.LANG_MIN_GAP_MS || '150') || 150;
+const GTRANS_CHUNK = parseInt(process.env.LANG_CHUNK_SIZE || '1200') || 1200;
+let gtransLastAt = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// 문장/줄 경계에서 끊어 청크로 나눈다. 경계가 없으면 강제로 자른다.
+const splitChunks = (text, limit = GTRANS_CHUNK) => {
+    const out = [];
+    let rest = String(text ?? '');
+    while (rest.length > limit) {
+        let cut = -1;
+        for (const sep of ['\n', '. ', '! ', '? ', '。', ' ']) {
+            const i = rest.lastIndexOf(sep, limit);
+            if (i > limit * 0.5) { cut = i + sep.length; break; }
+        }
+        if (cut <= 0) cut = limit;
+        out.push(rest.slice(0, cut));
+        rest = rest.slice(cut);
+    }
+    if (rest) out.push(rest);
+    return out;
+};
+
+// 평문 번역.
+// 예전엔 본문을 GET 쿼리스트링에 통째로 실었다 — 상품명은 짧아서 괜찮았지만
+// 게시글 본문 길이에서는 URL 한계에 걸려 조용히 실패했다(예외를 삼켜 번역만 비었다).
+// POST(form-urlencoded)로 보내고, 그래도 긴 것은 청크로 나눠 이어붙인다.
+export const gtransText = async (text, target) => {
+    const src = String(text ?? '');
+    if (!src.trim()) return src;
+    let out = '';
+    for (const chunk of splitChunks(src)) {
+        const gap = Date.now() - gtransLastAt;
+        if (gap < GTRANS_MIN_GAP_MS) await sleep(GTRANS_MIN_GAP_MS - gap);
+        gtransLastAt = Date.now();
+        LANG_STATS.calls++;
+        const { data } = await axios.post(
+            'https://translate.googleapis.com/translate_a/single',
+            new URLSearchParams({ client: 'gtx', sl: 'auto', tl: target, dt: 't', q: chunk }).toString(),
+            { timeout: 15000, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+        out += (data?.[0] || []).map((s) => s?.[0]).filter(Boolean).join('');
+    }
+    return out;
+};
+
+// HTML 번역 — 태그·속성은 그대로 두고 텍스트 노드만 바꾼다.
+// 텍스트 노드를 줄바꿈으로 이어 한 번에 번역한 뒤 다시 나눠 넣는다.
+// 조각 수가 안 맞으면 본문이 깨지므로 그 언어는 통째로 포기한다(null 반환 → 원문 유지).
+// 깨진 번역보다 번역이 없는 편이 낫다.
+export const gtransHtml = async (html, target) => {
+    const src = String(html ?? '');
+    if (!src.trim()) return src;
+    const $ = cheerio.load(src, null, false);
+    const nodes = [];
+    const walk = (els) => {
+        els.each((idx, el) => {
+            if (el.type === 'text') {
+                if (String(el.data).trim()) nodes.push(el);
+            } else if (el.children) {
+                walk($(el).contents());
+            }
+        });
+    };
+    walk($.root().contents());
+    if (nodes.length === 0) return src;
+
+    const texts = nodes.map((n) => String(n.data).replace(/\s+/g, ' ').trim());
+    const translated = await gtransText(texts.join('\n'), target);
+    const parts = String(translated).split('\n');
+    if (parts.length !== texts.length) {
+        LANG_STATS.htmlGiveUps++;
+        logger.info(`[lang] html 조각수 불일치로 번역 생략 target=${target} 원본=${texts.length} 번역=${parts.length}`);
+        return null;
+    }
+    nodes.forEach((n, i) => { n.data = parts[i]; });
+    return $.html();
+};
+
 export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, table_name = "", item_id, is_process) => {
     if (decode_dns?.setting_obj?.is_use_lang != 1) {
         return;
@@ -193,36 +294,34 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
             lang_obj: {}
         };
         try {
-            // 지원 언어 (구글 번역 gtx 코드). ko는 원문 기준이라 번역 대상에서 제외
-            let lang_list = [
-                { value: 'en', use_value: 'en' },
-                { value: 'ja', use_value: 'ja' },
-                { value: 'cn', use_value: 'zh-CN' },
-                { value: 'es', use_value: 'es' },
-            ]
-            // 구글 번역(gtx, 무료) 헬퍼 — sl=auto 로 원문 언어 자동 감지
-            const gtrans = async (text, target) => {
-                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${target}&dt=t&q=${encodeURIComponent(text)}`;
-                const { data } = await axios.get(url, { timeout: 10000 });
-                return (data?.[0] || []).map((s) => s?.[0]).filter(Boolean).join('');
-            };
+            const html_columns = HTML_LANG_COLUMNS[table_name] ?? [];
             if (columns.length > 0 && decode_dns?.setting_obj?.is_use_lang == 1) {
                 for (var i = 0; i < columns.length; i++) {
-                    if (!obj[columns[i]]) {
+                    const column = columns[i];
+                    if (!obj[column]) {
                         continue;
                     }
+                    const is_html = html_columns.includes(column);
                     // 원문은 ko 슬롯에 보관
-                    result.lang_obj[columns[i]] = { ko: obj[columns[i]] };
-                    for (var j = 0; j < lang_list.length; j++) {
-                        const langCfg = lang_list[j];
+                    result.lang_obj[column] = { ko: obj[column] };
+                    for (var j = 0; j < LANG_TARGETS.length; j++) {
+                        const langCfg = LANG_TARGETS[j];
                         // 브랜드가 켠 언어만 (lang_list 설정 없으면 전체 번역)
                         const enabled = !decode_dns?.setting_obj?.lang_list
                             || decode_dns?.setting_obj?.lang_list?.includes(langCfg.value);
                         if (!enabled) continue;
                         try {
-                            result.lang_obj[columns[i]][langCfg.value] = await gtrans(obj[columns[i]], langCfg.use_value);
+                            const translated = is_html
+                                ? await gtransHtml(obj[column], langCfg.use_value)
+                                : await gtransText(obj[column], langCfg.use_value);
+                            // null 은 '번역 포기'(HTML 조각수 불일치). 그 언어 슬롯을 비워 두면
+                            // 화면에서는 formatLang 이 원문으로 폴백한다.
+                            if (translated !== null && translated !== undefined) {
+                                result.lang_obj[column][langCfg.value] = translated;
+                            }
                         } catch (err) {
-                            console.log(err);
+                            LANG_STATS.fails++;
+                            logger.error(`[lang] 번역 실패 table=${table_name} id=${item_id} col=${column} lang=${langCfg.value} :: ${err?.message || err}`);
                         }
                     }
                 }
@@ -230,7 +329,7 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
             result.lang_obj = JSON.stringify(result.lang_obj);
             return result;
         } catch (err) {
-            console.log(err);
+            logger.error(`[lang] settingLangs 실패 table=${table_name} id=${item_id} :: ${err?.message || err}`);
             result.lang_obj = JSON.stringify(result.lang_obj);
             return result;
         }
