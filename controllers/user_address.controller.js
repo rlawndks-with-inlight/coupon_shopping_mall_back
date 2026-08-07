@@ -134,6 +134,16 @@ const userAddressCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
 
+            // 배송지는 개인정보다. 브랜드만 맞으면 통과했기 때문에(아래 isItemBrandIdSameDnsId)
+            // 같은 몰의 다른 회원 주소를 id 만 바꿔가며 읽을 수 있었다.
+            // 응답 직전 decRow 로 복호화까지 하므로 실명·연락처가 그대로 나갔다.
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
+            // 본인 것이 아니면 관리자·셀러여야 한다.
+            const isStaff = (decode_user?.level ?? 0) >= 10;
+            const assertOwner = (row) => isStaff || row?.user_id == decode_user?.id;
+
             const brandId = decode_dns?.id ?? 0;
 
             const userLevel = decode_user?.level ?? 0;
@@ -148,6 +158,9 @@ const userAddressCtrl = {
 
                         // 브랜드 매칭 검증
                         if (!isItemBrandIdSameDnsId(decode_dns, data)) {
+                            return lowLevelException(req, res);
+                        }
+                        if (!assertOwner(data)) {
                             return lowLevelException(req, res);
                         }
 
@@ -167,6 +180,9 @@ const userAddressCtrl = {
             }
 
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
+                return lowLevelException(req, res);
+            }
+            if (!assertOwner(data)) {
                 return lowLevelException(req, res);
             }
 
