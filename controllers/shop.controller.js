@@ -323,7 +323,11 @@ const shopCtrl = {
             //결제모듈처리 (포스페이(41)는 활성 결제수단별 옵션으로 분리 — 구매자가 수단 선택)
             data['payment_modules'] = (data?.payment_modules || []).flatMap((item) => {
                 if (item?.trx_type != 41) {
-                    return [{ ...item, ...getPayType(item?.trx_type) }];
+                    // 예전엔 행 전체를 그대로 내려보내 pay_key·mid·tid 가 비로그인 방문자에게도
+                    // 노출됐다(localStorage.themeDnsData 에도 그대로 저장된다).
+                    // 포스페이(41)는 아래에서 이미 화이트리스트로 구성하므로 여기만 문제였다.
+                    const { pay_key, mid, tid, forspay_config, ...safe_item } = item ?? {};
+                    return [{ ...safe_item, ...getPayType(item?.trx_type) }];
                 }
                 // 수단별 노출 설정(enabled) 파싱. 설정 없으면 pending(삼성페이) 제외 전부 노출.
                 let methodsCfg = {};

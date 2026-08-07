@@ -97,6 +97,20 @@ const productFaqCtrl = {
                 id,
                 title, content, user_id
             } = req.body;
+            // 인가가 전혀 없어 남의 상품문의를 수정할 수 있었다.
+            // 상품문의는 고객이 쓰는 글이라 레벨 가드를 걸면 고객 화면이 죽는다 —
+            // 로그인 필수 + (운영자이거나 본인 글) 로만 제한한다.
+            if (!decode_user?.id) {
+                return lowLevelException(req, res);
+            }
+            let faq_rows = await readPool.query(`SELECT id, brand_id, user_id FROM ${table_name} WHERE id=? LIMIT 1`, [id]);
+            const faq_row = faq_rows[0][0];
+            const is_faq_staff = Number(decode_user?.level) >= 10;
+            if (!faq_row
+                || !isItemBrandIdSameDnsId(decode_dns, faq_row)
+                || !(is_faq_staff || Number(faq_row?.user_id) === Number(decode_user?.id))) {
+                return lowLevelException(req, res);
+            }
             let files = settingFiles(req.files);
             let obj = {
                 title, content
@@ -122,6 +136,18 @@ const productFaqCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 인가가 전혀 없어 비로그인으로도 남의 상품문의를 지울 수 있었다.
+            if (!decode_user?.id) {
+                return lowLevelException(req, res);
+            }
+            let faq_rows = await readPool.query(`SELECT id, brand_id, user_id FROM ${table_name} WHERE id=? LIMIT 1`, [id]);
+            const faq_row = faq_rows[0][0];
+            const is_faq_staff = Number(decode_user?.level) >= 10;
+            if (!faq_row
+                || !isItemBrandIdSameDnsId(decode_dns, faq_row)
+                || !(is_faq_staff || Number(faq_row?.user_id) === Number(decode_user?.id))) {
+                return lowLevelException(req, res);
+            }
             let result = await deleteQuery(`${table_name}`, {
                 id
             })

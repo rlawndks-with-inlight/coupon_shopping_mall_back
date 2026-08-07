@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { canWriteBrand, checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, isTruthyFlag, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
+import { canWriteBrand, checkDns, checkLevel, loadOwnedRow, createHashedPassword, isItemBrandIdSameDnsId, isTruthyFlag, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
@@ -77,7 +77,17 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
 
-            let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [decode_dns?.id ?? 0]);
+            // dns 쿠키는 GET /api/domain 으로 누구나 발급받는다 — 신원이 아니다.
+            // 로그인 검사가 없어 비로그인으로 브랜드 전 회원의 복호화된 실명·전화를 덤프할 수 있었다.
+            if (!decode_user || decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
+            // 조회 대상 브랜드도 토큰 기준으로 고정한다(레벨50 마스터만 dns 브랜드를 따른다).
+            const chart_brand_id = Number(decode_user?.level) >= 50
+                ? (decode_dns?.id ?? 0)
+                : Number(decode_user?.brand_id ?? 0);
+
+            let user_list = await readPool.query(`SELECT * FROM ${table_name} WHERE ${table_name}.brand_id=? AND ${table_name}.is_delete=0 `, [chart_brand_id]);
             decRows('users', user_list[0]); // 읽기 복호화(실명·전화)
             stripUserSecretsList(user_list[0]); // ⚠ SELECT * 이므로 자격증명(user_pw/user_salt/otp_token)·보안질문 해시/솔트 제거 후 반환
             let user_tree = makeTree(user_list[0], decode_user);
@@ -96,9 +106,15 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // isItemBrandIdSameDnsId 는 dns 쿠키만 본다. 그 쿠키는 누구나 발급받으므로
+            // 로그인 검사가 없으면 비로그인으로 복호화된 실명·전화를 id 순회로 긁어갈 수 있다.
+            if (!decode_user || decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
             let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
-            if (!isItemBrandIdSameDnsId(decode_dns, data)) {
+            // 브랜드 경계를 dns 가 아니라 토큰 기준으로 본다(레벨50 마스터는 교차 허용).
+            if (!data || !canWriteBrand(decode_user, data?.brand_id)) {
                 return lowLevelException(req, res);
             }
             data['sns_obj'] = JSON.parse(data?.sns_obj ?? '{}');
@@ -120,6 +136,20 @@ const userCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 예전엔 decode_user·decode_dns 를 선언만 하고 쓰지 않았다 —
+            // 쿠키 없이 DELETE /api/users/:id 만 호출해도 임의 회원이 삭제 처리됐다.
+            if (!decode_user || decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
+            let target_rows = await readPool.query(`SELECT id, brand_id, level FROM ${table_name} WHERE id=? LIMIT 1`, [id]);
+            const target_user = target_rows[0][0];
+            if (!target_user || !canWriteBrand(decode_user, target_user?.brand_id)) {
+                return lowLevelException(req, res);
+            }
+            // 자기보다 높은 레벨(가맹점 관리자가 마스터 계정 등)은 지울 수 없다.
+            if (Number(target_user?.level) > Number(decode_user?.level)) {
+                return lowLevelException(req, res);
+            }
             let result = await deleteQuery(`${table_name}`, {
                 id
             })
@@ -410,7 +440,12 @@ const userCtrl = {
             user = user[0];
             // !user 는 '대상'만 본다. 요청자 로그인 여부를 안 봐서 비로그인이면
             // undefined < user.level 이 false → 아무나 남의 계정 상태를 바꿀 수 있었다.
-            if (!decode_user || !user || decode_user?.level < user?.level) {
+            // 예전엔 레벨 비교만 했다. 고객끼리는 둘 다 0 이라 0 < 0 이 false 가 되어
+            // 로그인한 일반회원이 다른 브랜드 회원까지 상태를 바꿀 수 있었다.
+            // 운영자 이상만, 자기 브랜드 안에서, 자기보다 낮은 레벨만 바꿀 수 있게 한다.
+            if (!decode_user || !user || decode_user?.level < 10
+                || !canWriteBrand(decode_user, user?.brand_id)
+                || Number(user?.level) >= Number(decode_user?.level)) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
             let obj = {

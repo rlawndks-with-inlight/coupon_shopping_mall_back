@@ -10,9 +10,11 @@ import {
   updateQuery,
 } from "../utils.js/query-util.js";
 import {
+  canWriteBrand,
   checkDns,
   checkLevel,
   isItemBrandIdSameDnsId,
+  lowLevelException,
   response,
   settingFiles,
 } from "../utils.js/util.js";
@@ -747,7 +749,19 @@ const payCtrl = {
 
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
+      // 인가가 전혀 없어 주문 id 만 알면 로그인 없이 남의 결제를 취소할 수 있었다.
+      // 결제 취소는 운영자 이상만, 자기 브랜드 주문에 대해서만 가능하다.
+      if (!decode_user || decode_user?.level < 10) {
+        return lowLevelException(req, res);
+      }
       const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate, id } = req.body;
+      if (id) {
+        const trx_rows = await readPool.query(`SELECT id, brand_id FROM transactions WHERE id=? LIMIT 1`, [id]);
+        const trx_row = trx_rows[0][0];
+        if (!trx_row || !canWriteBrand(decode_user, trx_row?.brand_id)) {
+          return lowLevelException(req, res);
+        }
+      }
       let { pg } = req.body;
       // 프론트가 pg를 안 실어보내도, 거래의 trx_method로 결제사를 판별해 안전하게 라우팅
       // (40=페이레터, 41=포스페이. 그 외는 기존 기본 취소 흐름 유지)

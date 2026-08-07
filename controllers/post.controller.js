@@ -31,6 +31,14 @@ const postCtrl = {
             category_list = category_list[0];
 
             let category = _.find(category_list, { id: parseInt(category_id) });
+            // 요청한 게시판이 이 브랜드 것이 아니면 여기서 끊는다.
+            // 예전엔 못 찾으면 category 가 undefined → top_parent 도 undefined 가 되어
+            // 아래 '작성자 본인만' 필터가 통째로 건너뛰어졌다. 그런데 실제 데이터 쿼리에는
+            // 브랜드 조건이 없어서, 남의 브랜드 게시판 id 를 넣으면 그 브랜드 1:1문의가
+            // 비로그인 상태로 전부 조회됐다(dns 쿠키는 누구나 발급받는다).
+            if (category_id && !category) {
+                return response(req, res, 100, "success", { content: [], total: 0 });
+            }
             let top_parent = findParent(category_list, category);
             top_parent = _.find(category_list, { id: parseInt(top_parent?.id) });
 
