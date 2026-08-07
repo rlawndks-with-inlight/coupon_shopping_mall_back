@@ -11,13 +11,14 @@ import {
     checkDns,
     checkLevel,
     isItemBrandIdSameDnsId,
+    isTruthyFlag,
     lowLevelException,
     response,
     settingFiles
 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
-import { readPool } from "../config/db-pool.js";
+import { readPool, writePool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
 import { encForSave, decRow, decListContent } from "../utils.js/pii.js";
 
@@ -133,6 +134,16 @@ const userAddressCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
 
+            // 배송지는 개인정보다. 브랜드만 맞으면 통과했기 때문에(아래 isItemBrandIdSameDnsId)
+            // 같은 몰의 다른 회원 주소를 id 만 바꿔가며 읽을 수 있었다.
+            // 응답 직전 decRow 로 복호화까지 하므로 실명·연락처가 그대로 나갔다.
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
+            // 본인 것이 아니면 관리자·셀러여야 한다.
+            const isStaff = (decode_user?.level ?? 0) >= 10;
+            const assertOwner = (row) => isStaff || row?.user_id == decode_user?.id;
+
             const brandId = decode_dns?.id ?? 0;
 
             const userLevel = decode_user?.level ?? 0;
@@ -147,6 +158,9 @@ const userAddressCtrl = {
 
                         // 브랜드 매칭 검증
                         if (!isItemBrandIdSameDnsId(decode_dns, data)) {
+                            return lowLevelException(req, res);
+                        }
+                        if (!assertOwner(data)) {
                             return lowLevelException(req, res);
                         }
 
@@ -166,6 +180,9 @@ const userAddressCtrl = {
             }
 
             if (!isItemBrandIdSameDnsId(decode_dns, data)) {
+                return lowLevelException(req, res);
+            }
+            if (!assertOwner(data)) {
                 return lowLevelException(req, res);
             }
 
@@ -221,7 +238,11 @@ const userAddressCtrl = {
             if (phone !== undefined) obj.phone = phone;
             if (zonecode !== undefined) obj.zonecode = zonecode;
             if (address_type !== undefined) obj.address_type = address_type;
-            if (is_default !== undefined) obj.is_default = is_default ? 1 : 0;
+            // 프론트는 multipart/form-data 로 보내므로 값이 전부 '문자열'로 도착한다.
+            // 그래서 체크 해제(false)가 문자열 "false" 로 오는데, 그건 truthy 라
+            // `is_default ? 1 : 0` 이 항상 1 이 됐다 → 모든 배송지가 '기본배송지'가 되고
+            // 주문서에서는 전부 '기본' 뱃지가 붙었다.
+            if (is_default !== undefined) obj.is_default = isTruthyFlag(is_default) ? 1 : 0;
 
             // 권한: 관리자(레벨>=10) or 본인
             if (!(loginLevel >= 10 || loginUserId == user_id)) {
@@ -232,6 +253,15 @@ const userAddressCtrl = {
             obj = encForSave(table_name, obj); // PII(주소·받는사람·연락처) 암호화
 
             let result = await insertQuery(`${table_name}`, obj);
+
+            // 기본배송지는 회원당 하나여야 한다. 나머지를 내려주는 처리가 없어서
+            // 배송지를 여러 개 만들면 전부 기본배송지가 됐다(주문서에 '기본' 뱃지가 전부 붙었다).
+            if (obj.is_default == 1 && result?.insertId > 0) {
+                await writePool.query(
+                    `UPDATE ${table_name} SET is_default=0 WHERE user_id=? AND brand_id=? AND id!=? AND is_delete=0`,
+                    [user_id, brandId, result.insertId]
+                );
+            }
 
             // ✅ 캐시 무효화
             await invalidateUserAddressCache(brandId, user_id);
@@ -290,7 +320,11 @@ const userAddressCtrl = {
             if (phone !== undefined) obj.phone = phone;
             if (zonecode !== undefined) obj.zonecode = zonecode;
             if (address_type !== undefined) obj.address_type = address_type;
-            if (is_default !== undefined) obj.is_default = is_default ? 1 : 0;
+            // 프론트는 multipart/form-data 로 보내므로 값이 전부 '문자열'로 도착한다.
+            // 그래서 체크 해제(false)가 문자열 "false" 로 오는데, 그건 truthy 라
+            // `is_default ? 1 : 0` 이 항상 1 이 됐다 → 모든 배송지가 '기본배송지'가 되고
+            // 주문서에서는 전부 '기본' 뱃지가 붙었다.
+            if (is_default !== undefined) obj.is_default = isTruthyFlag(is_default) ? 1 : 0;
 
             // 권한 판정은 반드시 '그 주소 행의 실제 주인'으로 한다.
             //
@@ -322,6 +356,14 @@ const userAddressCtrl = {
             obj = encForSave(table_name, obj); // PII 암호화(부분 업데이트 — 있는 필드만)
 
             let result = await updateQuery(`${table_name}`, obj, id);
+
+            // 기본배송지는 회원당 하나. 이 건을 기본으로 올렸으면 나머지를 내린다.
+            if (obj.is_default == 1) {
+                await writePool.query(
+                    `UPDATE ${table_name} SET is_default=0 WHERE user_id=? AND brand_id=? AND id!=? AND is_delete=0`,
+                    [targetUserId, brandId, id]
+                );
+            }
 
             // ✅ 캐시 무효화
             await invalidateUserAddressCache(brandId, targetUserId);

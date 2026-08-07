@@ -9,6 +9,45 @@ import { readPool, writePool } from "../config/db-pool.js";
 import axios from "axios";
 import * as cheerio from "cheerio";
 
+// 테이블 → 테넌트(브랜드) 컬럼.
+//
+// sort·changeStatus 는 테이블명을 URL 로 받아 동적으로 UPDATE 한다. 그런데 WHERE 에
+// 브랜드 조건이 없어서 한 가맹점의 조작이 다른 가맹점 행까지 건드렸다.
+// sort 는 특히 나빴다 — sort_idx 가 브랜드별 독립 공간이 아니라 전역이라
+// (insertQuery 가 행 생성 직후 sort_idx 에 auto_increment id 를 박는다)
+// 형제 둘 사이 간격에 다른 브랜드 행이 수천 개 끼고, ▲▼ 한 번에 그만큼 UPDATE 가 나갔다.
+// 순서 자체는 구간 전체가 같은 방향으로 밀리는 회전이라 보존되지만,
+// 쓰기 증폭과 락 경합으로 다른 가맹점 요청이 느려지고 테넌트 경계가 새는 건 그대로다.
+//
+// 두 테이블은 예외다:
+//   posts  : brand_id 컬럼이 없다. post_categories 를 통해 브랜드에 매인다.
+//   brands : 자기 id 가 곧 테넌트 키라 브랜드로 좁히면 정렬 자체가 불가능하다 → 레벨로 막는다.
+const TENANT_COLUMN = {
+    products: 'brand_id',
+    product_categories: 'brand_id',
+    product_category_groups: 'brand_id',
+    post_categories: 'brand_id',
+    users: 'brand_id',
+    product_properties: 'brand_id',
+    product_property_groups: 'brand_id',
+    transactions: 'brand_id',
+    seller_products: 'brand_id',
+    consignments: 'brand_id',
+};
+
+const buildTenantScope = (table, brandId) => {
+    if (table === 'brands') return { sql: '', params: [] };
+    if (table === 'posts') {
+        return {
+            sql: ' AND category_id IN (SELECT id FROM post_categories WHERE brand_id=?) ',
+            params: [brandId],
+        };
+    }
+    const col = TENANT_COLUMN[table];
+    if (!col) return { sql: '', params: [] };
+    return { sql: ` AND ${col}=? `, params: [brandId] };
+};
+
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -23,6 +62,16 @@ const utilCtrl = {
             if (!ALLOWED_SORT_TABLES.includes(table)) {
                 return response(req, res, -200, "허용되지 않은 테이블입니다.", false);
             }
+            // 로그인 검사가 없었다. checkLevel 결과를 담아만 두고 아무도 보지 않았다.
+            if (!decode_user || decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
+            // brands 정렬은 브랜드로 좁힐 수 없다(자기 id 가 테넌트 키다). 개발사만 허용한다.
+            if (table === 'brands' && decode_user?.level < 50) {
+                return lowLevelException(req, res);
+            }
+            const scope = buildTenantScope(table, decode_dns?.id ?? 0);
+
             let update_sql = ` UPDATE ${table} SET `
             source_id = parseInt(source_id);
             source_sort_idx = parseInt(source_sort_idx);
@@ -33,9 +82,14 @@ const utilCtrl = {
             } else {//드래그한게 더 작을때
                 update_sql += ` sort_idx=sort_idx-1 WHERE sort_idx > ? AND sort_idx <= ? AND id!=? `;
             }
-            let update_result = await writePool.query(update_sql, [source_sort_idx, dest_sort_idx, source_id]);
+            update_sql += scope.sql;
+            let update_result = await writePool.query(update_sql, [source_sort_idx, dest_sort_idx, source_id, ...scope.params]);
 
-            let result = await writePool.query(`UPDATE ${table} SET sort_idx=? WHERE id=?`, [dest_sort_idx, source_id]);
+            // 옮기려는 행도 이 브랜드 소유여야 한다.
+            let result = await writePool.query(
+                `UPDATE ${table} SET sort_idx=? WHERE id=? ${scope.sql}`,
+                [dest_sort_idx, source_id, ...scope.params]
+            );
 
             return response(req, res, 100, "success", {});
         } catch (err) {
@@ -67,7 +121,16 @@ const utilCtrl = {
             if (!ALLOWED_COLUMNS.includes(column_name)) {
                 return response(req, res, -200, "허용되지 않은 컬럼입니다.", false);
             }
-            let result = await writePool.query(`UPDATE ${table} SET ${column_name}=? WHERE id=?`, [value, id]);
+            // 로그인은 위에서 봤지만 브랜드 조건이 없었다 — 레벨 10 계정 하나면
+            // 다른 가맹점의 임의 행 상태(노출/삭제/주문상태 등)를 바꿀 수 있었다.
+            if (table === 'brands' && decode_user?.level < 50) {
+                return lowLevelException(req, res);
+            }
+            const scope = buildTenantScope(table, decode_dns?.id ?? 0);
+            let result = await writePool.query(
+                `UPDATE ${table} SET ${column_name}=? WHERE id=? ${scope.sql}`,
+                [value, id, ...scope.params]
+            );
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)

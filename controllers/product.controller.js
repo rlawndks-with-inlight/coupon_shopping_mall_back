@@ -527,7 +527,9 @@ const productCtrl = {
                 },
                 {
                     table: 'scope',
-                    sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=?`,
+                    // 삭제된 리뷰가 평점·리뷰수에 계속 반영됐다.
+                    // 같은 파일 99행의 review_count 는 is_delete=0 을 걸고 있어 둘이 어긋나 있었다.
+                    sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=? AND is_delete=0`,
                     params: [productId],
                 },
                 {

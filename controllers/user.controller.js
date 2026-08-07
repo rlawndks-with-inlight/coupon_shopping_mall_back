@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, isTruthyFlag, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
@@ -32,10 +32,14 @@ const userCtrl = {
 
             sql += ` WHERE brand_id=? `
             params.push(decode_dns?.id ?? 0);
-            if (is_user) {
+            // multipart 로 오면 값이 문자열이라 "0" 도 truthy 다.
+            // 프론트는 마스터(본사)에서 is_user=0 을 보내 '전체(운영자 포함)'를 뜻하는데,
+            // 그게 truthy 로 걸려 늘 `AND level=0` 이 붙었다 —
+            // 본사 회원관리에서 레벨40·50 운영자 계정이 영영 안 보였다.
+            if (isTruthyFlag(is_user)) {
                 sql += ` AND level=0 `
             }
-            if (is_seller) {
+            if (isTruthyFlag(is_seller)) {
                 sql += ` AND level=10 `
             }
 
@@ -175,8 +179,14 @@ const userCtrl = {
                 oper_id, oper_trx_fee, oper_trx_fee_type
             };
             //console.log(obj)
+            // 영업자(15)는 '소속 총판'을 oper_id 로 갖는다. 여기서 같이 버리는 바람에
+            // 관리자 화면에서 총판을 지정해 저장해도 반영되지 않았고,
+            // 정산관리의 '총판 매출확인'과 대시보드 영업자 집계가 늘 0 이었다.
+            // oper_id 가 의미 없는 건 총판(20 이상)부터다 — 그때만 뺀다.
+            // seller_point(셀러 적립률)는 15 이상에서 계속 제거한다.
             if (level >= 15) {
-                const { oper_id, seller_point, ...rest } = obj;
+                const { seller_point, ...rest } = obj;
+                if (level >= 20) delete rest.oper_id;
                 obj = { ...rest, ...files }
             } else {
                 obj = { ...obj, ...files };
@@ -236,8 +246,14 @@ const userCtrl = {
                 oper_id, oper_trx_fee, oper_trx_fee_type
             };
 
+            // 영업자(15)는 '소속 총판'을 oper_id 로 갖는다. 여기서 같이 버리는 바람에
+            // 관리자 화면에서 총판을 지정해 저장해도 반영되지 않았고,
+            // 정산관리의 '총판 매출확인'과 대시보드 영업자 집계가 늘 0 이었다.
+            // oper_id 가 의미 없는 건 총판(20 이상)부터다 — 그때만 뺀다.
+            // seller_point(셀러 적립률)는 15 이상에서 계속 제거한다.
             if (level >= 15) {
-                const { oper_id, seller_point, ...rest } = obj;
+                const { seller_point, ...rest } = obj;
+                if (level >= 20) delete rest.oper_id;
                 obj = { ...rest, ...files }
             } else {
                 obj = { ...obj, ...files };
