@@ -17,10 +17,20 @@ const scheduleIndex = () => {
       return;
     }
     let return_moment = returnMoment();
-    //langProcess();
+    // 번역 대기열 소비는 아래 별도 작업으로 옮겼다.
+    // 이 작업의 가드는 INSTANCE_ID/instances 가 없으면 NaN != NaN 이 true 가 되어
+    // 통째로 건너뛴다 — 단일 인스턴스에서는 아예 안 돌았다.
     if (return_moment.includes('00:00:')) {
       //getArfighterItems();
     }
+  });
+
+  // 다국어 번역 대기열 소비 — 1분마다.
+  // 한 틱에 처리할 건수와 번역 요청 수는 langProcess 내부에서 제한한다.
+  // (무료 gtx 엔드포인트라 한꺼번에 몰아치면 차단될 수 있다)
+  schedule.scheduleJob("0 0/1 * * * *", async function () {
+    if (!isLeaderInstance()) return;
+    await langProcess();
   });
 
   // 버려진 포스페이/페이레터 결제대기(승인 안 됨) + 자식 라인 자동 정리 — 30분마다

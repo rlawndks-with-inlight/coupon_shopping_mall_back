@@ -136,7 +136,11 @@ const postCtrl = {
                 return lowLevelException(req, res);
             }
             // 작성자만 열람인 게시판은 본인 글만. 직원은 답변해야 하므로 예외.
-            if (data?.post_category_read_type == 1 && !isStaff && data?.user_id != decode_user?.id) {
+            // 예전 조건은 `data?.user_id != decode_user?.id` 였는데, JS 느슨비교라
+            // null != undefined 가 false 다 — 즉 user_id 가 NULL 로 들어간 글(비회원 작성분)은
+            // 아무 비로그인 요청이나 그대로 열람할 수 있었다.
+            // '로그인했고 + 소유자가 일치' 를 양성 조건으로 두고 그 외는 전부 막는다.
+            if (data?.post_category_read_type == 1 && !isStaff && !(decode_user?.id > 0 && data?.user_id == decode_user?.id)) {
                 return lowLevelException(req, res);
             }
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
