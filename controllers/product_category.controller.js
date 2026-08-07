@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeTree, resolveWriteBrandId, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
@@ -114,7 +114,9 @@ const productCategoryCtrl = {
                 category_en_name,
                 category_description,
                 product_category_group_id,
-                brand_id,
+                // body 의 brand_id 를 그대로 insert 하면 남의 가맹점 트리에 카테고리를 꽂을 수 있다.
+                // 쓰기 대상 브랜드는 로그인 토큰 기준으로 확정한다(레벨50 이상만 교차 브랜드 허용).
+                brand_id: resolveWriteBrandId(decode_user, brand_id),
                 another_id,
             };
             obj = { ...obj, ...files, };
@@ -147,6 +149,10 @@ const productCategoryCtrl = {
                 another_id = 0,
                 id
             } = req.body;
+            // updateQuery 는 WHERE id=? 만 걸어 브랜드 스코프가 없다.
+            // 소유 검증이 없으면 id 만 바꿔 남의 가맹점 카테고리를 수정할 수 있었다.
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
             let files = settingFiles(req.files);
             let obj = {
                 category_img,
@@ -177,6 +183,43 @@ const productCategoryCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+
+            // deleteQuery 도 WHERE id=? 만 걸어 브랜드 스코프가 없다. 소유 검증을 먼저 한다.
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
+
+            // 카테고리 삭제는 카테고리 행 하나만 is_delete=1 로 만들 뿐 상품을 전혀 건드리지 않는다.
+            // 그래서 참조 검사 없이 지우면
+            //   - 그 카테고리에 걸려 있던 상품이 고아가 되고(관리자 화면에서 카테고리가 빈칸으로 보임),
+            //   - products_categories 에 고아행이 남아 /shop/items?category_id=<삭제된id> 가 계속 열린다.
+            // 삭제 전에 참조를 확인하고 걸리면 거부한다.
+            const brand_id_for_check = target?.brand_id ?? decode_dns?.id ?? 0;
+
+            // (a) 하위 카테고리 검사 — 지금까지는 프론트에서 버튼을 disabled 하는 것뿐이라
+            //     API 를 직접 부르면 그대로 뚫렸다.
+            let child_cnt = await readPool.query(
+                `SELECT COUNT(*) AS cnt FROM ${table_name} WHERE parent_id=? AND is_delete=0`,
+                [id]
+            );
+            child_cnt = child_cnt[0][0]?.cnt ?? 0;
+            if (child_cnt > 0) {
+                return response(req, res, -100, "하위 카테고리가 있어 삭제할 수 없습니다. 하위 카테고리를 먼저 삭제해 주세요.", false)
+            }
+
+            // (b) 상품 연결 검사 — 연결테이블(products_categories)과 레거시 위치컬럼(category_id0~2)을 모두 본다.
+            //     마이그레이션이 안 된 테넌트는 연결테이블이 비어 있어서,
+            //     연결테이블만 보면 상품이 걸려 있어도 0건으로 나와 가드가 무력화된다.
+            let product_cnt = await readPool.query(
+                `SELECT COUNT(DISTINCT p.id) AS cnt FROM products p
+                  WHERE p.is_delete=0 AND p.brand_id=?
+                    AND ( p.id IN (SELECT product_id FROM products_categories WHERE category_id=? AND is_delete=0)
+                          OR p.category_id0=? OR p.category_id1=? OR p.category_id2=? )`,
+                [brand_id_for_check, id, id, id, id]
+            );
+            product_cnt = product_cnt[0][0]?.cnt ?? 0;
+            if (product_cnt > 0) {
+                return response(req, res, -100, `이 카테고리에 상품 ${product_cnt}개가 연결되어 있어 삭제할 수 없습니다. 상품의 카테고리를 먼저 옮기거나, 삭제 대신 '숨김'을 사용해 주세요.`, false)
+            }
 
             let result = await deleteQuery(`${table_name}`, {
                 id
