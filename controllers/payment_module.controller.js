@@ -1,7 +1,9 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
+// lowLevelException 은 45행에서 이미 쓰고 있었는데 import 가 빠져 있었다.
+// try/catch 가 ReferenceError 를 삼켜 '서버 에러 발생'으로 보였을 뿐, 의도한 403 이 아니었다.
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -13,6 +15,12 @@ const paymentModuleCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 결제모듈 행에는 PG 자격증명(pay_key·mid·tid)이 들어 있다.
+            // 5개 메서드 전부 로그인 검사가 없어서 dns 쿠키만으로 조회·변조·삭제가 됐다.
+            // 프론트 호출부는 pages/manager/settings/payment-modules/** 뿐이다(관리자 전용).
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const { } = req.query;
 
             let columns = [
@@ -38,6 +46,12 @@ const paymentModuleCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 결제모듈 행에는 PG 자격증명(pay_key·mid·tid)이 들어 있다.
+            // 5개 메서드 전부 로그인 검사가 없어서 dns 쿠키만으로 조회·변조·삭제가 됐다.
+            // 프론트 호출부는 pages/manager/settings/payment-modules/** 뿐이다(관리자 전용).
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const { id } = req.params;
             let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id])
             data = data[0][0];
@@ -58,6 +72,12 @@ const paymentModuleCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 결제모듈 행에는 PG 자격증명(pay_key·mid·tid)이 들어 있다.
+            // 5개 메서드 전부 로그인 검사가 없어서 dns 쿠키만으로 조회·변조·삭제가 됐다.
+            // 프론트 호출부는 pages/manager/settings/payment-modules/** 뿐이다(관리자 전용).
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const {
                 pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url, forspay_config
             } = req.body;
@@ -94,6 +114,12 @@ const paymentModuleCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 결제모듈 행에는 PG 자격증명(pay_key·mid·tid)이 들어 있다.
+            // 5개 메서드 전부 로그인 검사가 없어서 dns 쿠키만으로 조회·변조·삭제가 됐다.
+            // 프론트 호출부는 pages/manager/settings/payment-modules/** 뿐이다(관리자 전용).
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const {
                 pay_key, mid, tid, trx_type = 0, is_old_auth = 0, brand_id, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url, forspay_config,
                 id
@@ -125,6 +151,12 @@ const paymentModuleCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 결제모듈 행에는 PG 자격증명(pay_key·mid·tid)이 들어 있다.
+            // 5개 메서드 전부 로그인 검사가 없어서 dns 쿠키만으로 조회·변조·삭제가 됐다.
+            // 프론트 호출부는 pages/manager/settings/payment-modules/** 뿐이다(관리자 전용).
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const { id } = req.params;
             let result = await deleteQuery(`${table_name}`, {
                 id

@@ -64,6 +64,16 @@ const brandCtrl = {
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { id } = req.params;
+      // 브랜드 행 전체(SELECT *)를 그대로 돌려주는 자리다 — 사업자정보·외부 API 키가 들어 있다.
+      // 검사가 하나도 없어서 id 만 바꿔가며 아무 브랜드나 읽을 수 있었다.
+      // 조건은 update 와 동일하게 맞춘다(자기 브랜드는 40 이상, 남의 브랜드는 50 이상).
+      if (
+        !decode_user ||
+        (decode_user?.level < 50 && decode_user?.brand_id != id) ||
+        decode_user?.level < 40
+      ) {
+        return lowLevelException(req, res);
+      }
       let data = await readPool.query(`SELECT * FROM ${table_name} WHERE id=?`, [id]);
       data = data[0][0];
       // 행 없음 가드: id에 해당하는 브랜드가 없으면 500 크래시 대신 명확히 응답 + 로그.
@@ -306,6 +316,11 @@ const brandCtrl = {
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { id } = req.params;
+      // 검사가 전혀 없어서 id 만 알면 아무 브랜드나 지울 수 있었다.
+      // 가맹점 삭제는 본사·개발사(50) 전용이다(프론트 호출부도 settings/brands 뿐).
+      if (!decode_user || decode_user?.level < 50) {
+        return lowLevelException(req, res);
+      }
       let result = await deleteQuery(`${table_name}`, {
         id,
       });
