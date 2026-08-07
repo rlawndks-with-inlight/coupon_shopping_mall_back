@@ -29,6 +29,12 @@ const brandCtrl = {
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
       const { } = req.query;
+      // 브랜드 행 전체(SELECT *)를 돌려준다 — 사업자정보·외부 API 키가 들어 있다.
+      // 예전엔 로그인 검사가 없어서, 본사 도메인에 접속해 dns 쿠키(is_main_dns=1)만 받아오면
+      // 누구나 전 가맹점 목록을 통째로 받아갈 수 있었다.
+      if (!decode_user || decode_user?.level < 40) {
+        return lowLevelException(req, res);
+      }
       let columns = [`${table_name}.*`];
       let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
       let params = [];

@@ -200,6 +200,12 @@ const userCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 검사가 하나도 없었다. body 에 level 과 brand_id 가 그대로 들어오므로
+            // 아무나 임의 회원을 관리자 등급으로 올리거나 다른 브랜드로 옮길 수 있었다(권한상승).
+            // 프론트 호출부는 pages/manager/users/** 뿐이다.
+            if (!decode_user || decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
 
             const {
                 profile_img,

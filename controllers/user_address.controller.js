@@ -292,10 +292,31 @@ const userAddressCtrl = {
             if (address_type !== undefined) obj.address_type = address_type;
             if (is_default !== undefined) obj.is_default = is_default ? 1 : 0;
 
-            // 권한: 관리자(레벨>=10) or 본인
-            if (!(loginLevel >= 10 || loginUserId == targetUserId)) {
+            // 권한 판정은 반드시 '그 주소 행의 실제 주인'으로 한다.
+            //
+            // 예전엔 body 로 넘어온 user_id(targetUserId)를 그대로 믿었다. 그래서
+            // 남의 주소 id 에 자기 user_id 를 실어 보내면 loginUserId == targetUserId 가
+            // 성립해 통과했고, 정작 수정은 id 가 가리키는 남의 행에 적용됐다.
+            if (!decode_user) {
                 return lowLevelException(req, res);
             }
+            const [ownerRows] = await readPool.query(
+                `SELECT brand_id, user_id FROM ${table_name} WHERE id = ?`,
+                [id]
+            );
+            const ownerRow = ownerRows?.[0];
+            if (!ownerRow) {
+                return response(req, res, -100, "배송지를 찾을 수 없습니다.", false);
+            }
+            if (brandId && ownerRow.brand_id != brandId) {
+                return lowLevelException(req, res);
+            }
+            if (!(loginLevel >= 10 || loginUserId == ownerRow.user_id)) {
+                return lowLevelException(req, res);
+            }
+            // 캐시 무효화 대상도 실제 주인 기준으로 맞춘다.
+            targetUserId = ownerRow.user_id;
+            brandId = brandId || ownerRow.brand_id;
 
             obj = { ...obj, ...files };
             obj = encForSave(table_name, obj); // PII 암호화(부분 업데이트 — 있는 필드만)
@@ -323,18 +344,33 @@ const userAddressCtrl = {
 
             const brandId = decode_dns?.id ?? 0;
 
-            // 삭제 전에 user_id 가져와서 캐시 무효화에 사용
+            // 이 함수에는 권한 검사가 아예 없었다. id 만 알면 남의 배송지를 영구 삭제할 수 있었다.
+            // (아래 조회는 원래 캐시 무효화용이었는데, 소유자 확인에도 같이 쓴다)
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
             let targetUserId = null;
+            let targetBrandId = null;
             try {
                 const [rows] = await readPool.query(
-                    `SELECT user_id FROM ${table_name} WHERE id = ?`,
+                    `SELECT brand_id, user_id FROM ${table_name} WHERE id = ?`,
                     [id]
                 );
                 if (rows?.[0]) {
                     targetUserId = rows[0].user_id;
+                    targetBrandId = rows[0].brand_id;
                 }
             } catch (e) {
                 console.error("fetch user_id before delete error:", e);
+            }
+            if (!targetUserId) {
+                return response(req, res, -100, "배송지를 찾을 수 없습니다.", false);
+            }
+            if (brandId && targetBrandId != brandId) {
+                return lowLevelException(req, res);
+            }
+            if (!((decode_user?.level ?? 0) >= 10 || (decode_user?.id ?? 0) == targetUserId)) {
+                return lowLevelException(req, res);
             }
 
             let result = await deleteQuery(`${table_name}`, { id }, true);
