@@ -72,7 +72,16 @@ const transactionCtrl = {
                 params.push(trx_status);
             }
             if (is_confirm) {
-                sql += ` AND trx_status>=1 `;
+                // 고객의 '주문/배송조회' 목록. 취소 목록(cancel_status)과 구분하려는 필터다.
+                //
+                // 예전엔 `trx_status>=1` 이었는데 그러면 결제대기(0)가 통째로 빠진다.
+                // 무통장입금(10)·상품권(11)·수기결제(1)는 입금/확인 전까지 trx_status 가 0 이므로,
+                // 방금 주문한 고객이 자기 주문을 내역에서 아예 볼 수 없었다.
+                // (같은 화면의 취소요청 버튼도 0 을 취소가능으로 보는데 그 행이 목록에 없어 죽은 분기였다)
+                //
+                // 의도대로 '취소 원장 행(is_cancel=1, 금액이 음수인 별도 행)'만 제외한다.
+                // 취소된 원주문(is_cancel_trans=1)은 고객이 상태를 확인해야 하므로 남긴다.
+                sql += ` AND is_cancel=0 `;
             }
             if (cancel_status) {
                 if (cancel_status == 1) {
