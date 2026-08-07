@@ -29,6 +29,103 @@ import { encForSave } from "../utils.js/pii.js";
 
 const table_name = "transactions";
 
+// ── 결제금액 서버 재계산 ──────────────────────────────────────────────────────
+//
+// 예전엔 프론트가 계산한 amount / order_amount 를 그대로 저장하고 PG 에도 그대로 넘겼다.
+// 상품 상태 하드블록은 '살 수 있는 상품인가'만 보고 '얼마인가'는 전혀 보지 않았다.
+// 즉 브라우저에서 금액만 바꾸면 10만원짜리를 100원에 결제할 수 있었고,
+// 그 값이 transaction_orders 에까지 들어가 정산·매출 집계도 오염됐다.
+//
+// 프론트 공식(front: src/utils/shop-util.js 의 calculatorPrice + makePayData)을 그대로 재현한다:
+//   라인 상품가 = (product_sale_price + Σ option_price) * order_count
+//   라인 배송비 = 브랜드 배송비 정책이 켜져 있으면 '첫 라인에만' 1회 부과, 아니면 상품별 delivery_fee
+//   결제금액    = Σ(라인 상품가 + 라인 배송비) - use_point
+//
+// 값의 출처를 전부 DB 로 바꾼다 — 상품가·상품별 배송비는 products,
+// 옵션가는 product_options(클라이언트가 보낸 option_price 는 쓰지 않는다),
+// 배송비 정책은 brands.setting_obj.
+// 문자열 옵션({value:'블랙'})은 id 도 가격도 없으므로 0 원으로 본다.
+const recalcOrderAmount = async (brand_id, products, use_point) => {
+  const lines = Array.isArray(products) ? products : [products];
+
+  const product_ids = [...new Set(
+    lines.map((p) => parseInt(p?.id)).filter((v) => Number.isInteger(v) && v > 0)
+  )];
+  if (product_ids.length === 0) return null;
+
+  const ph = product_ids.map(() => '?').join(',');
+  let rows = await readPool.query(
+    `SELECT id, product_sale_price, delivery_fee FROM products WHERE id IN (${ph})`,
+    product_ids
+  );
+  const productById = new Map(rows[0].map((r) => [parseInt(r.id), r]));
+
+  // 주문에 실린 옵션 id 를 모아 실제 가격을 한 번에 읽는다.
+  const option_ids = [...new Set(
+    lines.flatMap((p) => (p?.groups ?? []).flatMap((g) => (g?.options ?? [])
+      .map((o) => parseInt(o?.id)).filter((v) => Number.isInteger(v) && v > 0)))
+  )];
+  let optionPriceById = new Map();
+  if (option_ids.length > 0) {
+    const oph = option_ids.map(() => '?').join(',');
+    let orows = await readPool.query(
+      `SELECT id, option_price FROM product_options WHERE id IN (${oph})`,
+      option_ids
+    );
+    optionPriceById = new Map(orows[0].map((r) => [parseInt(r.id), Number(r.option_price) || 0]));
+  }
+
+  // 브랜드 배송비 정책 (front: getBrandShipping 과 동일 규칙)
+  let brand = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [brand_id ?? 0]);
+  let setting = {};
+  try { setting = JSON.parse(brand[0][0]?.setting_obj ?? '{}'); } catch (e) { setting = {}; }
+  const shipBase = parseInt(setting.delivery_fee_default || 0) || 0;
+  const shipFreeMin = parseInt(setting.free_ship_min || 0) || 0;
+  const shipActive = shipBase > 0 || shipFreeMin > 0;
+
+  // 1) 라인별 상품가(배송비 제외)
+  const merchByIdx = [];
+  let merchTotal = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const p = productById.get(parseInt(lines[i]?.id));
+    if (!p) return null; // 없는 상품 — 호출부의 상태 하드블록이 이미 걸러내지만 방어
+
+    let optionPrice = 0;
+    for (const g of (lines[i]?.groups ?? [])) {
+      for (const o of (g?.options ?? [])) {
+        const oid = parseInt(o?.id);
+        if (Number.isInteger(oid) && oid > 0) optionPrice += (optionPriceById.get(oid) ?? 0);
+      }
+    }
+    const count = parseInt(lines[i]?.order_count);
+    if (!Number.isInteger(count) || count <= 0) return null;
+
+    const lineMerch = ((Number(p.product_sale_price) || 0) + optionPrice) * count;
+    merchByIdx[i] = lineMerch;
+    merchTotal += lineMerch;
+  }
+
+  // 2) 배송비 — 정책이 켜져 있으면 주문단위로 첫 라인에 1회
+  const shipFee = shipActive
+    ? ((shipFreeMin > 0 && merchTotal >= shipFreeMin) ? 0 : shipBase)
+    : 0;
+
+  let amount = 0;
+  const expectedLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    const p = productById.get(parseInt(lines[i]?.id));
+    const lineDelivery = shipActive
+      ? (i === 0 ? shipFee : 0)
+      : (Number(p.delivery_fee) || 0);
+    const order_amount = merchByIdx[i] + lineDelivery;
+    amount += order_amount;
+    expectedLines.push({ id: parseInt(lines[i]?.id), order_amount, delivery_fee: lineDelivery });
+  }
+
+  const point = Math.max(0, parseInt(use_point) || 0);
+  return { amount: amount - point, lines: expectedLines, merchTotal, usedPoint: point };
+};
+
 const payCtrl = {
 
   ready: async (req, res, next) => {
@@ -152,6 +249,47 @@ const payCtrl = {
         }
       }
 
+      // ── 결제금액 검증(서버 재계산) ────────────────────────────────────
+      // 여기까지는 '살 수 있는 상품인가'만 봤다. '얼마인가'를 서버가 직접 계산해 대조한다.
+      {
+        const expected = await recalcOrderAmount(brand_id, products, use_point);
+        if (!expected) {
+          return response(req, res, -100, "주문 상품 정보가 올바르지 않습니다.", false);
+        }
+
+        // 포인트 잔액은 서버에서 본다. 예전엔 프론트(OrderSheet)에서만 확인했다.
+        if (expected.usedPoint > 0) {
+          if (!(user_id > 0)) {
+            return response(req, res, -100, "비회원 주문은 포인트를 사용할 수 없습니다.", false);
+          }
+          let bal = await readPool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=?`, [user_id]);
+          const balance = Number(bal[0][0]?.point) || 0;
+          if (expected.usedPoint > balance) {
+            return response(req, res, -100, "보유 포인트가 부족합니다.", false);
+          }
+        }
+
+        if (!(expected.amount >= 0)) {
+          return response(req, res, -100, "결제금액이 올바르지 않습니다.", false);
+        }
+
+        const client_amount = parseInt(amount);
+        if (!Number.isInteger(client_amount) || client_amount !== expected.amount) {
+          // 불일치는 조작일 수도, 주문서를 띄워둔 사이 상품가가 바뀐 것일 수도 있다.
+          // 어느 쪽이든 그대로 결제시키지 않는다. 원인 추적을 위해 양쪽 값을 남긴다.
+          logger.error(`[pay.ready] 결제금액 불일치 brand=${brand_id} client=${amount} server=${expected.amount}`);
+          return response(req, res, -100, "결제금액이 변경되었습니다. 주문서를 새로고침한 뒤 다시 시도해 주세요.", false);
+        }
+
+        // 저장과 PG 전송에는 서버 계산값을 쓴다.
+        amount = expected.amount;
+        products = Array.isArray(products) ? products : [products];
+        for (let i = 0; i < products.length; i++) {
+          products[i].order_amount = expected.lines[i]?.order_amount ?? 0;
+          products[i].delivery_fee = expected.lines[i]?.delivery_fee ?? 0;
+        }
+      }
+
       let obj = {
         brand_id,
         user_id,
@@ -201,6 +339,24 @@ const payCtrl = {
       //console.log(result)
 
       let trans_id = result?.insertId;
+
+      // 사용한 포인트를 원장에 차감으로 남긴다.
+      //
+      // 예전엔 transactions.use_point 컬럼에 '기록만' 하고 points 에 음수 행을 넣지 않았다.
+      // 보유 포인트는 SUM(points.point) 로 계산되므로 잔액이 전혀 줄지 않았고,
+      // 같은 포인트로 몇 번이든 할인받을 수 있었다(가맹점은 그만큼 매출 손실).
+      // type 10 = '구매에 사용한 포인트 감소건'.
+      if (use_point > 0 && user_id > 0 && trans_id > 0) {
+        await insertQuery(`points`, {
+          brand_id,
+          user_id,
+          sender_id: 0,
+          point: -Math.abs(parseInt(use_point) || 0),
+          type: 10,
+          trans_id,
+        });
+      }
+
       let insert_item_data = [];
 
       products = Array.isArray(products) ? products : [products];
@@ -533,6 +689,22 @@ const payCtrl = {
             sender_id: 0,
             point:
               amount * -1 * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
+            type: 5,
+            trans_id: result?.insertId,
+          });
+        }
+        // 주문에 '사용했던' 포인트를 되돌린다.
+        // 위 블록은 결제로 '적립됐던' 포인트를 환수하는 것이고, 이건 그 반대다.
+        // ready 에서 use_point 만큼 음수 행(type 10)을 넣게 됐으므로 취소 시 반드시 복원해야 한다.
+        // (차감이 없던 시절엔 되돌릴 것도 없어서 이 처리가 아예 없었다 —
+        //  차감만 넣고 이걸 빠뜨리면 취소할 때마다 고객 포인트가 증발한다)
+        const restore_point = Math.abs(parseInt(pay_data?.use_point) || 0);
+        if (restore_point > 0 && pay_data?.user_id > 0) {
+          await insertQuery(`points`, {
+            brand_id: dns_data?.id ?? 0,
+            user_id: pay_data?.user_id,
+            sender_id: 0,
+            point: restore_point,
             type: 5,
             trans_id: result?.insertId,
           });
