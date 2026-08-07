@@ -116,7 +116,11 @@ const authCtrl = {
             let { user_name, user_pw, is_manager, otp_num } = req.body;
             let user = '';
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
-                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ((seller_id=? AND brand_id=?) OR level >= 10 ) LIMIT 1`, [user_name, decode_dns?.seller_id ?? 0, decode_dns?.id ?? 0]);
+                // `OR level >= 10` 에 brand_id 조건이 없어서, 아이디만 같으면
+                // 다른 가맹점의 셀러·관리자 계정으로 이 몰에 로그인이 됐다(테넌트 경계 침범).
+                // 의도는 '셀러 지정 없이도 이 브랜드의 셀러·관리자는 로그인' 이므로 브랜드를 묶는다.
+                // level 50(개발사)은 전 브랜드 관리가 정상 동작이라 아래 else 분기와 동일하게 열어둔다.
+                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ((seller_id=? AND brand_id=?) OR (level >= 10 AND brand_id=?) OR level >= 50 ) LIMIT 1`, [user_name, decode_dns?.seller_id ?? 0, decode_dns?.id ?? 0, decode_dns?.id ?? 0]);
             } else {
                 user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=? OR level >= 50 ) LIMIT 1`, [user_name, decode_dns?.id ?? 0]);
             }
@@ -256,8 +260,15 @@ const authCtrl = {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
             }
 
+            // 공개 회원가입으로는 일반회원(0)만 만들 수 있다.
+            //
+            // 예전 기준은 `level > 10` 이었다. 즉 level=10(셀러)을 스스로 지정해 가입할 수 있었고,
+            // 셀러 등급은 셀러 메뉴 접근에 더해 util/changeStatus 같은 엔드포인트의 기준선이기도 하다.
+            // 게다가 is_manager 는 checkIsManagerUrl(req) 로 정해지는데 /manager 경로가
+            // 라우터에 마운트된 적이 없어(routes/index.js) 항상 false 다 — 즉 위 조건이 유일한 방어였다.
+            // 셀러·영업자·총판 계정은 관리자 화면의 users/create 로 만든다(그쪽은 등급 검증이 있다).
             if (!is_manager) {
-                if (level > 10) {
+                if (level > 0) {
                     return lowLevelException(req, res);
                 }
             }

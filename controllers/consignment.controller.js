@@ -89,7 +89,8 @@ const consignmentCtrl = {
             };
             let product = await readPool.query(`SELECT * FROM products WHERE id=?`, [product_id]);
             product = product[0][0];
-            if (product?.consignment_user_id != decode_user?.id && decode_user?.level < 10) {
+            // 비로그인이면 decode_user 가 false 라 undefined < 10 이 false → 통과해버렸다.
+            if (!decode_user || (product?.consignment_user_id != decode_user?.id && decode_user?.level < 10)) {
                 return lowLevelException(req, res);
             }
             let is_exist_consignment = await readPool.query(`SELECT * FROM ${table_name} WHERE product_id=? AND type=? AND is_confirm=0 `, [product_id, type]);

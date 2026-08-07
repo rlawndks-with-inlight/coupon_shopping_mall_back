@@ -17,6 +17,12 @@ const postCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 관리자 경로(/api/posts)는 직원 전용이다. 여기엔 '작성자만 열람' 게이트가 없어서
+            // (그 게이트는 아래 req.IS_RETURN 블록에만 있다) 로그인만 하면 남의 문의 글이 다 보였다.
+            // 고객화면은 /api/shop/posts 로 들어오고 shop.controller 가 IS_RETURN 을 붙인다.
+            if (!req.IS_RETURN && (!decode_user || decode_user?.level < 10)) {
+                return lowLevelException(req, res);
+            }
             const { category_id } = req.query;
 
             let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;
@@ -50,7 +56,12 @@ const postCtrl = {
             }
 
             if (category_id == 91) {
-                if (decode_user?.level < 20) {
+                // 비로그인이면 undefined < 20 이 false 라 '좁히기'가 통째로 건너뛰어져
+                // 이 카테고리 글이 전부 보였다. 비로그인은 가장 좁게(아무것도 못 봄) 잡는다.
+                if (!decode_user) {
+                    sql += ` AND ${table_name}.user_id = ? `
+                    params.push(0);
+                } else if (decode_user?.level < 20) {
                     if (decode_user?.level == 15) {
                         sql += ` AND ${table_name}.user_id IN (SELECT id FROM users WHERE oper_id=?)`
                         params.push(decode_user?.id ?? 0);
@@ -100,13 +111,34 @@ const postCtrl = {
             const { id } = req.params;
             let columns = [
                 `${table_name}.*`,
-                `post_categories.brand_id`
+                `post_categories.brand_id`,
+                // 열람권한 판정에 쓴다(1 = 작성자만 열람)
+                `post_categories.post_category_read_type`
             ]
             let sql = ` SELECT ${columns.join()} FROM ${table_name} `
             sql += ` LEFT JOIN post_categories ON ${table_name}.category_id=post_categories.id `;
             sql += ` WHERE ${table_name}.id=? `
             let data = await readPool.query(sql, [id]);
             data = data[0][0];
+            // 이 함수에는 검사가 하나도 없었다. id 만 바꾸면
+            //   (1) 다른 브랜드의 글도,
+            //   (2) '작성자만 열람'(1:1 문의) 게시판의 남의 글도
+            // 그대로 열렸다. 게다가 글이 없으면 아래 JSON.parse 에서 터졌다.
+            if (!data) {
+                return response(req, res, -100, "게시글을 찾을 수 없습니다.", false)
+            }
+            if (decode_dns?.id && data?.brand_id != decode_dns?.id) {
+                return lowLevelException(req, res);
+            }
+            // 관리자 경로(/api/posts)는 직원 전용. 고객 경로는 shop.controller 가 IS_RETURN 을 붙여 들어온다.
+            const isStaff = !!decode_user && decode_user?.level >= 10;
+            if (!req.IS_RETURN && !isStaff) {
+                return lowLevelException(req, res);
+            }
+            // 작성자만 열람인 게시판은 본인 글만. 직원은 답변해야 하므로 예외.
+            if (data?.post_category_read_type == 1 && !isStaff && data?.user_id != decode_user?.id) {
+                return lowLevelException(req, res);
+            }
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
             let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id=? ORDER BY id DESC`, [id]);
             child_posts = child_posts[0];
@@ -125,6 +157,10 @@ const postCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 고객 글쓰기는 /api/shop/posts(IS_RETURN)로 들어온다. 관리자 경로는 직원 전용.
+            if (!req.IS_RETURN && (!decode_user || decode_user?.level < 10)) {
+                return lowLevelException(req, res);
+            }
             const {
                 post_title_img,
                 category_id, parent_id = -1, post_title, post_content, is_reply = 0
@@ -156,6 +192,11 @@ const postCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 고객의 글 수정은 /api/shop/posts(IS_RETURN)로 들어오고 그쪽에서 소유자를 확인한다.
+            // 관리자 경로는 직원 전용.
+            if (!req.IS_RETURN && (!decode_user || decode_user?.level < 10)) {
+                return lowLevelException(req, res);
+            }
             const {
                 post_title_img,
                 category_id, parent_id = -1, post_title, post_content, is_reply = 0, id
@@ -185,6 +226,11 @@ const postCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 삭제는 shop.controller 가 재사용하지 않는다(관리자 경로 전용).
+            // 검사가 없어 id 만 알면 아무 글이나 지워졌다.
+            if (!decode_user || decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
             let result = await deleteQuery(`${table_name}`, {
                 id
             })
