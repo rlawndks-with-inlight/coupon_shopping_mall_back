@@ -476,3 +476,18 @@ export const getReqIp = (req) => {
     requestIp = requestIp.replaceAll('::ffff:', '');
     return requestIp;
 }
+
+// multipart/form-data 로 온 '불리언'을 제대로 해석한다.
+//
+// 프론트는 apiManager 가 FormData 로 보내므로 모든 값이 문자열로 도착한다.
+// 그래서 체크 해제(false)가 문자열 "false" 로 오는데 그건 JS 에서 truthy 다.
+// `value ? 1 : 0` 같은 코드는 항상 1 이 되어, 끄려는 설정이 영영 안 꺼진다.
+// 같은 이유로 "0" 도 truthy 다.
+export const isTruthyFlag = (v) => {
+    if (v === null || v === undefined) return false;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    const s = String(v).trim().toLowerCase();
+    if (s === '' || s === 'false' || s === '0' || s === 'null' || s === 'undefined') return false;
+    return true;
+};
