@@ -116,7 +116,7 @@ const productCategoryCtrl = {
                 product_category_group_id,
                 // body 의 brand_id 를 그대로 insert 하면 남의 가맹점 트리에 카테고리를 꽂을 수 있다.
                 // 쓰기 대상 브랜드는 로그인 토큰 기준으로 확정한다(레벨50 이상만 교차 브랜드 허용).
-                brand_id: resolveWriteBrandId(decode_user, brand_id),
+                brand_id: resolveWriteBrandId(decode_user, brand_id, decode_dns),
                 another_id,
             };
             obj = { ...obj, ...files, };

@@ -502,8 +502,15 @@ export const canWriteBrand = (decode_user, target_brand_id) => {
     return Number(decode_user.brand_id) === Number(target_brand_id);
 };
 // 쓰기에 쓸 brand_id 를 확정한다. body/query 의 brand_id 는 신뢰하지 않는다.
-export const resolveWriteBrandId = (decode_user, requested) => {
-    if (Number(decode_user?.level) >= 50 && Number(requested) > 0) return Number(requested);
+export const resolveWriteBrandId = (decode_user, requested, decode_dns) => {
+    // 레벨50(마스터 관리자)은 어느 브랜드에도 속하지 않고 모든 브랜드를 설정할 수 있다.
+    // 그래서 토큰의 brand_id 를 쓰면 안 된다 — 비어 있어서 0 으로 저장돼 버린다.
+    // 요청에 실린 brand_id 를 그대로 쓰고, 없으면 지금 보고 있는 브랜드(dns)로 둔다.
+    if (Number(decode_user?.level) >= 50) {
+        if (Number(requested) > 0) return Number(requested);
+        return Number(decode_dns?.id ?? 0);
+    }
+    // 그 외에는 자기 브랜드로 고정한다. body/query 의 brand_id 는 신뢰하지 않는다.
     return Number(decode_user?.brand_id ?? 0);
 };
 // 대상 행이 호출자 브랜드 소속인지 DB 로 확인한다. 아니면 null.

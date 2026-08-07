@@ -67,7 +67,7 @@ const productPropertyGroupCtrl = {
                 is_can_select_multiple,
                 // dns 쿠키는 GET /api/domain 으로 누구나 발급받으므로 쓰기 대상 브랜드의 근거가 될 수 없다.
                 // 로그인 토큰 기준으로 확정하되, 레벨50(개발사)만 접속 도메인의 브랜드로 교차 생성이 가능하다.
-                brand_id: resolveWriteBrandId(decode_user, decode_dns?.id),
+                brand_id: resolveWriteBrandId(decode_user, decode_dns?.id, decode_dns),
             };
             obj = { ...obj, ...files };
 

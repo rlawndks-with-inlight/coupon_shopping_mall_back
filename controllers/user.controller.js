@@ -235,7 +235,7 @@ const userCtrl = {
             // 쓰기 대상 브랜드는 로그인 토큰 기준으로 확정한다(레벨50 이상만 교차 브랜드 허용).
             // 아이디 중복 검사도 같은 브랜드 기준으로 봐야 한다 —
             // body 의 brand_id 로 검사하면 엉뚱한 브랜드에서 검사해 통과한 뒤 실제로는 강제된 브랜드에 중복이 생긴다.
-            const write_brand_id = resolveWriteBrandId(decode_user, brand_id);
+            const write_brand_id = resolveWriteBrandId(decode_user, brand_id, decode_dns);
             let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0 AND id!=?`, [user_name, write_brand_id, id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)

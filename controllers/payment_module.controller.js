@@ -85,7 +85,7 @@ const paymentModuleCtrl = {
             let obj = {
                 // body 의 brand_id 를 그대로 insert 하면 다른 가맹점 앞으로 PG 자격증명 행을 만들 수 있다.
                 // 쓰기 대상 브랜드는 로그인 토큰 기준으로 확정한다(레벨50 이상만 교차 브랜드 허용).
-                brand_id: resolveWriteBrandId(decode_user, brand_id),
+                brand_id: resolveWriteBrandId(decode_user, brand_id, decode_dns),
                 pay_key, mid, tid, trx_type, is_old_auth, virtual_acct_url, virtual_acct_num, virtual_acct_name, virtual_acct_bank, gift_certificate_url
             };
             if (forspay_config !== undefined) obj.forspay_config = forspay_config; // 포스페이 수단별 PG 라우팅(JSON). 컬럼 필요(ALTER).
