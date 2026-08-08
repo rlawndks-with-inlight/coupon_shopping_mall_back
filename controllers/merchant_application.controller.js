@@ -638,19 +638,19 @@ const merchantApplicationCtrl = {
 
             // 상태별 집계(미취소)
             const statusRows = (await readPool.query(
-                `SELECT trx_status, COUNT(*) AS cnt, SUM(amount) AS amt FROM transactions WHERE brand_id=? AND is_cancel=0${dateWhere} GROUP BY trx_status`,
+                `SELECT trx_status, COUNT(*) AS cnt, SUM(amount) AS amt FROM transactions WHERE brand_id=? AND is_cancel=0 AND is_delete=0${dateWhere} GROUP BY trx_status`,
                 [brand.id, ...dateParams]
             ))[0];
             const status = {};
             statusRows.forEach((r) => { status[r.trx_status] = { cnt: Number(r.cnt) || 0, amt: Number(r.amt) || 0 }; });
             // 취소 건수
             const cancelRow = (await readPool.query(
-                `SELECT COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND is_cancel=1${dateWhere}`,
+                `SELECT COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND is_cancel=1 AND is_delete=0${dateWhere}`,
                 [brand.id, ...dateParams]
             ))[0][0];
             // 총 매출/주문(결제완료 이후, 미취소)
             const totalRow = (await readPool.query(
-                `SELECT COALESCE(SUM(amount),0) AS sales, COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND trx_status>=5 AND is_cancel=0${dateWhere}`,
+                `SELECT COALESCE(SUM(amount),0) AS sales, COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND trx_status>=5 AND is_cancel=0 AND is_delete=0${dateWhere}`,
                 [brand.id, ...dateParams]
             ))[0][0];
             // 최근 주문 30건
