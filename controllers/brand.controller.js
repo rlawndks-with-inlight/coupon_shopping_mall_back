@@ -200,6 +200,28 @@ const brandCtrl = {
       obj["seo_obj"] = JSON.stringify(obj.seo_obj);
       obj = { ...obj, ...files };
 
+      // 신규 몰의 상위(본사) 지정.
+      //
+      // 예전엔 parent_id 를 아예 넣지 않아 NULL 로 들어갔다. 그래서 '브랜드 추가'로 만든
+      // 가맹점은 본사 가맹점 현황·정산 집계(WHERE parent_id=본사id)에서 통째로 빠졌다.
+      // 가맹점 신청 승인 경로(merchant_application.controller)는 parent_id: master.id 를
+      // 넣는데 이 경로만 빠져 있어, 같은 가맹점인데 만든 경로에 따라 집계에 잡히고 안 잡히는
+      // 차이가 났다. 기준을 그 경로와 똑같이 맞춘다.
+      //   · body 로 parent_id 가 명시되면 그 값을 쓴다(수동 지정 여지).
+      //   · 아니면 MAIN_FRONT_URL 도메인 + is_main_dns=1 인 브랜드를 본사로 본다.
+      //   · 본사를 못 찾으면 넣지 않는다 — 이 DB 는 다른 프로젝트와 공유하므로
+      //     ShopGo 가 아닌 환경에서 엉뚱한 상위를 박지 않기 위해서다(기존 동작 유지).
+      const root_domain = String(process.env.MAIN_FRONT_URL || '').replace(/^www\./, '');
+      let parent_brand_id = Number(req.body?.parent_id) > 0 ? Number(req.body.parent_id) : 0;
+      if (!parent_brand_id && root_domain) {
+        const master_rows = await readPool.query(
+          `SELECT id FROM ${table_name} WHERE dns=? AND is_main_dns=1 AND is_delete=0 LIMIT 1`,
+          [root_domain]
+        );
+        parent_brand_id = Number(master_rows[0][0]?.id) || 0;
+      }
+      if (parent_brand_id > 0) obj.parent_id = parent_brand_id;
+
       let result = await insertQuery(`${table_name}`, obj);
       // 신규 몰: 기본 '카테고리' 그룹 1개 생성(단일 트리의 컨테이너 그룹). is_category_migrated=1 과 짝.
       //   스토어는 단일 합성 트리로 노출되지만, 카테고리 생성 시 유효한 group_id 컨테이너가 필요.
