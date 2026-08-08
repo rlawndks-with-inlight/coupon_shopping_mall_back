@@ -755,21 +755,27 @@ const payCtrl = {
         return lowLevelException(req, res);
       }
       const { trx_id, pay_key, amount, mid, tid, canAmt, canMsg, partCanFlg, encData, ediDate, id } = req.body;
-      if (id) {
-        const trx_rows = await readPool.query(`SELECT id, brand_id FROM transactions WHERE id=? LIMIT 1`, [id]);
-        const trx_row = trx_rows[0][0];
-        if (!trx_row || !canWriteBrand(decode_user, trx_row?.brand_id)) {
-          return lowLevelException(req, res);
-        }
+      // ⚠ id 는 필수다.
+      //   예전 형태는 `if (id) { ...소유 확인... }` 이라, id 만 빼고 호출하면 소유 검증이
+      //   통째로 건너뛰어졌다. 그런데 아래 기본 취소 흐름(fintree/weroute/payvery)은 id 없이도
+      //   body 의 trx_id·tid·pay_key 만으로 PG 에 취소를 걸어버리므로, 검증만 사라지고 취소는 그대로
+      //   나갔다 — 다른 브랜드 거래도 취소할 수 있었다.
+      //   id 가 없으면 애초에 취소 대상을 특정할 수 없으니 여기서 끊고, 검증은 무조건 통과시킨다.
+      //   (프론트 호출부 pages/manager/orders/trx/[type].js·trx-cancel/[type].js 는 항상 id 를 보낸다)
+      if (!(parseInt(id) > 0)) {
+        return response(req, res, -100, "취소할 주문을 특정할 수 없습니다.", false);
+      }
+      const trx_rows = await readPool.query(`SELECT id, brand_id, trx_method FROM transactions WHERE id=? LIMIT 1`, [id]);
+      const trx_row = trx_rows[0][0];
+      if (!trx_row || !canWriteBrand(decode_user, trx_row?.brand_id)) {
+        return lowLevelException(req, res);
       }
       let { pg } = req.body;
       // 프론트가 pg를 안 실어보내도, 거래의 trx_method로 결제사를 판별해 안전하게 라우팅
       // (40=페이레터, 41=포스페이. 그 외는 기존 기본 취소 흐름 유지)
-      if (!pg && id) {
-        let pgRows = await readPool.query(`SELECT trx_method FROM transactions WHERE id=?`, [id]);
-        let tm = pgRows?.[0]?.[0]?.trx_method;
-        if (tm == 40) pg = 'payletter';
-        else if (tm == 41) pg = 'forspay';
+      if (!pg) {
+        if (trx_row?.trx_method == 40) pg = 'payletter';
+        else if (trx_row?.trx_method == 41) pg = 'forspay';
       }
       let files = settingFiles(req.files);
       let obj = {};

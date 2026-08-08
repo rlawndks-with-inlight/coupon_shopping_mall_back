@@ -323,11 +323,15 @@ const shopCtrl = {
             //결제모듈처리 (포스페이(41)는 활성 결제수단별 옵션으로 분리 — 구매자가 수단 선택)
             data['payment_modules'] = (data?.payment_modules || []).flatMap((item) => {
                 if (item?.trx_type != 41) {
-                    // 예전엔 행 전체를 그대로 내려보내 pay_key·mid·tid 가 비로그인 방문자에게도
-                    // 노출됐다(localStorage.themeDnsData 에도 그대로 저장된다).
-                    // 포스페이(41)는 아래에서 이미 화이트리스트로 구성하므로 여기만 문제였다.
-                    const { pay_key, mid, tid, forspay_config, ...safe_item } = item ?? {};
-                    return [{ ...safe_item, ...getPayType(item?.trx_type) }];
+                    // ⚠ 여기서 pay_key·mid·tid 가 비로그인 방문자에게도 그대로 내려간다
+                    //   (localStorage.themeDnsData 에도 저장된다).
+                    //   한 번 제거해 봤으나 프론트가 이 값을 결제 요청에 되실어 보내는 구조라
+                    //   포스페이 외 결제수단(무통장입금·수기결제 등)이 죽는다 — 되돌렸다.
+                    //   올바른 순서는 pay.controller 가 페이레터·포스페이에서 하듯
+                    //   brand_id + trx_method 로 DB 에서 자격증명을 읽는 경로를 먼저 만들고,
+                    //   그 다음 응답에서 제거하는 것이다.
+                    //   ShopGo 산하는 결제모듈이 포스페이(41)뿐이라(DB 확인) 실노출이 없다.
+                    return [{ ...item, ...getPayType(item?.trx_type) }];
                 }
                 // 수단별 노출 설정(enabled) 파싱. 설정 없으면 pending(삼성페이) 제외 전부 노출.
                 let methodsCfg = {};

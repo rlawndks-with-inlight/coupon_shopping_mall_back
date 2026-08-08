@@ -31,7 +31,14 @@ const userCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
 
             sql += ` WHERE brand_id=? `
-            params.push(decode_dns?.id ?? 0);
+            // 조회 대상 브랜드는 organizationalChart 와 같은 기준으로 고정한다 —
+            // 레벨50(마스터)만 지금 보고 있는 브랜드(dns)를 따르고, 그 외는 토큰의 brand_id 다.
+            // dns 쿠키는 GET /api/domain?dns=... 로 누구나 임의 브랜드 것을 발급받을 수 있어서,
+            // dns 기준이면 가맹점 관리자가 다른 브랜드 dns 쿠키를 붙여 그 브랜드 전 회원 명단
+            // (복호화된 실명·전화 포함)을 그대로 받아갈 수 있었다.
+            params.push(Number(decode_user?.level) >= 50
+                ? (decode_dns?.id ?? 0)
+                : Number(decode_user?.brand_id ?? 0));
             // multipart 로 오면 값이 문자열이라 "0" 도 truthy 다.
             // 프론트는 마스터(본사)에서 is_user=0 을 보내 '전체(운영자 포함)'를 뜻하는데,
             // 그게 truthy 로 걸려 늘 `AND level=0` 이 붙었다 —
@@ -147,7 +154,9 @@ const userCtrl = {
                 return lowLevelException(req, res);
             }
             // 자기보다 높은 레벨(가맹점 관리자가 마스터 계정 등)은 지울 수 없다.
-            if (Number(target_user?.level) > Number(decode_user?.level)) {
+            // 자기 자신도 지울 수 없다(스스로 계정을 날리는 사고 방지).
+            if (Number(target_user?.level) > Number(decode_user?.level)
+                || Number(target_user?.id) === Number(decode_user?.id)) {
                 return lowLevelException(req, res);
             }
             let result = await deleteQuery(`${table_name}`, {
@@ -175,15 +184,30 @@ const userCtrl = {
                 seller_trx_fee, seller_trx_fee_type = 0, seller_point,
                 oper_id, oper_trx_fee, oper_trx_fee_type = 0
             } = req.body;
-            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0`, [user_name, brand_id]);
+            // 관리자가 회원을 만드는 경로다.
+            // 일반 고객 회원가입은 여기가 아니라 auth.controller 의 signUp(POST /api/auth/sign-up)이 처리한다
+            // — 확인함. 프론트에서 apiManager('users','create') 를 부르는 곳도
+            //   pages/manager/users/**(회원관리·총판관리·영업자관리) 세 곳뿐이다.
+            //   따라서 여기에 운영자 가드를 넣어도 고객 가입은 영향받지 않는다.
+            //
+            // 예전 조건은 `if (!decode_user || (level > 0 && decode_user?.level < level))` 이었다.
+            // level=0 이면 `level > 0` 이 false → && 가 통째로 false 가 되어,
+            // 로그인만 한 레벨0 고객도 임의 브랜드에 회원을 찍어낼 수 있었다.
+            // 운영자(레벨10) 이상을 먼저 요구하고, 그 다음 '자기 레벨 이하만 생성' 을 본다.
+            if (!decode_user || decode_user?.level < 10) {
+                return lowLevelException(req, res);
+            }
+            if (decode_user?.level < Number(level || 0)) {
+                return lowLevelException(req, res);
+            }
+            // 생성 대상 브랜드는 body 가 아니라 로그인 토큰 기준으로 확정한다(update 와 동일).
+            // body 의 brand_id 를 그대로 INSERT 하면 다른 가맹점에 계정을 만들어 넣을 수 있었다.
+            // 아이디 중복 검사도 '실제로 저장될 브랜드' 기준이어야 한다 —
+            // body 의 brand_id 로 검사하면 엉뚱한 브랜드에서 검사해 통과한 뒤 강제된 브랜드에 중복이 생긴다.
+            const write_brand_id = resolveWriteBrandId(decode_user, brand_id, decode_dns);
+            let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0`, [user_name, write_brand_id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
-            }
-            // 관리자가 회원을 만드는 경로다(일반 회원가입은 auth.controller 의 signUp 이 따로 처리).
-            // 예전엔 level>0 일 때만, 그것도 undefined < level 이 false 라 비로그인이 통과했다.
-            // 로그인 자체를 먼저 요구한다.
-            if (!decode_user || (level > 0 && decode_user?.level < level)) {
-                return lowLevelException(req, res);
             }
             if (seller_trx_fee_type == 0 && seller_trx_fee > 1) {
                 return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)
@@ -202,7 +226,9 @@ const userCtrl = {
             let files = settingFiles(req.files);
             let obj = {
                 profile_img,
-                brand_id, user_name, user_pw, user_salt, name, nickname, level, phone_num, note,
+                // body 의 brand_id 를 그대로 쓰면 다른 브랜드에 계정을 심을 수 있었다(update 와 동일 규칙).
+                brand_id: write_brand_id,
+                user_name, user_pw, user_salt, name, nickname, level, phone_num, note,
                 contract_img, bsin_lic_img, company_name, business_num,
                 acct_num, acct_name, acct_bank_name, acct_bank_code, shareholder_img, register_img,
                 seller_trx_fee, seller_trx_fee_type, seller_point,
@@ -443,9 +469,14 @@ const userCtrl = {
             // 예전엔 레벨 비교만 했다. 고객끼리는 둘 다 0 이라 0 < 0 이 false 가 되어
             // 로그인한 일반회원이 다른 브랜드 회원까지 상태를 바꿀 수 있었다.
             // 운영자 이상만, 자기 브랜드 안에서, 자기보다 낮은 레벨만 바꿀 수 있게 한다.
+            // 동급(>=)까지 막으면 마스터가 다른 마스터 계정을, 관리자가 동급 관리자 계정을
+            // 다루던 정상 조작이 새로 막힌다. 원래 버그(고객끼리 0<0 통과)는 앞의
+            // level<10 + canWriteBrand 로 이미 완전히 막히므로 동급 차단은 불필요하다.
+            // 대신 자기 자신 상태 변경만 따로 막는다(스스로 정지·탈퇴 처리 방지).
             if (!decode_user || !user || decode_user?.level < 10
                 || !canWriteBrand(decode_user, user?.brand_id)
-                || Number(user?.level) >= Number(decode_user?.level)) {
+                || Number(user?.level) > Number(decode_user?.level)
+                || Number(user?.id) === Number(decode_user?.id)) {
                 return response(req, res, -100, "잘못된 접근입니다.", false)
             }
             let obj = {
