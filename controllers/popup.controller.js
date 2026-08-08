@@ -4,6 +4,7 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { invalidateShopSettingCache } from "../utils.js/cache.js";
 import { readPool } from "../config/db-pool.js";
 const table_name = 'popups';
 
@@ -79,6 +80,9 @@ const popupCtrl = {
 
             let result = await insertQuery(`${table_name}`, obj);
 
+            // 팝업은 shop:setting 응답에 함께 실리고 그 캐시 TTL 이 180초다.
+            // 지우지 않으면 새 팝업이 고객 화면에 최대 3분간 안 뜬다.
+            await invalidateShopSettingCache(obj.brand_id);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -110,6 +114,7 @@ const popupCtrl = {
 
             let result = await updateQuery(`${table_name}`, obj, id);
 
+            await invalidateShopSettingCache(target?.brand_id);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -135,6 +140,7 @@ const popupCtrl = {
             let result = await deleteQuery(`${table_name}`, {
                 id
             })
+            await invalidateShopSettingCache(target?.brand_id);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)

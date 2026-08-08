@@ -5,6 +5,7 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeTree, resolveWriteBrandId, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
+import { invalidateShopSettingCache } from "../utils.js/cache.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 import { readPool } from "../config/db-pool.js";
 const table_name = 'post_categories';
@@ -101,6 +102,9 @@ const postCategoryCtrl = {
             let result = await insertQuery(`${table_name}`, obj);
             let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.insertId);
 
+            // 게시판 카테고리는 shop:setting 응답에 함께 실리고 그 캐시 TTL 이 180초다.
+            // 지우지 않으면 새 게시판이 고객 화면에 최대 3분간 안 뜬다.
+            await invalidateShopSettingCache(obj.brand_id);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -133,6 +137,7 @@ const postCategoryCtrl = {
             let result = await updateQuery(`${table_name}`, obj, id);
             let langs = await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, id);
 
+            await invalidateShopSettingCache(target?.brand_id);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -158,6 +163,7 @@ const postCategoryCtrl = {
             let result = await deleteQuery(`${table_name}`, {
                 id
             })
+            await invalidateShopSettingCache(target?.brand_id);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)

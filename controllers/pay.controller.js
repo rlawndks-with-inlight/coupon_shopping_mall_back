@@ -67,14 +67,25 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
     lines.flatMap((p) => (p?.groups ?? []).flatMap((g) => (g?.options ?? [])
       .map((o) => parseInt(o?.id)).filter((v) => Number.isInteger(v) && v > 0)))
   )];
-  let optionPriceById = new Map();
+  // 옵션 id 가 '그 상품의 옵션'인지까지 확인한다.
+  //
+  // 예전엔 id 만 보고 가격을 읽었다. 그래서 다른 상품(심지어 다른 가맹점)의 옵션 id 를
+  // 실어 보내면 그 옵션 가격이 그대로 적용됐다. 변동가가 음수인 옵션을 붙이면
+  // 결제금액을 임의로 깎을 수 있다(관리자 폼이 음수 변동가를 막지 않는다).
+  // 삭제된 옵션·그룹도 함께 걸러낸다.
+  let optionPriceById = new Map();   // `${product_id}:${option_id}` -> 가격
   if (option_ids.length > 0) {
     const oph = option_ids.map(() => '?').join(',');
     let orows = await readPool.query(
-      `SELECT id, option_price FROM product_options WHERE id IN (${oph})`,
+      `SELECT o.id, o.option_price, g.product_id
+         FROM product_options o
+         JOIN product_option_groups g ON g.id = o.group_id
+        WHERE o.id IN (${oph}) AND o.is_delete = 0 AND g.is_delete = 0`,
       option_ids
     );
-    optionPriceById = new Map(orows[0].map((r) => [parseInt(r.id), Number(r.option_price) || 0]));
+    optionPriceById = new Map(orows[0].map(
+      (r) => [`${parseInt(r.product_id)}:${parseInt(r.id)}`, Number(r.option_price) || 0]
+    ));
   }
 
   // 브랜드 배송비 정책 (front: getBrandShipping 과 동일 규칙)
@@ -93,10 +104,18 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
     if (!p) return null; // 없는 상품 — 호출부의 상태 하드블록이 이미 걸러내지만 방어
 
     let optionPrice = 0;
+    // 같은 옵션 id 를 여러 그룹에 중복해 보내면 그만큼 중복 가산·감산됐다.
+    // 라인 안에서 한 번만 센다. 그리고 그 라인 상품에 속한 옵션만 인정한다 —
+    // 남의 상품 옵션 id 는 가격 0 으로 무시된다(주문 자체는 상태 하드블록이 따로 본다).
+    const counted = new Set();
+    const line_product_id = parseInt(lines[i]?.id);
     for (const g of (lines[i]?.groups ?? [])) {
       for (const o of (g?.options ?? [])) {
         const oid = parseInt(o?.id);
-        if (Number.isInteger(oid) && oid > 0) optionPrice += (optionPriceById.get(oid) ?? 0);
+        if (!(Number.isInteger(oid) && oid > 0)) continue;
+        if (counted.has(oid)) continue;
+        counted.add(oid);
+        optionPrice += (optionPriceById.get(`${line_product_id}:${oid}`) ?? 0);
       }
     }
     const count = parseInt(lines[i]?.order_count);
