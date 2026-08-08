@@ -821,7 +821,10 @@ const merchantApplicationCtrl = {
     // 매니저 전용: 상태 변경
     updateStatus: async (req, res, next) => {
         try {
-            if (!await requireMasterManager(req, res)) return;
+            // 승인(=브랜드+레벨40 계정 생성)과 신청 삭제는 되돌리기 어려운 조작이다.
+            // 기본값 10 이면 본사 브랜드 소속 레벨10~20 계정도 가맹점을 개설·삭제할 수 있었다 —
+            // 정작 '가맹점 비밀번호 초기화'는 40 을 요구해 기준이 역전돼 있었다. 40 으로 맞춘다.
+            if (!await requireMasterManager(req, res, 40)) return;
             const { id, status, memo, brand_id, admin_id } = req.body;
             if (!id || !status) {
                 return response(req, res, -100, "필수 항목이 누락되었습니다", false);
@@ -885,7 +888,10 @@ const merchantApplicationCtrl = {
     // 매니저 전용: 삭제
     remove: async (req, res, next) => {
         try {
-            if (!await requireMasterManager(req, res)) return;
+            // 승인(=브랜드+레벨40 계정 생성)과 신청 삭제는 되돌리기 어려운 조작이다.
+            // 기본값 10 이면 본사 브랜드 소속 레벨10~20 계정도 가맹점을 개설·삭제할 수 있었다 —
+            // 정작 '가맹점 비밀번호 초기화'는 40 을 요구해 기준이 역전돼 있었다. 40 으로 맞춘다.
+            if (!await requireMasterManager(req, res, 40)) return;
             const { id } = req.params;
             await deleteQuery(`${table_name}`, { id });
             return response(req, res, 100, "success", {});
