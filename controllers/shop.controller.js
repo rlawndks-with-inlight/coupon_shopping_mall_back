@@ -882,30 +882,23 @@ const getMainObjContentByIdList = (main_obj_ = [], type, content_list = [], is_c
                 }
             } else if (is_children) {
                 section.list = (section?.list ?? []).map(children => {
-                    children.list = (children?.list ?? []).map(id => {
-                        if (content_obj[id]) {
-                            return {
-                                ...content_obj[id][0],
-                            }
-                        } else {
-                            return {}
-                        }
-                    })
+                    // 없는 상품(삭제·비공개) 자리에 {} 를 채우면 프론트가 그걸 정상 상품으로 보고
+                    // item?.product_name.length 에서 TypeError 를 낸다(옵셔널체이닝이 item 에서 끊긴다).
+                    // 앱에 ErrorBoundary 가 없어 그 예외 하나로 홈이 통째로 백지가 됐다. 아예 뺀다.
+                    children.list = (children?.list ?? [])
+                        .filter(id => !!content_obj[id])
+                        .map(id => ({ ...content_obj[id][0] }))
                     return {
                         ...children,
                     }
                 })
                 return { ...section };
             } else {
-                let section_list = (section?.list ?? []).map(id => {
-                    if (content_obj[id]) {
-                        return {
-                            ...content_obj[id][0],
-                        }
-                    } else {
-                        return {}
-                    }
-                })
+                // 없는 상품(삭제·비공개) 자리에 {} 를 채우면 프론트가 정상 상품으로 오인해
+                // item?.product_name.length 에서 TypeError → 홈 백지가 된다. 아예 뺀다.
+                let section_list = (section?.list ?? [])
+                    .filter(id => !!content_obj[id])
+                    .map(id => ({ ...content_obj[id][0] }))
                 return {
                     ...section,
                     list: section_list,
