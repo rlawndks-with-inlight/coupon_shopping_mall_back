@@ -92,7 +92,10 @@ const postCtrl = {
                 return item?.id
             });
             post_ids.unshift(0);
-            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id IN (${post_ids.map(() => '?').join(',')}) ORDER BY id DESC`, post_ids);
+            // 답변 삭제는 소프트 삭제(query-util deleteQuery 가 is_delete=1 로 UPDATE)다.
+            // is_delete 를 안 걸러서 지운 답변이 replies 에 그대로 실렸고,
+            // 목록은 '답변완료'로 뜨고 상세에는 지운 본문까지 보였다.
+            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id IN (${post_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY id DESC`, post_ids);
             child_posts = child_posts[0];
             data.content = data.content.map((item) => {
                 return {
@@ -152,7 +155,8 @@ const postCtrl = {
                 return lowLevelException(req, res);
             }
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
-            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id=? ORDER BY id DESC`, [id]);
+            // 목록과 같은 이유로 지운 답변을 제외한다.
+            let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id=? AND is_delete=0 ORDER BY id DESC`, [id]);
             child_posts = child_posts[0];
             data.replies = child_posts;
             return response(req, res, 100, "success", data)

@@ -491,13 +491,19 @@ const merchantApplicationCtrl = {
             if (!await requireMasterManager(req, res)) return;
             let columns = [`${table_name}.*`];
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+            // 예전엔 status 값을 SQL 문자열에 직접 이어 붙였다(홑따옴표만 제거).
+            // 역슬래시로 끝나는 값이면 닫는 따옴표가 이스케이프돼 뒤 절과 섞인다.
+            // 본사 매니저 인증 뒤라 외부 공격 경로는 아니지만 바인딩으로 바꾼다.
+            // getSelectQueryList 의 5번째 인자가 바인딩 파라미터 배열이다.
+            let params = [];
             sql += ` WHERE 1=1 `;
             if (req.query.status) {
-                sql += ` AND ${table_name}.status='${String(req.query.status).replace(/'/g, '')}' `;
+                sql += ` AND ${table_name}.status=? `;
+                params.push(String(req.query.status));
             }
             // 정렬/LIMIT은 getSelectQueryList가 자체적으로 붙인다(기본 id DESC = 최신순).
             // 여기서 ORDER BY를 또 붙이면 ORDER BY가 중복돼 SQL 문법 오류가 난다.
-            const data = await getSelectQueryList(sql, columns, req.query);
+            const data = await getSelectQueryList(sql, columns, req.query, [], params);
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err);
