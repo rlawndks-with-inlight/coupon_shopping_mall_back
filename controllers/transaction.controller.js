@@ -87,11 +87,7 @@ const transactionCtrl = {
                 if (cancel_status == 1) {
                     sql += ` AND trx_status=1 AND is_cancel=0  `;
                 } else if (cancel_status == 2) {
-                    // '취소완료'. 예전엔 취소 원장 행(is_cancel=1, 음수 금액)만 봤다.
-                    // 그런데 관리자가 PG 포털에서 직접 취소하면 원주문에 is_cancel_trans=1 만 찍히고
-                    // 원장 행은 안 생긴다 — 그 주문이 전체목록(cancel_status=0 → is_cancel_trans=0 제외)
-                    // 에서도 빠지고 여기에도 안 떠서 관리자가 어디서도 볼 수 없었다.
-                    sql += ` AND (is_cancel=1 OR is_cancel_trans=1) `;
+                    sql += ` AND is_cancel=1 `;
                 } else if (cancel_status == 5) {
                     // 고객 '반품/환불조회' — 취소요청(trx_status=1) + 취소완료(is_cancel/is_cancel_trans) 전부.
                     // 프론트(shop demo-4·5·9 history.js)가 예전부터 5를 보내왔는데 여기 분기가 없었다.
