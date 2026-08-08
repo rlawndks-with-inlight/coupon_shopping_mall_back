@@ -622,6 +622,15 @@ const shopCtrl = {
                     return response(req, res, -200, "카테고리 id는 필수 입니다.", false)
                 }
                 let data = await postCtrl.list({ ...req, IS_RETURN: true }, res, next);
+                // 안쪽 컨트롤러가 거부한 결과를 '성공'으로 포장하지 않는다.
+                // IS_RETURN 이면 lowLevelException 은 응답을 보내지 않고
+                // { result: -150, message: '권한이 없습니다.', data: false } 를 돌려준다(util.js).
+                // 예전엔 그걸 data?.data(=false) 로 벗겨 무조건 100/success 로 감쌌다.
+                // 그래서 '작성자만 열람' 게시판에서 남의 글을 열면 거부인데도 성공으로 내려가
+                // 프론트가 빈 글쓰기 폼을 띄웠다 — 고객은 글이 사라진 줄 안다.
+                if (!data || Number(data?.result) < 0) {
+                    return response(req, res, data?.result ?? -200, data?.message ?? '권한이 없습니다.', false);
+                }
                 data = data?.data;
                 return response(req, res, 100, "success", data);
             } catch (err) {
@@ -638,6 +647,15 @@ const shopCtrl = {
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
                 let data = await postCtrl.get({ ...req, IS_RETURN: true }, res, next);
+                // 안쪽 컨트롤러가 거부한 결과를 '성공'으로 포장하지 않는다.
+                // IS_RETURN 이면 lowLevelException 은 응답을 보내지 않고
+                // { result: -150, message: '권한이 없습니다.', data: false } 를 돌려준다(util.js).
+                // 예전엔 그걸 data?.data(=false) 로 벗겨 무조건 100/success 로 감쌌다.
+                // 그래서 '작성자만 열람' 게시판에서 남의 글을 열면 거부인데도 성공으로 내려가
+                // 프론트가 빈 글쓰기 폼을 띄웠다 — 고객은 글이 사라진 줄 안다.
+                if (!data || Number(data?.result) < 0) {
+                    return response(req, res, data?.result ?? -200, data?.message ?? '권한이 없습니다.', false);
+                }
                 data = data?.data;
                 return response(req, res, 100, "success", data);
             } catch (err) {
@@ -747,6 +765,15 @@ const shopCtrl = {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 let data = await productFaqCtrl.list({ ...req, IS_RETURN: true }, res, next);
+                // 안쪽 컨트롤러가 거부한 결과를 '성공'으로 포장하지 않는다.
+                // IS_RETURN 이면 lowLevelException 은 응답을 보내지 않고
+                // { result: -150, message: '권한이 없습니다.', data: false } 를 돌려준다(util.js).
+                // 예전엔 그걸 data?.data(=false) 로 벗겨 무조건 100/success 로 감쌌다.
+                // 그래서 '작성자만 열람' 게시판에서 남의 글을 열면 거부인데도 성공으로 내려가
+                // 프론트가 빈 글쓰기 폼을 띄웠다 — 고객은 글이 사라진 줄 안다.
+                if (!data || Number(data?.result) < 0) {
+                    return response(req, res, data?.result ?? -200, data?.message ?? '권한이 없습니다.', false);
+                }
                 data = data?.data;
                 return response(req, res, 100, "success", data);
             } catch (err) {
@@ -763,6 +790,15 @@ const shopCtrl = {
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
                 let data = await productFaqCtrl.get({ ...req, IS_RETURN: true }, res, next);
+                // 안쪽 컨트롤러가 거부한 결과를 '성공'으로 포장하지 않는다.
+                // IS_RETURN 이면 lowLevelException 은 응답을 보내지 않고
+                // { result: -150, message: '권한이 없습니다.', data: false } 를 돌려준다(util.js).
+                // 예전엔 그걸 data?.data(=false) 로 벗겨 무조건 100/success 로 감쌌다.
+                // 그래서 '작성자만 열람' 게시판에서 남의 글을 열면 거부인데도 성공으로 내려가
+                // 프론트가 빈 글쓰기 폼을 띄웠다 — 고객은 글이 사라진 줄 안다.
+                if (!data || Number(data?.result) < 0) {
+                    return response(req, res, data?.result ?? -200, data?.message ?? '권한이 없습니다.', false);
+                }
                 data = data?.data;
                 return response(req, res, 100, "success", data);
             } catch (err) {
