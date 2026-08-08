@@ -168,6 +168,34 @@ const payCtrl = {
         have_brother
       } = req.body;
 
+      // ── 주문 주체와 브랜드는 서버가 확정한다 ──────────────────────────────
+      //
+      // 예전엔 이 함수가 decode_user·decode_dns 를 선언만 하고 한 번도 쓰지 않았다.
+      // brand_id 와 user_id 를 req.body 에서 그대로 받아 그대로 INSERT 했고,
+      // 포인트 잔액 검사(SELECT SUM(point) FROM points WHERE user_id=?)와
+      // 차감 원장(points 에 음수 행 insert)까지 전부 body 의 user_id 를 썼다.
+      //
+      // 그래서 남의 user_id 를 실어 보내면 **그 사람 포인트로 내 주문을 할인받고
+      // 그 사람 잔액이 깎였다.** brand_id 도 마음대로 지정해 다른 가맹점 장부에
+      // 주문을 꽂을 수 있었다.
+      //
+      // 프론트가 보내는 값은 원래 themeDnsData.id 와 로그인 유저 id 다
+      // (views/shop/order/OrderSheet.js:105-106). 즉 서버가 스스로 아는 값과 같아서
+      // 정상 주문에는 아무 영향이 없다.
+      //
+      // 비회원 주문은 user_id=0 이 정상이다(비회원은 포인트를 쓸 수 없게 아래에서 막는다).
+      // dns 쿠키는 JWT 서명본이라 위조할 수 없고, 스토어프론트는 페이지 로드마다
+      // /api/domain 으로 발급받는다(front: components/settings/SettingsContext.js:155).
+      user_id = Number(decode_user?.id) > 0 ? Number(decode_user.id) : 0;
+      if (!(Number(decode_dns?.id) > 0)) {
+        return response(req, res, -100, "잘못된 접근입니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.", false);
+      }
+      brand_id = Number(decode_dns.id);
+      // ⚠ 남은 것: 아래 상품 상태 검사(SELECT id, status FROM products WHERE id IN (...))와
+      //   recalcOrderAmount 의 상품 조회에는 아직 브랜드 스코프가 없다. 다른 브랜드 상품 id 를
+      //   섞어 보내면 이 브랜드 주문에 그 상품이 들어간다(금액은 실제 상품 행에서 재계산하므로
+      //   금전 손실은 없다). 셀러·위탁 상품이 상위 브랜드 소속인 경우가 있어 스코프를 좁히면
+      //   정상 주문을 막을 수 있어 확인 후 별도로 처리한다.
 
       if (trx_type == 'auth') {
         trx_method = 2;
