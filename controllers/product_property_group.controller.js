@@ -57,6 +57,17 @@ const productPropertyGroupCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 상품 카테고리/그룹/특성그룹의 쓰기는 관리자(레벨40) 전용이다.
+            // 이 화면들은 관리자 메뉴에서 isManager()=level>=40 으로만 열린다
+            // (front: layouts/manager/nav/config-navigation.js:247-262).
+            // 그런데 여기엔 checkLevel(...,0) 뿐이라 레벨 검사가 없었다 —
+            // 그 몰에 가입한 일반 고객(레벨0) 토큰으로 API 를 직접 불러
+            // 카테고리를 만들거나 지워 고객 메뉴 트리를 훼손할 수 있었다.
+            // (brand_id 강제·소유 검증은 이미 있었고, 없던 것은 레벨 검사다)
+            // popup.controller.js:67 과 같은 형태로 맞춘다.
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const {
                 property_group_name,
                 is_can_select_multiple = 0,
@@ -87,6 +98,17 @@ const productPropertyGroupCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 상품 카테고리/그룹/특성그룹의 쓰기는 관리자(레벨40) 전용이다.
+            // 이 화면들은 관리자 메뉴에서 isManager()=level>=40 으로만 열린다
+            // (front: layouts/manager/nav/config-navigation.js:247-262).
+            // 그런데 여기엔 checkLevel(...,0) 뿐이라 레벨 검사가 없었다 —
+            // 그 몰에 가입한 일반 고객(레벨0) 토큰으로 API 를 직접 불러
+            // 카테고리를 만들거나 지워 고객 메뉴 트리를 훼손할 수 있었다.
+            // (brand_id 강제·소유 검증은 이미 있었고, 없던 것은 레벨 검사다)
+            // popup.controller.js:67 과 같은 형태로 맞춘다.
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const {
                 property_group_name,
                 is_can_select_multiple = 0,
@@ -118,6 +140,17 @@ const productPropertyGroupCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 상품 카테고리/그룹/특성그룹의 쓰기는 관리자(레벨40) 전용이다.
+            // 이 화면들은 관리자 메뉴에서 isManager()=level>=40 으로만 열린다
+            // (front: layouts/manager/nav/config-navigation.js:247-262).
+            // 그런데 여기엔 checkLevel(...,0) 뿐이라 레벨 검사가 없었다 —
+            // 그 몰에 가입한 일반 고객(레벨0) 토큰으로 API 를 직접 불러
+            // 카테고리를 만들거나 지워 고객 메뉴 트리를 훼손할 수 있었다.
+            // (brand_id 강제·소유 검증은 이미 있었고, 없던 것은 레벨 검사다)
+            // popup.controller.js:67 과 같은 형태로 맞춘다.
+            if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
             const { id } = req.params;
             // deleteQuery 도 WHERE id=? 만 걸어 브랜드 스코프가 없다. 소유 검증을 먼저 한다.
             const target = await loadOwnedRow(readPool, table_name, id, decode_user);
