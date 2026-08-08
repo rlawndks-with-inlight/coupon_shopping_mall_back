@@ -6,6 +6,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
 import { readPool, writePool } from "../config/db-pool.js";
+import { redisClient } from "../config/redis-client.js";
 import axios from "axios";
 import * as cheerio from "cheerio";
 
@@ -46,6 +47,41 @@ const buildTenantScope = (table, brandId) => {
     const col = TENANT_COLUMN[table];
     if (!col) return { sql: '', params: [] };
     return { sql: ` AND ${col}=? `, params: [brandId] };
+};
+
+// changeStatus 로 바뀐 행이 Redis 에 캐시돼 있으면 지운다.
+//
+// changeStatus 는 raw UPDATE 만 해서 캐시를 그대로 뒀다. 캐시 TTL 이 300초라
+// 관리자가 상품을 품절·비공개로 내려도 고객 화면에는 최대 5분간 그대로 보였고,
+// 그동안 장바구니에 담겨 결제까지 갈 수 있었다.
+//
+// 키 형태(각 컨트롤러에서 만드는 그대로):
+//   product:detail:{brandId}:{sellerId}:{userId}:{ret|nor}:{id|code}:{productId}
+//   product:list:...  (JSON 안에 "brandId":N 이 들어간다)
+//   shop:setting:{brandId}:{userId}
+// 캐시 삭제가 실패해도 요청은 성공으로 둔다 — TTL 로 자연 만료되므로
+// 여기서 에러를 내면 멀쩡한 상태변경까지 실패로 보이게 된다.
+const invalidateStatusCache = async (table, id, brandId) => {
+    if (!redisClient?.isOpen) return;
+    try {
+        if (table === 'products') {
+            for await (const key of redisClient.scanIterator({ MATCH: `product:detail:${brandId}:*`, COUNT: 100 })) {
+                if (key.endsWith(`:${id}`)) await redisClient.del(key);
+            }
+            for await (const key of redisClient.scanIterator({ MATCH: `product:list:*`, COUNT: 100 })) {
+                if (key.includes(`"brandId":${brandId}`) || key.includes(`"brandId": ${brandId}`)) {
+                    await redisClient.del(key);
+                }
+            }
+        } else if (table === 'brands') {
+            // 브랜드 노출/상태가 바뀌면 스토어프론트 설정 캐시도 낡는다.
+            for await (const key of redisClient.scanIterator({ MATCH: `shop:setting:${id}:*`, COUNT: 100 })) {
+                await redisClient.del(key);
+            }
+        }
+    } catch (e) {
+        console.error('Redis cache invalidation error (changeStatus):', e);
+    }
 };
 
 const utilCtrl = {
@@ -131,6 +167,14 @@ const utilCtrl = {
                 `UPDATE ${table} SET ${column_name}=? WHERE id=? ${scope.sql}`,
                 [value, id, ...scope.params]
             );
+            // ── 캐시 무효화 ─────────────────────────────────────────────────
+            // 이 핸들러는 raw UPDATE 만 하고 Redis 를 건드리지 않았다.
+            // 그런데 관리자 상품목록의 상태 <Select>(판매중단·품절·비공개)가 여기로 온다
+            // (front: pages/manager/products/list.js:624 → apiUtil('products/status','update')).
+            // 상세·목록 캐시 TTL 이 300초라, 비공개로 내린 상품이 고객 화면에서 최대 5분간
+            // 그대로 보이고 그동안 장바구니에 담겨 결제까지 갈 수 있었다.
+            // product.controller 의 update/remove 와 같은 방식으로 지운다.
+            await invalidateStatusCache(table, id, decode_dns?.id ?? 0);
             return response(req, res, 100, "success", {});
         } catch (err) {
             console.log(err)
