@@ -106,6 +106,14 @@ const shopCtrl = {
             for (var i = 0; i < categoryDepth; i++) {
                 product_and_property_columns.push(`product_categories${i}.category_en_name AS category_en_name${i}`);
             }
+            // 홈 '속성그룹'(items-property-group-{id}) 섹션의 상품 소스.
+            // 예전 조건은 `AND (status=0 OR 1 OR 6 OR 7)` 이었다. 앞뒤가 안 맞았다 —
+            //   · 새상품(3)을 통째로 제외했다. 파는 상태인데(getProductStatus 가 info) 이 섹션에만 안 떴다.
+            //   · 반대로 중단됨(1)은 통과시켰다. 살 수 없는 상품이 홈에 올라왔다.
+            // 같은 파일의 다른 홈 섹션 쿼리(위 product_sql)와 스토어프론트 목록·검색·상세는
+            // 전부 '비공개(5)만 제외' 규칙인데 여기만 별도 화이트리스트를 들고 있었다.
+            // 규칙을 하나로 맞춘다. 품절·중단됨은 카드가 각자 뱃지로 표시한다.
+            // ⚠ 주석은 반드시 템플릿 리터럴 '밖'에 둔다 — 안에 넣으면 SQL 로 그대로 나간다.
             let product_and_property_sql = `
             WITH RankedProperties AS (
                 SELECT
@@ -118,7 +126,7 @@ const shopCtrl = {
                     products_and_properties
                     LEFT JOIN products ON products_and_properties.product_id=products.id
                     WHERE products.is_delete=0
-                    AND (products.status=0 OR products.status=1 OR products.status=6 OR products.status=7)
+                    AND products.status!=5
                     AND products.brand_id=?
             )
             SELECT
