@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
@@ -328,6 +328,12 @@ const transactionCtrl = {
                 buyer_phone,
                 //check_img
             } = req.body;
+            // 레벨40 검사만으로는 '어느 가맹점의 관리자인지'가 걸러지지 않는다.
+            // updateQuery 는 WHERE id=? 만 걸어 브랜드 스코프가 없어서
+            // A 가맹점 관리자가 id 만 바꿔 B 가맹점 주문의 금액·승인번호·주문자정보를 고칠 수 있었다.
+            // (레벨50 마스터는 canWriteBrand 에서 전 브랜드 허용)
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
             let files = settingFiles(req.files);
             let obj = {
                 trx_dt,
@@ -361,6 +367,10 @@ const transactionCtrl = {
             if (!decode_user || decode_user?.level < 40) {
                 return lowLevelException(req, res);
             }
+            // deleteQuery 도 WHERE id=? 만 걸어 브랜드 스코프가 없다 —
+            // 다른 가맹점 주문을 지울 수 있어 소유 검증을 먼저 한다.
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
             let result = await deleteQuery(`${table_name}`, {
                 id
             })
@@ -384,6 +394,9 @@ const transactionCtrl = {
             if (!decode_user || decode_user?.level < 40) {
                 return lowLevelException(req, res);
             }
+            // 송장변경도 id 만으로 동작해 다른 가맹점 주문의 송장번호를 덮어쓸 수 있었다.
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
             let result = await updateQuery(`${table_name}`, {
                 invoice_num
             }, id)
