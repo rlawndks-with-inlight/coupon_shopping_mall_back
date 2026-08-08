@@ -95,7 +95,11 @@ const paymentModuleCtrl = {
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` WHERE ${table_name}.brand_id=? `;
             obj = { ...obj, ...files };
-            let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=? AND brand_id=?`, [trx_type, decode_dns?.id ?? 0]);
+            // 중복 검사 브랜드는 '실제로 저장될 브랜드'와 같아야 한다.
+            // insert 는 resolveWriteBrandId(레벨50은 body.brand_id 허용) 결과를 쓰는데
+            // 검사만 decode_dns 기준이라, 레벨50이 자기 dns 와 다른 브랜드로 만들면
+            // 엉뚱한 브랜드에서 검사해 통과한 뒤 대상 브랜드에 중복 행이 생겼다.
+            let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=? AND brand_id=?`, [trx_type, obj.brand_id]);
             is_exist_trx_type = is_exist_trx_type[0];
             if (is_exist_trx_type.length > 0) {
                 return response(req, res, -100, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)
@@ -137,7 +141,12 @@ const paymentModuleCtrl = {
             };
             if (forspay_config !== undefined) obj.forspay_config = forspay_config; // 포스페이 수단별 PG 라우팅(JSON). 컬럼 필요(ALTER).
             obj = { ...obj, ...files };
-            let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=? AND brand_id=? AND id!=?`, [trx_type, decode_dns?.id ?? 0, id]);
+            // create 와 같은 이유 — 실제 대상 브랜드 기준으로 검사한다.
+            // update 는 brand_id 를 바꾸지 않으므로 기준은 '수정 대상 행의 브랜드'다
+            // (loadOwnedRow 가 소유 검증과 함께 그 행을 돌려준다).
+            // decode_dns 기준이면 레벨50이 다른 브랜드의 모듈을 고칠 때 엉뚱한 브랜드에서
+            // 검사해 통과한 뒤 대상 브랜드에 중복 행이 생긴다.
+            let is_exist_trx_type = await readPool.query(`SELECT * FROM ${table_name} WHERE trx_type=? AND brand_id=? AND id!=?`, [trx_type, target?.brand_id, id]);
             is_exist_trx_type = is_exist_trx_type[0];
             if (is_exist_trx_type.length > 0) {
                 return response(req, res, -200, `결제타입은 브랜드당 한개씩만 가능합니다.`, false)

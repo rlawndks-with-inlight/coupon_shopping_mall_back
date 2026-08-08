@@ -491,13 +491,19 @@ const merchantApplicationCtrl = {
             if (!await requireMasterManager(req, res)) return;
             let columns = [`${table_name}.*`];
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
+            // 예전엔 status 값을 SQL 문자열에 직접 이어 붙였다(홑따옴표만 제거).
+            // 역슬래시로 끝나는 값이면 닫는 따옴표가 이스케이프돼 뒤 절과 섞인다.
+            // 본사 매니저 인증 뒤라 외부 공격 경로는 아니지만 바인딩으로 바꾼다.
+            // getSelectQueryList 의 5번째 인자가 바인딩 파라미터 배열이다.
+            let params = [];
             sql += ` WHERE 1=1 `;
             if (req.query.status) {
-                sql += ` AND ${table_name}.status='${String(req.query.status).replace(/'/g, '')}' `;
+                sql += ` AND ${table_name}.status=? `;
+                params.push(String(req.query.status));
             }
             // 정렬/LIMIT은 getSelectQueryList가 자체적으로 붙인다(기본 id DESC = 최신순).
             // 여기서 ORDER BY를 또 붙이면 ORDER BY가 중복돼 SQL 문법 오류가 난다.
-            const data = await getSelectQueryList(sql, columns, req.query);
+            const data = await getSelectQueryList(sql, columns, req.query, [], params);
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err);
@@ -638,19 +644,19 @@ const merchantApplicationCtrl = {
 
             // 상태별 집계(미취소)
             const statusRows = (await readPool.query(
-                `SELECT trx_status, COUNT(*) AS cnt, SUM(amount) AS amt FROM transactions WHERE brand_id=? AND is_cancel=0${dateWhere} GROUP BY trx_status`,
+                `SELECT trx_status, COUNT(*) AS cnt, SUM(amount) AS amt FROM transactions WHERE brand_id=? AND is_cancel=0 AND is_delete=0${dateWhere} GROUP BY trx_status`,
                 [brand.id, ...dateParams]
             ))[0];
             const status = {};
             statusRows.forEach((r) => { status[r.trx_status] = { cnt: Number(r.cnt) || 0, amt: Number(r.amt) || 0 }; });
             // 취소 건수
             const cancelRow = (await readPool.query(
-                `SELECT COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND is_cancel=1${dateWhere}`,
+                `SELECT COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND is_cancel=1 AND is_delete=0${dateWhere}`,
                 [brand.id, ...dateParams]
             ))[0][0];
             // 총 매출/주문(결제완료 이후, 미취소)
             const totalRow = (await readPool.query(
-                `SELECT COALESCE(SUM(amount),0) AS sales, COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND trx_status>=5 AND is_cancel=0${dateWhere}`,
+                `SELECT COALESCE(SUM(amount),0) AS sales, COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND trx_status>=5 AND is_cancel=0 AND is_delete=0${dateWhere}`,
                 [brand.id, ...dateParams]
             ))[0][0];
             // 최근 주문 30건
