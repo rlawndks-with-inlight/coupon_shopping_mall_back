@@ -74,7 +74,16 @@ export const deleteQuery = async (table, where_obj, delete_true) => {
     return result[0];
 }
 export const updateQuery = async (table, obj, id) => {
-    let keys = Object.keys(obj);
+    // 값이 undefined 인 키는 SET 절에서 뺀다.
+    //
+    // Object.keys 는 값이 undefined 인 키도 돌려주고, mysql2 는 그걸 NULL 로 이스케이프한다.
+    // 그래서 호출부가 '보내지 않은' 컬럼까지 NULL 로 덮어써졌다.
+    // 실제 사고: 회원정보수정(auth.changeInfo)은 nickname·phone_num 두 개만 받는데
+    // 핸들러가 12개 컬럼을 객체에 담아 넘겨, 저장 한 번에 계좌번호·사업자번호·
+    // 계약서 이미지 등 10개가 NULL 이 됐다(셀러·영업자 계정이 마이페이지에서 저장할 때).
+    //
+    // null 은 그대로 둔다 — 그건 '비우겠다'는 명시적 의사표시다.
+    const keys = Object.keys(obj).filter((key) => obj[key] !== undefined);
     if (keys.length == 0) {
         return false;
     }
