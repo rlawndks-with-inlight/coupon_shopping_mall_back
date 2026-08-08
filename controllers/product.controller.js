@@ -1,6 +1,6 @@
 'use strict';
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, response, settingFiles, settingLangs } from "../utils.js/util.js";
+import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeObjByList, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
@@ -1130,6 +1130,17 @@ const productCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             const brand_id = decode_dns?.id ?? 0;
+            // 레벨만 보고 소유를 안 봤다 — 가맹점 관리자(40)가 상품 id 만 알면
+            // 남의 가맹점 상품을 지울 수 있었다. 상품 id 는 고객 화면 URL 에 그대로 노출된다.
+            if (!decode_user) {
+                return lowLevelException(req, res);
+            }
+            if (decode_user?.level >= 40) {
+                const owned = await loadOwnedRow(readPool, table_name, id, decode_user);
+                if (!owned) {
+                    return lowLevelException(req, res);
+                }
+            }
 
             if (decode_user?.level >= 40) {
                 let result = await deleteQuery(`${table_name}`, {

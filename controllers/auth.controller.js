@@ -120,9 +120,14 @@ const authCtrl = {
                 // 다른 가맹점의 셀러·관리자 계정으로 이 몰에 로그인이 됐다(테넌트 경계 침범).
                 // 의도는 '셀러 지정 없이도 이 브랜드의 셀러·관리자는 로그인' 이므로 브랜드를 묶는다.
                 // level 50(개발사)은 전 브랜드 관리가 정상 동작이라 아래 else 분기와 동일하게 열어둔다.
-                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ((seller_id=? AND brand_id=?) OR (level >= 10 AND brand_id=?) OR level >= 50 ) LIMIT 1`, [user_name, decode_dns?.seller_id ?? 0, decode_dns?.id ?? 0, decode_dns?.id ?? 0]);
+                // ⚠ is_delete=0 — 회원 삭제는 소프트삭제(deleteQuery 가 is_delete=1 로만 바꾼다)라
+                //   status 는 0 그대로 남는다. 조건이 없어서 관리자가 지운 계정이 계속 로그인됐다.
+                //   (본인 탈퇴 resign 은 status=3 도 같이 넣어 아래 status 검사에 걸렸지만,
+                //    관리자 삭제 경로는 is_delete 만 세워 어디에도 걸리지 않았다)
+                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ((seller_id=? AND brand_id=?) OR (level >= 10 AND brand_id=?) OR level >= 50 ) AND is_delete=0 LIMIT 1`, [user_name, decode_dns?.seller_id ?? 0, decode_dns?.id ?? 0, decode_dns?.id ?? 0]);
             } else {
-                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=? OR level >= 50 ) LIMIT 1`, [user_name, decode_dns?.id ?? 0]);
+                // 위와 같은 이유로 삭제된 계정을 제외한다(레벨별 두 분기 모두 필요).
+                user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND ( brand_id=? OR level >= 50 ) AND is_delete=0 LIMIT 1`, [user_name, decode_dns?.id ?? 0]);
             }
             user = user[0][0];
 

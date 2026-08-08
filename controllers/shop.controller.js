@@ -323,6 +323,14 @@ const shopCtrl = {
             //결제모듈처리 (포스페이(41)는 활성 결제수단별 옵션으로 분리 — 구매자가 수단 선택)
             data['payment_modules'] = (data?.payment_modules || []).flatMap((item) => {
                 if (item?.trx_type != 41) {
+                    // ⚠ 여기서 pay_key·mid·tid 가 비로그인 방문자에게도 그대로 내려간다
+                    //   (localStorage.themeDnsData 에도 저장된다).
+                    //   한 번 제거해 봤으나 프론트가 이 값을 결제 요청에 되실어 보내는 구조라
+                    //   포스페이 외 결제수단(무통장입금·수기결제 등)이 죽는다 — 되돌렸다.
+                    //   올바른 순서는 pay.controller 가 페이레터·포스페이에서 하듯
+                    //   brand_id + trx_method 로 DB 에서 자격증명을 읽는 경로를 먼저 만들고,
+                    //   그 다음 응답에서 제거하는 것이다.
+                    //   ShopGo 산하는 결제모듈이 포스페이(41)뿐이라(DB 확인) 실노출이 없다.
                     return [{ ...item, ...getPayType(item?.trx_type) }];
                 }
                 // 수단별 노출 설정(enabled) 파싱. 설정 없으면 pending(삼성페이) 제외 전부 노출.
@@ -878,30 +886,23 @@ const getMainObjContentByIdList = (main_obj_ = [], type, content_list = [], is_c
                 }
             } else if (is_children) {
                 section.list = (section?.list ?? []).map(children => {
-                    children.list = (children?.list ?? []).map(id => {
-                        if (content_obj[id]) {
-                            return {
-                                ...content_obj[id][0],
-                            }
-                        } else {
-                            return {}
-                        }
-                    })
+                    // 없는 상품(삭제·비공개) 자리에 {} 를 채우면 프론트가 그걸 정상 상품으로 보고
+                    // item?.product_name.length 에서 TypeError 를 낸다(옵셔널체이닝이 item 에서 끊긴다).
+                    // 앱에 ErrorBoundary 가 없어 그 예외 하나로 홈이 통째로 백지가 됐다. 아예 뺀다.
+                    children.list = (children?.list ?? [])
+                        .filter(id => !!content_obj[id])
+                        .map(id => ({ ...content_obj[id][0] }))
                     return {
                         ...children,
                     }
                 })
                 return { ...section };
             } else {
-                let section_list = (section?.list ?? []).map(id => {
-                    if (content_obj[id]) {
-                        return {
-                            ...content_obj[id][0],
-                        }
-                    } else {
-                        return {}
-                    }
-                })
+                // 없는 상품(삭제·비공개) 자리에 {} 를 채우면 프론트가 정상 상품으로 오인해
+                // item?.product_name.length 에서 TypeError → 홈 백지가 된다. 아예 뺀다.
+                let section_list = (section?.list ?? [])
+                    .filter(id => !!content_obj[id])
+                    .map(id => ({ ...content_obj[id][0] }))
                 return {
                     ...section,
                     list: section_list,
