@@ -270,3 +270,28 @@ export const getMultipleQueryByWhen = async (sql_list = [], is_list) => {
     }
     return data;
 }
+
+// 컬럼이 실제로 존재하는지 — 프로세스당 1회만 조회하고 캐시한다.
+//
+// [왜 필요한가]
+// 스키마 변경(ALTER)과 코드 배포는 순서가 보장되지 않는다. 마이그레이션을 아직 안 돌린 서버에
+// 새 컬럼을 포함한 INSERT 가 나가면 "Unknown column" 으로 **그 저장이 통째로 실패**한다.
+// 주문 저장 경로에서 이런 일이 나면 결제가 막힌다 — '있으면 쓰고 없으면 건너뛴다'로 만든다.
+// (반대로 '국내면 안 보낸다' 같은 우회는, 해외→국내로 되돌리는 수정을 못 하게 만든다)
+const columnExistsCache = new Map();
+export const hasColumn = async (table, column) => {
+    const key = `${table}.${column}`;
+    if (columnExistsCache.has(key)) return columnExistsCache.get(key);
+    let exists = false;
+    try {
+        const [rows] = await readPool.query(
+            `SELECT 1 FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+            [table, column]);
+        exists = rows.length > 0;
+    } catch (e) {
+        exists = false;
+    }
+    columnExistsCache.set(key, exists);
+    return exists;
+};

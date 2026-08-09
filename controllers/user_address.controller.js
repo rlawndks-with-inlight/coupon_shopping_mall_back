@@ -5,8 +5,7 @@ import {
     getSelectQueryList,
     insertQuery,
     selectQuerySimple,
-    updateQuery
-} from "../utils.js/query-util.js";
+    updateQuery, hasColumn } from "../utils.js/query-util.js";
 import {
     checkDns,
     checkLevel,
@@ -220,6 +219,9 @@ const userAddressCtrl = {
                 zonecode,        // 우편번호
                 address_type,    // 배송지 구분(집/회사 등)
                 is_default,      // 기본배송지 여부
+                country_code,    // 배송 국가(KR=국내). 국내/해외 입력 방식이 여기서 갈린다
+                city,            // 도시(해외배송)
+                state_region,    // 주/지역(해외배송)
             } = req.body;
 
             const brandId = brand_id || decode_dns?.id || 0;
@@ -243,6 +245,14 @@ const userAddressCtrl = {
             // `is_default ? 1 : 0` 이 항상 1 이 됐다 → 모든 배송지가 '기본배송지'가 되고
             // 주문서에서는 전부 '기본' 뱃지가 붙었다.
             if (is_default !== undefined) obj.is_default = isTruthyFlag(is_default) ? 1 : 0;
+            // 해외배송 필드. 컬럼이 없으면(마이그레이션 전) 건너뛴다 —
+            // 없는 컬럼을 INSERT/UPDATE 에 넣으면 배송지 저장이 통째로 실패한다.
+            // 컬럼이 있으면 국내(KR)도 그대로 저장한다(해외→국내로 되돌리는 수정이 가능해야 한다).
+            if (country_code !== undefined && await hasColumn(table_name, 'country_code')) {
+                obj.country_code = String(country_code || 'KR').toUpperCase().slice(0, 2);
+                if (city !== undefined) obj.city = city;
+                if (state_region !== undefined) obj.state_region = state_region;
+            }
 
             // 권한: 관리자(레벨>=10) or 본인
             if (!(loginLevel >= 10 || loginUserId == user_id)) {
@@ -290,6 +300,9 @@ const userAddressCtrl = {
                 zonecode,
                 address_type,
                 is_default,
+                country_code,
+                city,
+                state_region,
             } = req.body;
 
             const loginUserId = decode_user?.id ?? 0;
@@ -325,6 +338,14 @@ const userAddressCtrl = {
             // `is_default ? 1 : 0` 이 항상 1 이 됐다 → 모든 배송지가 '기본배송지'가 되고
             // 주문서에서는 전부 '기본' 뱃지가 붙었다.
             if (is_default !== undefined) obj.is_default = isTruthyFlag(is_default) ? 1 : 0;
+            // 해외배송 필드. 컬럼이 없으면(마이그레이션 전) 건너뛴다 —
+            // 없는 컬럼을 INSERT/UPDATE 에 넣으면 배송지 저장이 통째로 실패한다.
+            // 컬럼이 있으면 국내(KR)도 그대로 저장한다(해외→국내로 되돌리는 수정이 가능해야 한다).
+            if (country_code !== undefined && await hasColumn(table_name, 'country_code')) {
+                obj.country_code = String(country_code || 'KR').toUpperCase().slice(0, 2);
+                if (city !== undefined) obj.city = city;
+                if (state_region !== undefined) obj.state_region = state_region;
+            }
 
             // 권한 판정은 반드시 '그 주소 행의 실제 주인'으로 한다.
             //
