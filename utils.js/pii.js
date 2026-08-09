@@ -27,6 +27,13 @@ export const PII_FIELDS = {
         enc: ['phone_number'],
         idx: { phone_number: 'phone_idx' },
     },
+    // 비회원 1:1문의 작성자 정보. 회원 글은 user_id 로 식별되므로 이 컬럼들이 NULL 이다.
+    // 연락처는 '연락처 + 글비밀번호' 로 본인 글을 찾는 데 쓰이므로 blind-index 가 반드시 필요하다
+    // (암호문은 정확일치 조회가 불가능하다).
+    posts: {
+        enc: ['none_user_name', 'none_user_phone'],
+        idx: { none_user_phone: 'none_user_phone_idx' },
+    },
 };
 
 // 저장 직전 obj의 PII를 암호화 + blind-index 컬럼 세팅(원문 기준). 새 obj 반환(얕은 복사).

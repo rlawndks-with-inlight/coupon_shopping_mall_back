@@ -8,6 +8,8 @@ import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 import { readPool } from "../config/db-pool.js";
 import { decField } from "../utils.js/crypto-util.js";
+import { encForSave, decRow, blindIndex } from "../utils.js/pii.js";
+import { hashOrderPassword, orderPasswordCandidates } from "../utils.js/order-password.js";
 const table_name = 'posts';
 
 
@@ -151,9 +153,29 @@ const postCtrl = {
             // null != undefined 가 false 다 — 즉 user_id 가 NULL 로 들어간 글(비회원 작성분)은
             // 아무 비로그인 요청이나 그대로 열람할 수 있었다.
             // '로그인했고 + 소유자가 일치' 를 양성 조건으로 두고 그 외는 전부 막는다.
-            if (data?.post_category_read_type == 1 && !isStaff && !(decode_user?.id > 0 && data?.user_id == decode_user?.id)) {
+            //
+            // 비회원 글은 '연락처 + 글비밀번호' 로 본인임을 증명한다(계정이 없으므로 이것뿐이다).
+            // 조회 화면이 그 두 값을 함께 보내오면 소유자로 인정한다.
+            // ⚠ 비밀번호는 저장할 때와 같은 해시로 만들어 대조한다 — 평문 비교가 아니다.
+            //   그리고 **글에 비밀번호가 실제로 설정돼 있을 때만** 인정한다. 안 그러면
+            //   password 가 NULL 인 옛 글이 빈 값 두 개로 열린다.
+            const guestPhone = String(req.query?.none_user_phone ?? req.body?.none_user_phone ?? '').trim();
+            const guestPw = String(req.query?.password ?? req.body?.password ?? '');
+            const isGuestOwner = !!data?.password && !!data?.none_user_phone_idx
+                && !!guestPhone && !!guestPw
+                && data.none_user_phone_idx === blindIndex(guestPhone)
+                && orderPasswordCandidates(guestPw).includes(data.password);
+
+            if (data?.post_category_read_type == 1 && !isStaff
+                && !(decode_user?.id > 0 && data?.user_id == decode_user?.id)
+                && !isGuestOwner) {
                 return lowLevelException(req, res);
             }
+            // 비밀번호 해시와 blind-index 는 화면에 쓸 일이 없다 — 응답에서 뺀다.
+            delete data.password;
+            delete data.none_user_phone_idx;
+            // 이름·연락처는 암호화되어 있으므로 복호화해서 내려준다(관리자 답변 화면에서 필요).
+            decRow(table_name, data);
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
             // 목록과 같은 이유로 지운 답변을 제외한다.
             let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id=? AND is_delete=0 ORDER BY id DESC`, [id]);
@@ -179,7 +201,9 @@ const postCtrl = {
             }
             const {
                 post_title_img,
-                category_id, parent_id = -1, post_title, post_content, is_reply = 0
+                category_id, parent_id = -1, post_title, post_content, is_reply = 0,
+                // 비회원 1:1문의. 회원 글에는 들어오지 않는다.
+                none_user_name, none_user_phone, password,
             } = req.body;
             let files = settingFiles(req.files);
 
@@ -188,6 +212,22 @@ const postCtrl = {
                 category_id, parent_id, post_title, post_content, is_reply,
                 user_id: decode_user?.id,
             };
+            // 비회원 글이면 작성자 정보와 조회용 비밀번호를 함께 넣는다.
+            //  · 이름·연락처는 다른 개인정보와 같은 규칙으로 암호화하고, 연락처는 조회를 위해
+            //    blind-index 컬럼을 함께 채운다(encForSave 가 둘 다 처리한다).
+            //  · 비밀번호는 평문으로 저장하지 않는다. 비회원 주문조회와 같은 HMAC 해시를 쓴다.
+            //  ⚠ 회원 글에는 이 컬럼들을 아예 넣지 않는다 — 넣으면 빈 문자열로 덮여
+            //    '비회원 글'과 구분이 흐려진다.
+            if (!(Number(decode_user?.id) > 0)) {
+                obj = {
+                    ...obj,
+                    ...encForSave(table_name, {
+                        none_user_name: String(none_user_name ?? '').trim(),
+                        none_user_phone: String(none_user_phone ?? '').trim(),
+                    }),
+                    password: hashOrderPassword(password),
+                };
+            }
             obj = { ...obj, ...files };
             let result = await insertQuery(`${table_name}`, obj);
 

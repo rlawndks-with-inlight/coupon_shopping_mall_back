@@ -11,7 +11,8 @@ import _ from "lodash";
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
-import { decRows } from "../utils.js/pii.js";
+import { decRows, blindIndex } from "../utils.js/pii.js";
+import { orderPasswordCandidates } from "../utils.js/order-password.js";
 import { stripUserSecretsList } from "../utils.js/security-question.js";
 
 const shopCtrl = {
@@ -611,6 +612,53 @@ const shopCtrl = {
         }
     },
     post: {
+        // 비회원 1:1문의 조회 — 연락처 + 글비밀번호로 본인이 쓴 글과 그 답변을 찾는다.
+        //
+        // 비회원에게는 계정이 없으므로 '내 글' 을 특정할 방법이 이것뿐이다.
+        // 연락처는 암호화 저장이라 정확일치 조회가 불가능하므로 blind-index 로 찾고,
+        // 비밀번호는 저장할 때와 같은 HMAC 해시로 만들어 대조한다(평문 비교가 아니다).
+        guestCheck: async (req, res, next) => {
+            try {
+                const decode_dns = checkDns(req.cookies.dns);
+                if (!(Number(decode_dns?.id) > 0)) {
+                    return response(req, res, -100, "잘못된 접근입니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.", false);
+                }
+                const { none_user_phone, password } = req.body;
+                if (!String(none_user_phone ?? '').trim() || !String(password ?? '').trim()) {
+                    return response(req, res, -100, "연락처와 글 비밀번호를 입력해 주세요.", false);
+                }
+
+                // 글은 게시판(post_categories)을 통해 브랜드에 속한다 — 반드시 브랜드로 스코프를 건다.
+                // (스코프가 없으면 남의 가맹점 글이 연락처만 같아도 조회된다)
+                let rows = await readPool.query(
+                    `SELECT p.id, p.category_id, p.post_title, p.post_content, p.created_at,
+                            p.none_user_name,
+                            pc.post_category_title,
+                            (SELECT COUNT(*) FROM posts r
+                              WHERE r.parent_id = p.id AND r.is_delete = 0) AS reply_count
+                       FROM posts p
+                       JOIN post_categories pc ON pc.id = p.category_id
+                      WHERE pc.brand_id = ?
+                        AND p.is_delete = 0
+                        AND p.parent_id = -1
+                        AND p.none_user_phone_idx = ?
+                        AND p.password IN (?, ?)
+                      ORDER BY p.id DESC
+                      LIMIT 100`,
+                    [decode_dns.id, blindIndex(String(none_user_phone).trim()),
+                     ...orderPasswordCandidates(String(password))]);
+                rows = rows[0];
+                // 이름은 암호화되어 있으므로 돌려주기 전에 복호화한다.
+                decRows('posts', rows);
+                return response(req, res, 100, "success", { content: rows, total: rows.length });
+            } catch (err) {
+                console.log(err)
+                logger.error(JSON.stringify(err?.response?.data || err))
+                return response(req, res, -200, "서버 에러 발생", false)
+            } finally {
+
+            }
+        },
         list: async (req, res, next) => { //게시물 리스트출력
             try {
 
@@ -670,13 +718,27 @@ const shopCtrl = {
             try {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
-                const { category_id } = req.body;
-                // 비회원 1:1문의 작성 차단. 프론트는 로그인 화면으로 보내지만 백엔드가 막지 않아서
-                // API 를 직접 부르면 postCtrl.create 가 user_id=undefined 인 글을 그대로 저장했다.
-                // 소유자가 없는 글은 '작성자만 열람' 판정도 헐거워진다.
-                // (아래 productFaq.create 는 상품문의라 정책이 다르므로 여기만 막는다)
+                const { category_id, none_user_name, none_user_phone, password } = req.body;
+
+                // 비회원 1:1문의 허용 — 다만 '누가 썼고, 나중에 어떻게 확인할지'가 반드시 있어야 한다.
+                //
+                // 예전엔 비회원 작성을 통째로 막았다. 소유자 없는 글은 '작성자만 열람' 판정이
+                // 헐거워지고, 무엇보다 답변을 돌려줄 상대를 특정할 수 없기 때문이었다.
+                // 이제 비회원 주문조회와 같은 방식으로 **이름 + 연락처 + 글비밀번호**를 받는다.
+                // (이 시스템에는 문자 게이트웨이도 고객 이메일도 없어서 답변 알림을 보낼 수단이
+                //  아예 없다. 회원도 직접 들어와 확인하는 구조이므로, 비회원에게도 '다시 찾아와
+                //  확인하는 경로'만 만들어 주면 회원과 동등해진다)
                 if (!decode_user?.id) {
-                    return lowLevelException(req, res);
+                    if (!String(none_user_name ?? '').trim()) {
+                        return response(req, res, -100, "이름을 입력해 주세요.", false);
+                    }
+                    if (!String(none_user_phone ?? '').trim()) {
+                        return response(req, res, -100, "연락처를 입력해 주세요.", false);
+                    }
+                    // 비밀번호가 없으면 본인 글을 다시 찾을 방법이 사라진다 — 작성 자체를 막는다.
+                    if (String(password ?? '').length < 4) {
+                        return response(req, res, -100, "글 비밀번호를 4자 이상 입력해 주세요.", false);
+                    }
                 }
 
                 let category_sql = `SELECT id, parent_id, post_category_type, post_category_read_type, is_able_user_add FROM post_categories `;

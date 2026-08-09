@@ -16,6 +16,12 @@ router
 router
     .route('/product')
     .get(shopCtrl.items)
+// 비회원 1:1문의 조회 — 연락처 + 글비밀번호로 본인 글을 찾는다.
+// ⚠ '/post/:id' 보다 **위에** 둬야 한다. 아래에 두면 :id 가 'guest-check' 를 삼킨다.
+// GET 이 아니라 POST 인 이유: 비밀번호가 URL·서버 접근로그·브라우저 기록에 남으면 안 된다.
+router
+    .route('/post/guest-check')
+    .post(shopCtrl.post.guestCheck)
 router
     .route('/post/:id')
     .get(shopCtrl.post.get)
