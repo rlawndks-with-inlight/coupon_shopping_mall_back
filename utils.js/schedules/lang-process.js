@@ -1,6 +1,6 @@
 import { readPool, writePool } from "../../config/db-pool.js";
 import { deleteQuery, updateQuery } from "../query-util.js";
-import { LANG_STATS, settingLangs } from "../util.js";
+import { LANG_STATS, settingLangs, usingOfficialTranslateApi } from "../util.js";
 import logger from "../winston/index.js";
 
 const table_name = 'lang_processes';
@@ -51,8 +51,11 @@ export const langProcess = async (opts = {}) => {
         logger.info('[lang] 이전 처리가 아직 진행 중이라 이번 틱은 건너뜀');
         return;
     }
-    const maxItems = parseInt(opts.maxItems ?? process.env.LANG_BATCH_ITEMS ?? '20') || 20;
-    const maxCalls = parseInt(opts.maxCalls ?? process.env.LANG_BATCH_CALLS ?? '60') || 60;
+    // 한 틱 예산. 공식 API 키가 있으면 분당 한도가 넉넉하므로 크게 잡는다
+    //  — 무료 gtx 는 조금만 몰아쳐도 IP 가 막히니 예전 값(20건/60요청)을 그대로 유지한다.
+    const official = usingOfficialTranslateApi();
+    const maxItems = parseInt(opts.maxItems ?? process.env.LANG_BATCH_ITEMS ?? (official ? '200' : '20')) || 20;
+    const maxCalls = parseInt(opts.maxCalls ?? process.env.LANG_BATCH_CALLS ?? (official ? '600' : '60')) || 60;
     const maxTries = parseInt(process.env.LANG_MAX_TRIES ?? '3') || 3;
     // 차단(429)을 맞은 뒤 쉬는 시간. 무료 gtx 엔드포인트는 한 IP 가 몰아치면 막는데,
     // 막힌 채로 계속 두드리면 차단이 길어질 뿐이다. 기본 30분.
@@ -65,6 +68,7 @@ export const langProcess = async (opts = {}) => {
 
     isRunning = true;
     const startCalls = LANG_STATS.calls;
+    const startChars = LANG_STATS.chars;
     let done = 0, failed = 0, skipped = 0;
     try {
         let process_items = await readPool.query(
@@ -151,7 +155,9 @@ export const langProcess = async (opts = {}) => {
                 );
             }
         }
-        logger.info(`[lang] 처리 완료 성공=${done} 실패=${failed} 격리=${skipped} 요청수=${LANG_STATS.calls - startCalls}`);
+        logger.info(`[lang] 처리 완료 성공=${done} 실패=${failed} 격리=${skipped}`
+            + ` 요청수=${LANG_STATS.calls - startCalls} 문자수=${LANG_STATS.chars - startChars}`
+            + ` 엔진=${official ? '공식API' : '무료gtx'}`);
     } catch (err) {
         const msg = String(err?.message || err);
         // 마이그레이션을 안 돌린 채 배포하면 여기로 떨어진다. 원인을 바로 알 수 있게 따로 안내한다.
