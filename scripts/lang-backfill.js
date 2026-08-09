@@ -14,11 +14,26 @@
 //
 // 실행: 백엔드 루트에서  node scripts/lang-backfill.js
 //       미리보기(대기열에 넣지 않고 건수만):  node scripts/lang-backfill.js --dry
+//       테이블 한정:  node scripts/lang-backfill.js --only=product_categories,product_category_groups
+//
+// --only 를 두는 이유: 상품은 건수가 카테고리보다 두 자릿수 크다(대형몰 3곳이 대부분).
+// 카테고리만 먼저 채우고 상품은 따로 판단하는 식으로 나눠 돌릴 수 있어야 한다.
 import 'dotenv/config';
 import { readPool, writePool } from '../config/db-pool.js';
 import { lang_obj_columns } from '../utils.js/schedules/lang-process.js';
 
 const DRY = process.argv.includes('--dry');
+const ONLY = (() => {
+    const arg = process.argv.find((a) => a.startsWith('--only='));
+    if (!arg) return null;
+    const list = arg.slice('--only='.length).split(',').map((s) => s.trim()).filter(Boolean);
+    const unknown = list.filter((t) => !lang_obj_columns[t]);
+    if (unknown.length > 0) {
+        console.error(`알 수 없는 테이블: ${unknown.join()}\n사용 가능: ${Object.keys(lang_obj_columns).join()}`);
+        process.exit(1);
+    }
+    return list;
+})();
 
 // 테이블별 '브랜드에 속한 행' 을 뽑는 SQL.
 // product_options / product_option_groups 는 brand_id 컬럼이 없어 부모로 조인해야 한다
@@ -94,7 +109,8 @@ const run = async () => {
                 [rows_to_insert.slice(i, i + 1000)]);
         }
     }
-    console.log(DRY ? `\n[미리보기] 대기열에 넣을 총 ${grand}건 (실제로 넣지 않음)`
+    console.log('\n테이블별:', JSON.stringify(by_table));
+    console.log(DRY ? `[미리보기] 대기열에 넣을 총 ${grand}건 (실제로 넣지 않음)`
                     : `\n대기열 적재 완료: 총 ${grand}건. 스케줄러(langProcess)가 1분마다 소비합니다.`);
     process.exit(0);
 };
