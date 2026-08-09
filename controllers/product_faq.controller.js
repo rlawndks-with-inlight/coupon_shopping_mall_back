@@ -68,12 +68,31 @@ const productFaqCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const {
-                brand_id, title, content, product_id, user_id
-            } = req.body;
+            // ⚠ 예전엔 검사가 하나도 없었다. decode_user 를 선언만 하고 쓰지 않았고,
+            //   brand_id 와 user_id 를 **요청 본문에서 그대로** 받아 저장했다.
+            //   즉 로그인 없이 /api/product-faq 를 직접 부르면
+            //   남의 가맹점에, 남의 회원 이름으로 문의를 만들 수 있었다(스팸·사칭).
+            //   상품문의 화면은 현재 어느 판매 프레임에도 노출되지 않지만 API 는 열려 있었다.
+            //   → 로그인 필수 + 소속 브랜드와 작성자는 **서버가 확정한다**.
+            if (!(Number(decode_user?.id) > 0)) {
+                return lowLevelException(req, res);
+            }
+            if (!(Number(decode_dns?.id) > 0)) {
+                return response(req, res, -100, "잘못된 접근입니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.", false);
+            }
+            const { title, content, product_id } = req.body;
+            // 다른 브랜드 상품에 문의를 다는 것도 막는다.
+            let product = await readPool.query(
+                `SELECT id FROM products WHERE id=? AND brand_id=? AND is_delete=0 LIMIT 1`,
+                [product_id, decode_dns.id]);
+            if (!product[0][0]) {
+                return lowLevelException(req, res);
+            }
             let files = settingFiles(req.files);
             let obj = {
-                brand_id, title, content, product_id, user_id
+                brand_id: Number(decode_dns.id),
+                title, content, product_id,
+                user_id: Number(decode_user.id),
             };
 
             obj = { ...obj, ...files };

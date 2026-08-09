@@ -186,8 +186,22 @@ export const imageFieldList = [
 })
 
 // ── 다국어 번역 ────────────────────────────────────────────────────────────
-// 엔진은 구글 무료 gtx 엔드포인트다(API 키 없음).
-// package.json 에 @google-cloud/translate 가 있지만 사용처도 자격증명도 없다.
+// 엔진은 두 가지다. **환경변수 GOOGLE_TRANSLATE_API_KEY 가 있으면 공식 API,
+// 없으면 예전처럼 무료 gtx 엔드포인트**를 쓴다.
+//
+// [왜 바꿨나]
+// gtx(translate.googleapis.com/translate_a/single?client=gtx)는 API 키가 없는 비공식 경로다.
+// 한 IP 가 분당 수십 건을 넘기면 429 를 주고 이후 요청은 google.com/sorry/ 로 튕긴다.
+// 실제로 대기열 백필을 돌리자마자 차단당해 그동안 신규 상품 번역까지 멈췄다.
+// 공식 Cloud Translation API 는 **월 50만 자가 영구 무료**다(체험 크레딧과 별개).
+// 운영 데이터 실측: 미번역분 전체가 464,639자 — 한 달 무료 한도로 백필이 끝나고,
+// 이후 신규 등록분은 월 수천 자 수준이라 계속 무료 범위다.
+//
+// 키가 없으면 아무것도 깨지지 않고 예전 동작 그대로다(하위호환).
+
+// 공식 API 키. 없으면 gtx 폴백.
+const GOOGLE_TRANSLATE_API_KEY = process.env.GOOGLE_TRANSLATE_API_KEY || '';
+export const usingOfficialTranslateApi = () => !!GOOGLE_TRANSLATE_API_KEY;
 
 // 지원 언어(gtx 코드). ko 는 원문이라 번역 대상이 아니다.
 export const LANG_TARGETS = [
@@ -207,14 +221,23 @@ export const HTML_LANG_COLUMNS = {
 // rate_limited_at: 무료 gtx 엔드포인트가 429(또는 /sorry/ 차단 페이지)를 돌려준 마지막 시각.
 //   차단된 상태에서 계속 두드리면 차단만 길어지고, 그동안 대기열은 '번역 없음'으로
 //   소진돼 버린다. 스케줄러가 이 값을 보고 틱을 통째로 건너뛴다.
-export const LANG_STATS = { calls: 0, fails: 0, htmlGiveUps: 0, rate_limited_at: 0 };
+// chars: 무료 한도(월 50만 자)를 얼마나 썼는지 눈으로 보기 위한 누계. 재기동하면 0 으로 돌아간다.
+export const LANG_STATS = { calls: 0, fails: 0, htmlGiveUps: 0, rate_limited_at: 0, chars: 0 };
 
-// 이 오류가 '요청 과다로 막힌 것'인지. 429 뿐 아니라 구글의 /sorry/ 차단 페이지(302)도 본다.
+// 이 오류가 '요청 과다로 막힌 것'인지.
+//  · gtx  : 429, 또는 google.com/sorry/ 차단 페이지로의 302
+//  · 공식 : 429, 또는 403 + rateLimitExceeded/quotaExceeded (무료 한도 초과)
+// 어느 쪽이든 계속 두드려 봐야 소용없으므로 쿨다운을 건다.
 export const isRateLimited = (err) => {
     const status = err?.response?.status;
     if (status === 429) return true;
     const location = String(err?.response?.headers?.location ?? '');
     if (status === 302 && location.includes('/sorry/')) return true;
+    if (status === 403) {
+        const reason = JSON.stringify(err?.response?.data ?? '');
+        if (reason.includes('rateLimitExceeded') || reason.includes('quotaExceeded')
+            || reason.includes('userRateLimitExceeded')) return true;
+    }
     return String(err?.message ?? '').includes('429');
 };
 
@@ -245,21 +268,39 @@ const splitChunks = (text, limit = GTRANS_CHUNK) => {
 // 예전엔 본문을 GET 쿼리스트링에 통째로 실었다 — 상품명은 짧아서 괜찮았지만
 // 게시글 본문 길이에서는 URL 한계에 걸려 조용히 실패했다(예외를 삼켜 번역만 비었다).
 // POST(form-urlencoded)로 보내고, 그래도 긴 것은 청크로 나눠 이어붙인다.
+// 청크 하나를 번역한다. 엔진 선택은 여기 한 곳에서만 갈린다.
+const translateChunk = async (chunk, target) => {
+    if (GOOGLE_TRANSLATE_API_KEY) {
+        // 공식 Cloud Translation v2. format:'text' 로 보내야 &amp; 같은 엔티티가 안 섞인다.
+        const { data } = await axios.post(
+            `https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(GOOGLE_TRANSLATE_API_KEY)}`,
+            { q: chunk, source: 'ko', target, format: 'text' },
+            { timeout: 20000 }
+        );
+        return data?.data?.translations?.[0]?.translatedText ?? '';
+    }
+    const { data } = await axios.post(
+        'https://translate.googleapis.com/translate_a/single',
+        new URLSearchParams({ client: 'gtx', sl: 'auto', tl: target, dt: 't', q: chunk }).toString(),
+        { timeout: 15000, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    return (data?.[0] || []).map((s) => s?.[0]).filter(Boolean).join('');
+};
+
 export const gtransText = async (text, target) => {
     const src = String(text ?? '');
     if (!src.trim()) return src;
     let out = '';
     for (const chunk of splitChunks(src)) {
-        const gap = Date.now() - gtransLastAt;
-        if (gap < GTRANS_MIN_GAP_MS) await sleep(GTRANS_MIN_GAP_MS - gap);
-        gtransLastAt = Date.now();
+        // 공식 API 는 분당 한도가 넉넉해 간격을 둘 이유가 없다. gtx 만 텀을 둔다.
+        if (!GOOGLE_TRANSLATE_API_KEY) {
+            const gap = Date.now() - gtransLastAt;
+            if (gap < GTRANS_MIN_GAP_MS) await sleep(GTRANS_MIN_GAP_MS - gap);
+            gtransLastAt = Date.now();
+        }
         LANG_STATS.calls++;
-        const { data } = await axios.post(
-            'https://translate.googleapis.com/translate_a/single',
-            new URLSearchParams({ client: 'gtx', sl: 'auto', tl: target, dt: 't', q: chunk }).toString(),
-            { timeout: 15000, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        );
-        out += (data?.[0] || []).map((s) => s?.[0]).filter(Boolean).join('');
+        LANG_STATS.chars += chunk.length;
+        out += await translateChunk(chunk, target);
     }
     return out;
 };
