@@ -1,6 +1,6 @@
 'use strict';
 import { checkIsManagerUrl, differenceTwoDate, generateRandomCode, returnMoment } from "../utils.js/function.js";
-import { insertQuery, updateQuery } from "../utils.js/query-util.js";
+import { insertQuery, updateQuery, hasColumn } from "../utils.js/query-util.js";
 import { createHashedPassword, checkLevel, makeUserToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
 import { encForSave, decRow, decRows, blindIndex } from "../utils.js/pii.js";
 import { isShopgoBrand } from "../utils.js/is-shopgo.js";
@@ -96,6 +96,12 @@ const makeUserTokenPayload = (user, agent) => ({
     // 보안질문 설정 여부(1/0). 프론트 '보안질문 설정하기' 배너 노출 판단용.
     // ⚠ 값이 아니라 '설정됐는지'만 담는다(질문 id 는 토큰에 넣지 않는다).
     has_security_question: (user.security_question_id === null || user.security_question_id === undefined) ? 0 : 1,
+
+    // 수신동의 — 회원정보수정 화면이 현재 상태를 체크박스에 표시해야 한다.
+    // 컬럼이 아직 없는 환경(마이그레이션 전)에서는 undefined 가 되므로 0 으로 떨어뜨린다.
+    is_marketing_agree: user.is_marketing_agree ? 1 : 0,
+    is_sms_agree: user.is_sms_agree ? 1 : 0,
+    is_email_agree: user.is_email_agree ? 1 : 0,
 });
 
 // 토큰 쿠키 발급. signIn 의 res.cookie 옵션과 100% 동일해야 한다.
@@ -229,6 +235,36 @@ const authCtrl = {
             if (!user_pw) {
                 return response(req, res, -100, "비밀번호를 입력해 주세요.", {});
             }
+            // ── 아이디·비밀번호·휴대폰 형식 검증 ────────────────────────────────
+            // 예전엔 위 '비밀번호 입력 여부' 하나가 전부였다. 프론트 가입폼에도 형식 검증이
+            // 없어서 한 글자 아이디·한 글자 비밀번호가 그대로 만들어졌고, API 를 직접
+            // 호출하면 어떤 값이든 통과했다(가입폼은 우회할 수 있으므로 여기가 실제 관문이다).
+            //
+            // 규칙은 프론트 utils/function.js 의 validateSignUpInput 과 같은 값을 유지할 것.
+            // 이 검사는 신규 가입에만 걸린다 — 기존 회원 로그인·정보수정에는 영향이 없다.
+            const signup_id = String(user_name ?? '').trim();
+            if (signup_id.length < 4 || signup_id.length > 20) {
+                return response(req, res, -100, "아이디는 4~20자로 입력해 주세요.", {});
+            }
+            if (!/^[a-z0-9_]+$/.test(signup_id)) {
+                return response(req, res, -100, "아이디는 영문 소문자·숫자·밑줄(_)만 사용할 수 있습니다.", {});
+            }
+            if (String(user_pw).length < 8 || String(user_pw).length > 20) {
+                return response(req, res, -100, "비밀번호는 8~20자로 입력해 주세요.", {});
+            }
+            if (String(user_pw).toLowerCase() === signup_id.toLowerCase()) {
+                return response(req, res, -100, "비밀번호를 아이디와 다르게 입력해 주세요.", {});
+            }
+            // 휴대폰번호는 아이디 찾기·주문 연락에 쓰인다. 숫자 9~11자리만 통과시킨다
+            // (형식 강제가 아니라 명백히 잘못된 값만 거른다).
+            if (phone_num) {
+                const phone_digits = String(phone_num).replace(/[^0-9]/g, '');
+                if (phone_digits.length < 9 || phone_digits.length > 11) {
+                    return response(req, res, -100, "휴대폰번호를 정확히 입력해 주세요.", {});
+                }
+            }
+            // 아래 로직은 정제된 아이디를 쓴다(앞뒤 공백이 그대로 저장돼 로그인이 안 되던 것 방지).
+            user_name = signup_id;
             // shopgo 본사(brands.id=98)와 그 하위 가맹점(brands.parent_id=98)만 보안질문 필수.
             // → 본사 스토어프론트(shopgo.co.kr)에서 가입하는 일반 회원도 보안질문 선택+답변이 필수가 된다.
             // 그 외 브랜드는 값이 와도 무시 → 기존 동작 100% 불변.
@@ -286,6 +322,26 @@ const authCtrl = {
                 }
             }
 
+            // ── 수신동의 ────────────────────────────────────────────────────
+            // 가입폼의 '쇼핑정보/SMS/이메일 수신 동의' 체크박스는 값이 전송조차 되지 않았고
+            // 받을 컬럼도 없었다(고객에게는 '회원정보수정에서 언제든 변경 가능'이라고
+            // 안내하면서 그 화면엔 항목이 없었다). 이제 실제로 저장한다.
+            //
+            // 컬럼이 아직 없을 수 있으므로(마이그레이션 전 배포) hasColumn 으로 감싼다 —
+            // 없으면 이 필드들만 빼고 저장하며 가입 자체는 그대로 성공한다.
+            let marketing_fields = {};
+            if (await hasColumn('users', 'is_marketing_agree')) {
+                const on = (v) => (v == 1 || v === true || v === 'true') ? 1 : 0;
+                const marketing = on(req.body?.is_marketing_agree);
+                marketing_fields = {
+                    is_marketing_agree: marketing,
+                    is_sms_agree: on(req.body?.is_sms_agree),
+                    is_email_agree: on(req.body?.is_email_agree),
+                    // 동의 사실만으로는 부족하다 — 언제 동의했는지도 남긴다.
+                    marketing_agreed_at: marketing ? returnMoment() : null,
+                };
+            }
+
             user_pw = pw_data.hashedPassword;
             let user_salt = pw_data.salt;
             let obj = {
@@ -310,7 +366,8 @@ const authCtrl = {
                 shareholder_img,
                 register_img,
                 seller_id,
-                ...security_fields
+                ...security_fields,
+                ...marketing_fields
             }
 
             obj = encForSave('users', obj); // 실명·전화 암호화 + blind-index (신규 security_* 키는 그대로 통과)
@@ -401,6 +458,22 @@ const authCtrl = {
                     return response(req, res, -100, "인증시간이 지났습니다. 다시 인증해 주세요.", false)
                 }
             }
+            // 수신동의 — 가입 안내문이 '회원정보수정에서 언제든 변경 가능'이라고 약속하는 항목이다.
+            // 보내온 경우에만 반영한다(이 API 를 부르는 다른 화면들이 값을 안 보내는데,
+            // 무조건 덮으면 닉네임만 바꿔도 동의가 꺼져 버린다).
+            let marketing_update = {};
+            if (await hasColumn('users', 'is_marketing_agree')) {
+                const on = (v) => (v == 1 || v === true || v === 'true') ? 1 : 0;
+                if ('is_marketing_agree' in req.body) {
+                    const marketing = on(req.body?.is_marketing_agree);
+                    marketing_update.is_marketing_agree = marketing;
+                    // 껐다 켜면 시각을 새로 남기고, 끄면 비운다.
+                    marketing_update.marketing_agreed_at = marketing ? returnMoment() : null;
+                }
+                if ('is_sms_agree' in req.body) marketing_update.is_sms_agree = on(req.body?.is_sms_agree);
+                if ('is_email_agree' in req.body) marketing_update.is_email_agree = on(req.body?.is_email_agree);
+            }
+
             let result = await updateQuery('users', encForSave('users', {
                 nickname,
                 phone_num,
@@ -413,7 +486,8 @@ const authCtrl = {
                 contract_img,
                 bsin_lic_img,
                 shareholder_img,
-                register_img
+                register_img,
+                ...marketing_update
             }), decode_user?.id); // phone_num 암호화 + phone_idx 세팅(부분 업데이트 안전, name 없음)
 
             // 토큰 재발급 — payload 에 nickname·phone_num·profile_img 가 들어 있어서
