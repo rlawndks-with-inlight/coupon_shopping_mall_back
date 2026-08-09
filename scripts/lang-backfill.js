@@ -38,30 +38,42 @@ const ONLY = (() => {
 // 테이블별 '브랜드에 속한 행' 을 뽑는 SQL.
 // product_options / product_option_groups 는 brand_id 컬럼이 없어 부모로 조인해야 한다
 // (lang-process.js 의 brandSettingLang 과 같은 규칙).
+// '아직 번역이 없는 행' 조건.
+//
+// 처음엔 lang_obj 가 NULL/빈문자/'{}' 인 것만 봤다. 그런데 번역 호출이 전부 실패한 행은
+// 원문만 담긴 {"category_name":{"ko":"주방용품"}} 형태로 저장된다 — 비어 있지 않으므로
+// 이 조건을 통과해 '이미 번역됨'으로 취급됐고, 다시 대기열에 들어가지 못했다.
+// 대상 언어 키(en/ja/cn/es)가 하나도 없으면 번역이 없는 것으로 본다.
+const NO_TRANSLATION = (t) => `(
+    ${t}.lang_obj IS NULL OR ${t}.lang_obj = '' OR ${t}.lang_obj = '{}'
+    OR (${t}.lang_obj NOT LIKE '%"en"%' AND ${t}.lang_obj NOT LIKE '%"ja"%'
+        AND ${t}.lang_obj NOT LIKE '%"cn"%' AND ${t}.lang_obj NOT LIKE '%"es"%')
+)`;
+
 const selectFor = (table, cols) => {
     const c = cols.map((x) => `${table}.${x}`).join();
     if (table === 'posts') {
         return `SELECT posts.id, ${c} FROM posts
                   LEFT JOIN post_categories ON posts.category_id = post_categories.id
                  WHERE post_categories.brand_id = ?
-                   AND (posts.lang_obj IS NULL OR posts.lang_obj = '' OR posts.lang_obj = '{}')`;
+                   AND ${NO_TRANSLATION('posts')}`;
     }
     if (table === 'product_option_groups') {
         return `SELECT product_option_groups.id, ${c} FROM product_option_groups
                   LEFT JOIN products ON product_option_groups.product_id = products.id
                  WHERE products.brand_id = ?
-                   AND (product_option_groups.lang_obj IS NULL OR product_option_groups.lang_obj = '' OR product_option_groups.lang_obj = '{}')`;
+                   AND ${NO_TRANSLATION('product_option_groups')}`;
     }
     if (table === 'product_options') {
         return `SELECT product_options.id, ${c} FROM product_options
                   LEFT JOIN product_option_groups ON product_options.group_id = product_option_groups.id
                   LEFT JOIN products ON product_option_groups.product_id = products.id
                  WHERE products.brand_id = ?
-                   AND (product_options.lang_obj IS NULL OR product_options.lang_obj = '' OR product_options.lang_obj = '{}')`;
+                   AND ${NO_TRANSLATION('product_options')}`;
     }
     return `SELECT id, ${cols.join()} FROM ${table}
              WHERE brand_id = ?
-               AND (lang_obj IS NULL OR lang_obj = '' OR lang_obj = '{}')`;
+               AND ${NO_TRANSLATION(table)}`;
 };
 
 const run = async () => {

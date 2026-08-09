@@ -54,6 +54,14 @@ export const langProcess = async (opts = {}) => {
     const maxItems = parseInt(opts.maxItems ?? process.env.LANG_BATCH_ITEMS ?? '20') || 20;
     const maxCalls = parseInt(opts.maxCalls ?? process.env.LANG_BATCH_CALLS ?? '60') || 60;
     const maxTries = parseInt(process.env.LANG_MAX_TRIES ?? '3') || 3;
+    // 차단(429)을 맞은 뒤 쉬는 시간. 무료 gtx 엔드포인트는 한 IP 가 몰아치면 막는데,
+    // 막힌 채로 계속 두드리면 차단이 길어질 뿐이다. 기본 30분.
+    const cooldownMs = (parseInt(process.env.LANG_COOLDOWN_MIN ?? '30') || 30) * 60 * 1000;
+    if (LANG_STATS.rate_limited_at > 0 && Date.now() - LANG_STATS.rate_limited_at < cooldownMs) {
+        const left = Math.ceil((cooldownMs - (Date.now() - LANG_STATS.rate_limited_at)) / 60000);
+        logger.info(`[lang] 요청 차단 후 대기 중 — ${left}분 뒤 재시도`);
+        return;
+    }
 
     isRunning = true;
     const startCalls = LANG_STATS.calls;
@@ -102,6 +110,33 @@ export const langProcess = async (opts = {}) => {
                 const obj = JSON.parse(row?.obj ?? '{}');
                 const langs = await settingLangs(columns, obj, brand, row?.table_name, row?.item_id, true);
                 if (!langs?.lang_obj) { await quarantine(row, '번역 결과 없음'); continue; }
+
+                // 번역이 실제로 하나라도 채워졌는지 확인한다.
+                //
+                // [증상] 구글이 429 로 막은 동안 로그는 `성공=4 실패=0` 인데 번역은 하나도 안 됐다.
+                // [원인] settingLangs 는 원문을 먼저 ko 슬롯에 넣는다 — {"category_name":{"ko":"주방용품"}}.
+                //        모든 언어 호출이 실패해도 이 객체는 비어 있지 않아 truthy 다. 그래서 여기서
+                //        성공으로 보고 lang_obj 를 덮어쓴 뒤 대기열 행을 **삭제**했다.
+                //        번역본은 영영 안 생기는데, 백필 스크립트는 'lang_obj 가 비지 않았다'고 보아
+                //        다시 넣지도 않는다 — 그 항목은 조용히 영구 누락된다.
+                // [수정] ko 이외 언어가 하나도 없으면 실패로 처리해 행을 남긴다(try_count 증가).
+                //        차단이 풀리면 다음 틱에 다시 시도된다.
+                const filled = Object.values(JSON.parse(langs.lang_obj))
+                    .some((slot) => Object.keys(slot ?? {}).some((k) => k !== 'ko'));
+                if (!filled) {
+                    failed++;
+                    const reason = langs?.rate_limited ? '요청 차단(429)' : '번역 결과가 원문뿐';
+                    await writePool.query(
+                        `UPDATE ${table_name} SET try_count=COALESCE(try_count,0)+1, last_error=? WHERE id=?`,
+                        [reason, row?.id]);
+                    // 차단이면 이번 틱은 여기서 끝낸다 — 남은 건까지 두드리면 차단만 길어진다.
+                    if (langs?.rate_limited) {
+                        logger.error('[lang] 요청이 차단되어 이번 틱을 중단합니다');
+                        break;
+                    }
+                    continue;
+                }
+
                 await updateQuery(row?.table_name, { lang_obj: langs.lang_obj }, row?.item_id);
                 await writePool.query(`DELETE FROM ${table_name} WHERE id=?`, [row?.id]);
                 done++;

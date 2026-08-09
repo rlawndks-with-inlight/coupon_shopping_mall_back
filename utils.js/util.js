@@ -204,7 +204,19 @@ export const HTML_LANG_COLUMNS = {
 };
 
 // 호출량 관측 — 스케줄러가 한 틱의 요청 예산을 지키는 데 쓴다.
-export const LANG_STATS = { calls: 0, fails: 0, htmlGiveUps: 0 };
+// rate_limited_at: 무료 gtx 엔드포인트가 429(또는 /sorry/ 차단 페이지)를 돌려준 마지막 시각.
+//   차단된 상태에서 계속 두드리면 차단만 길어지고, 그동안 대기열은 '번역 없음'으로
+//   소진돼 버린다. 스케줄러가 이 값을 보고 틱을 통째로 건너뛴다.
+export const LANG_STATS = { calls: 0, fails: 0, htmlGiveUps: 0, rate_limited_at: 0 };
+
+// 이 오류가 '요청 과다로 막힌 것'인지. 429 뿐 아니라 구글의 /sorry/ 차단 페이지(302)도 본다.
+export const isRateLimited = (err) => {
+    const status = err?.response?.status;
+    if (status === 429) return true;
+    const location = String(err?.response?.headers?.location ?? '');
+    if (status === 302 && location.includes('/sorry/')) return true;
+    return String(err?.message ?? '').includes('429');
+};
 
 const GTRANS_MIN_GAP_MS = parseInt(process.env.LANG_MIN_GAP_MS || '150') || 150;
 const GTRANS_CHUNK = parseInt(process.env.LANG_CHUNK_SIZE || '1200') || 1200;
@@ -321,6 +333,17 @@ export const settingLangs = async (columns = [], obj = {}, decode_dns = {}, tabl
                             }
                         } catch (err) {
                             LANG_STATS.fails++;
+                            // 요청 과다로 막힌 것이면 이 항목의 남은 언어까지 두드려 봐야
+                            // 전부 같은 실패다 — 차단 시각을 남기고 즉시 빠져나온다.
+                            // (예전엔 막힌 상태에서도 항목마다 언어 수만큼 계속 호출해
+                            //  차단을 연장시키면서 대기열만 축냈다)
+                            if (isRateLimited(err)) {
+                                LANG_STATS.rate_limited_at = Date.now();
+                                logger.error(`[lang] 요청이 차단됨(429/sorry) — 이번 처리 중단 table=${table_name} id=${item_id}`);
+                                result.lang_obj = JSON.stringify(result.lang_obj);
+                                result.rate_limited = true;
+                                return result;
+                            }
                             logger.error(`[lang] 번역 실패 table=${table_name} id=${item_id} col=${column} lang=${langCfg.value} :: ${err?.message || err}`);
                         }
                     }
