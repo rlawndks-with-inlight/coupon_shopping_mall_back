@@ -7,8 +7,7 @@ import {
   getSelectQueryList,
   insertQuery,
   selectQuerySimple,
-  updateQuery,
-} from "../utils.js/query-util.js";
+  updateQuery, hasColumn } from "../utils.js/query-util.js";
 import {
   canWriteBrand,
   checkDns,
@@ -171,6 +170,11 @@ const payCtrl = {
         receiver,          // 배송지 받는사람
         addr_phone,        // 배송지 연락처
         zonecode,          // 우편번호
+        // 해외배송. 주소록 행은 나중에 수정·삭제될 수 있으므로
+        // '그때 어디로 보내기로 했는지'는 주문 자체에 박아 둔다.
+        country_code = 'KR',
+        city = null,
+        state_region = null,
         mid,
         tid,
         pay_key,
@@ -339,6 +343,11 @@ const payCtrl = {
         }
       }
 
+      // 배송 국가는 주문에도 남긴다 — 주소록 행은 나중에 수정·삭제될 수 있으므로
+      // '그때 어디로 보내기로 했는지'는 주문 자체에 박혀 있어야 한다.
+      // 컬럼이 없으면(마이그레이션 전) 건너뛴다 — 없는 컬럼을 넣으면 주문 저장이 통째로 실패한다.
+      const overseasCountry = String(country_code || 'KR').toUpperCase().slice(0, 2);
+      const hasCountryColumn = await hasColumn('transactions', 'country_code');
       let obj = {
         brand_id,
         user_id,
@@ -356,6 +365,11 @@ const payCtrl = {
         receiver,
         receiver_phone: addr_phone,
         zonecode,
+        ...(hasCountryColumn ? {
+            country_code: overseasCountry,
+            city,
+            state_region,
+        } : {}),
         mid,
         tid,
         pay_key,
