@@ -12,6 +12,16 @@ import { encForSave, decRow, blindIndex } from "../utils.js/pii.js";
 import { hashOrderPassword, orderPasswordCandidates } from "../utils.js/order-password.js";
 const table_name = 'posts';
 
+// 비회원 작성자 이름 가리기 — 목록은 누구나 보는 화면이라 실명을 그대로 노출하지 않는다.
+//   홍길동 → 홍*동 / 김철 → 김* / 이 → 이
+const maskGuestName = (name) => {
+    const v = String(name ?? '').trim();
+    if (!v) return null;
+    if (v.length <= 1) return v;
+    if (v.length === 2) return v[0] + '*';
+    return v[0] + '*'.repeat(v.length - 2) + v[v.length - 1];
+};
+
 
 const postCtrl = {
     list: async (req, res, next) => {
@@ -100,10 +110,20 @@ const postCtrl = {
             let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id IN (${post_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY id DESC`, post_ids);
             child_posts = child_posts[0];
             data.content = data.content.map((item) => {
+                // ⚠ 조회 컬럼이 `posts.*` 라 비회원 문의용 컬럼까지 통째로 실린다.
+                //    비밀번호 해시(HMAC)와 연락처 blind-index 가 게시판을 보는 누구에게나 내려가면
+                //    오프라인 대입으로 비밀번호를 알아낼 수 있다 — 응답에서 반드시 제거한다.
+                //    연락처 원문도 목록에서는 쓸 일이 없다(상세에서 직원만 본다).
+                const { password, none_user_phone_idx, none_user_phone, none_user_name, ...safe } = item;
                 return {
-                    ...item,
-                    replies: child_posts.filter(itm => itm.parent_id == item.id),
+                    ...safe,
+                    replies: (child_posts.filter(itm => itm.parent_id == item.id))
+                        // 답변에도 같은 컬럼이 실려 온다(SELECT *) — 같은 이유로 제거한다.
+                        .map(({ password, none_user_phone_idx, none_user_phone, none_user_name, ...r }) => r),
                     lang_obj: JSON.parse(item?.lang_obj ?? `{}`),
+                    // 작성자 표시. 회원은 닉네임, 비회원은 이름을 가려서 보여준다(홍*동).
+                    // 예전엔 비회원 글이 목록에 작성자 '---' 로만 떠서 누가 쓴 글인지 알 수 없었다.
+                    writer_nickname: item?.writer_nickname ?? maskGuestName(decField(none_user_name)),
                     ...(is_manager ? { writer_name: decField(item?.writer_name) } : {}),
                 }
             })
@@ -172,15 +192,24 @@ const postCtrl = {
                 return lowLevelException(req, res);
             }
             // 비밀번호 해시와 blind-index 는 화면에 쓸 일이 없다 — 응답에서 뺀다.
+            // (해시가 나가면 오프라인 대입으로 비밀번호를 알아낼 수 있다)
             delete data.password;
             delete data.none_user_phone_idx;
-            // 이름·연락처는 암호화되어 있으므로 복호화해서 내려준다(관리자 답변 화면에서 필요).
+            // 이름·연락처는 암호화되어 있으므로 복호화한다.
             decRow(table_name, data);
+            // 다만 **연락처 원문은 직원과 작성자 본인에게만** 내려준다.
+            // 공개 게시판(read_type != 1)은 아무나 상세를 열 수 있어서, 안 가리면
+            // 비회원 문의 연락처가 그대로 노출된다.
+            if (!isStaff && !isGuestOwner) {
+                delete data.none_user_phone;
+                data.none_user_name = maskGuestName(data.none_user_name);
+            }
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}')
             // 목록과 같은 이유로 지운 답변을 제외한다.
             let child_posts = await readPool.query(`SELECT * FROM posts WHERE parent_id=? AND is_delete=0 ORDER BY id DESC`, [id]);
-            child_posts = child_posts[0];
-            data.replies = child_posts;
+            // 답변도 SELECT * 라 비회원 컬럼(비밀번호 해시·연락처·blind-index)이 실려 온다 — 제거한다.
+            data.replies = child_posts[0].map(
+                ({ password, none_user_phone_idx, none_user_phone, none_user_name, ...r }) => r);
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
