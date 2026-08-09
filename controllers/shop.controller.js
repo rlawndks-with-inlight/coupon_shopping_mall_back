@@ -723,6 +723,19 @@ const shopCtrl = {
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
                 }
+                // 답변이 달린 글은 작성자가 더 이상 손댈 수 없다.
+                //
+                // 프론트는 목록에서 수정·삭제 버튼을 감췄지만(프레임3) 서버가 안 막아서
+                // 상세 화면이나 API 직접 호출로는 그대로 통과했다. 답변이 달린 뒤 질문이 바뀌면
+                // 답변과 앞뒤가 안 맞는 글이 남는다.
+                // 관리자(레벨10 이상)는 계속 가능하다 — 답변을 정정해야 할 수 있다.
+                if (Number(decode_user?.level ?? 0) < 10) {
+                    let replies = await readPool.query(
+                        `SELECT COUNT(*) AS cnt FROM posts WHERE parent_id=? AND is_delete=0`, [id]);
+                    if (Number(replies[0][0]?.cnt) > 0) {
+                        return response(req, res, -100, "답변이 등록된 글은 수정할 수 없습니다.", false);
+                    }
+                }
                 let result = await postCtrl.update({ ...req, IS_RETURN: true }, res, next);
 
                 return response(req, res, 100, "success", {})
@@ -740,10 +753,33 @@ const shopCtrl = {
                 const decode_user = checkLevel(req.cookies.token, 0, res);
                 const decode_dns = checkDns(req.cookies.dns);
                 const { id } = req.params;
-                let post = await readPool.query(`SELECT * FROM posts WHERE id=?`, [id]);
+                // ⚠ 브랜드 스코프가 없었다. posts 를 id 만으로 찾아 작성자/레벨만 봤기 때문에
+                //   레벨10 이상 계정 하나면 '다른 가맹점의 글'도 지울 수 있었다.
+                //   글이 속한 게시판(post_categories)의 브랜드로 스코프를 건다.
+                let post = await readPool.query(
+                    `SELECT p.* FROM posts p
+                       JOIN post_categories pc ON pc.id = p.category_id
+                      WHERE p.id = ? AND pc.brand_id = ?`,
+                    [id, decode_dns?.id ?? 0]);
                 post = post[0][0];
+                if (!post) {
+                    return lowLevelException(req, res);
+                }
                 if (!(post?.user_id == decode_user?.id || decode_user?.level >= 10)) {
                     return lowLevelException(req, res);
+                }
+                // 답변이 달린 글은 작성자가 더 이상 손댈 수 없다.
+                //
+                // 프론트는 목록에서 수정·삭제 버튼을 감췄지만(프레임3) 서버가 안 막아서
+                // 상세 화면이나 API 직접 호출로는 그대로 통과했다. 답변이 달린 뒤 질문이 바뀌면
+                // 답변과 앞뒤가 안 맞는 글이 남는다.
+                // 관리자(레벨10 이상)는 계속 가능하다 — 답변을 정정해야 할 수 있다.
+                if (Number(decode_user?.level ?? 0) < 10) {
+                    let replies = await readPool.query(
+                        `SELECT COUNT(*) AS cnt FROM posts WHERE parent_id=? AND is_delete=0`, [id]);
+                    if (Number(replies[0][0]?.cnt) > 0) {
+                        return response(req, res, -100, "답변이 등록된 글은 삭제할 수 없습니다.", false);
+                    }
                 }
                 let result = await deleteQuery(`posts`, {
                     id
