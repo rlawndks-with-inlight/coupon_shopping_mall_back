@@ -1,6 +1,6 @@
 'use strict';
 import { checkIsManagerUrl, getMainObjType, returnMoment } from "../utils.js/function.js";
-import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList } from "../utils.js/query-util.js";
+import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, hasColumn } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
 import { FORSPAY_METHODS, getAvailableMethodIds } from "../utils.js/payments/forspay.js";
 import 'dotenv/config';
@@ -627,6 +627,10 @@ const shopCtrl = {
                 if (!String(none_user_phone ?? '').trim() || !String(password ?? '').trim()) {
                     return response(req, res, -100, "연락처와 글 비밀번호를 입력해 주세요.", false);
                 }
+                // 스키마가 아직 없으면 조회할 대상 자체가 없다(위 create 와 같은 이유).
+                if (!(await hasColumn('posts', 'none_user_phone_idx'))) {
+                    return response(req, res, 100, "success", { content: [], total: 0 });
+                }
 
                 // 글은 게시판(post_categories)을 통해 브랜드에 속한다 — 반드시 브랜드로 스코프를 건다.
                 // (스코프가 없으면 남의 가맹점 글이 연락처만 같아도 조회된다)
@@ -729,6 +733,13 @@ const shopCtrl = {
                 //  아예 없다. 회원도 직접 들어와 확인하는 구조이므로, 비회원에게도 '다시 찾아와
                 //  확인하는 경로'만 만들어 주면 회원과 동등해진다)
                 if (!decode_user?.id) {
+                    // 스키마가 아직 없으면 비회원 글을 만들 수 없다.
+                    // 그냥 두면 insertQuery 가 "Unknown column" 으로 죽어 고객에게는 '서버 에러'만 보인다.
+                    // 배포 순서와 무관하게 안전하도록, 원인을 알 수 있는 문구로 막는다.
+                    // (migrations/2026-08-10_posts_guest_inquiry.sql 을 실행하면 풀린다)
+                    if (!(await hasColumn('posts', 'none_user_phone_idx'))) {
+                        return response(req, res, -100, "비회원 문의는 아직 준비 중입니다. 로그인 후 이용해 주세요.", false);
+                    }
                     if (!String(none_user_name ?? '').trim()) {
                         return response(req, res, -100, "이름을 입력해 주세요.", false);
                     }
