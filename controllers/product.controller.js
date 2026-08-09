@@ -40,6 +40,30 @@ const table_name = 'products';
 }*/
 
 
+// 옵션그룹·옵션·특성에서 '빈 껍데기' 를 걸러낸다.
+//
+// [증상] 관리자 상품폼에서 옵션/특성 줄을 추가만 하고 이름을 안 채운 채 저장하면
+//        이름이 빈 그룹·옵션·특성이 그대로 저장됐다(검사가 is_delete 하나뿐이었다).
+//        고객 화면에는 라벨 없는 빈 버튼·빈 줄로 나갔다.
+// [더 나쁜 점] 지금은 '옵션그룹이 있으면 그룹마다 하나 이상 골라야 한다'는 규칙이 있어서
+//        (shop-util assertOptionsSelected) **고를 수 있는 옵션이 하나도 없는 그룹**이 붙어 있으면
+//        그 상품은 장바구니·바로구매가 통째로 막힌다 — 팔 수 없는 상품이 된다.
+// [처리] 저장 단계에서 조용히 버린다. 화면 검증(프론트)과 별개로 서버가 최종 방어선이다.
+const cleanOptionGroups = (groups = []) => (Array.isArray(groups) ? groups : [])
+    .filter((g) => g?.is_delete == 1 || String(g?.group_name ?? '').trim() !== '')
+    .map((g) => ({
+        ...g,
+        options: (Array.isArray(g?.options) ? g.options : [])
+            .filter((o) => o?.is_delete == 1 || String(o?.option_name ?? '').trim() !== ''),
+    }))
+    // 살아 있는 옵션이 하나도 없는 그룹은 만들지 않는다(고를 수 없는 그룹 = 구매 불가).
+    // 단, 삭제 표시된 그룹은 삭제 처리를 해야 하므로 남긴다.
+    .filter((g) => g?.is_delete == 1 || (g.options ?? []).some((o) => o?.is_delete != 1));
+
+const cleanCharacters = (characters = []) => (Array.isArray(characters) ? characters : [])
+    .filter((c) => c?.is_delete == 1
+        || (String(c?.character_name ?? '').trim() !== '' && String(c?.character_value ?? '').trim() !== ''));
+
 const productCtrl = {
     list: async (req, res, next) => {
         try {
@@ -666,6 +690,9 @@ const productCtrl = {
             if (typeof characters == 'string') {
                 characters = JSON.parse(characters ?? '[]')
             }
+            // 이름이 빈 옵션그룹·옵션·특성은 저장하지 않는다(cleanOptionGroups 주석 참고).
+            groups = cleanOptionGroups(groups);
+            characters = cleanCharacters(characters);
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
@@ -875,6 +902,9 @@ const productCtrl = {
             if (typeof characters == 'string') {
                 characters = JSON.parse(characters ?? '[]')
             }
+            // 이름이 빈 옵션그룹·옵션·특성은 저장하지 않는다(cleanOptionGroups 주석 참고).
+            groups = cleanOptionGroups(groups);
+            characters = cleanCharacters(characters);
             let files = settingFiles(req.files);
             let obj = {
                 product_img,
