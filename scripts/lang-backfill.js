@@ -15,6 +15,8 @@
 // 실행: 백엔드 루트에서  node scripts/lang-backfill.js
 //       미리보기(대기열에 넣지 않고 건수만):  node scripts/lang-backfill.js --dry
 //       테이블 한정:  node scripts/lang-backfill.js --only=product_categories,product_category_groups
+//       ShopGo 만:    node scripts/lang-backfill.js --shopgo
+//       브랜드 지정:  node scripts/lang-backfill.js --brand=98,101
 //
 // --only 를 두는 이유: 상품은 건수가 카테고리보다 두 자릿수 크다(대형몰 3곳이 대부분).
 // 카테고리만 먼저 채우고 상품은 따로 판단하는 식으로 나눠 돌릴 수 있어야 한다.
@@ -23,6 +25,31 @@ import { readPool, writePool } from '../config/db-pool.js';
 import { lang_obj_columns } from '../utils.js/schedules/lang-process.js';
 
 const DRY = process.argv.includes('--dry');
+
+// 브랜드 범위 한정.
+//
+// ⚠ 이걸 안 두고 '언어팩 켠 브랜드 전량'을 돌렸다가 구글 무료 gtx 엔드포인트에서 IP 차단을 당했다.
+//   실측하면 언어팩 켠 36곳 전체는 464,639자인데, 그중 462,416자(99.5%)가
+//   해외직구 B2B 3곳(티제이몰·다오니·아워샵)의 상품이다.
+//   정작 필요한 ShopGo(본사 98 + 산하) 범위는 1,816자 — 무료 한도의 0.4% 다.
+//   범위를 좁히면 몇 초면 끝나는 일이었다. 기본값을 '전체'로 두지 않는 편이 안전하다.
+//
+//   --shopgo        ShopGo 본사(98)와 그 산하 가맹점만
+//   --brand=1,2,3   브랜드 id 직접 지정
+const SHOPGO_MASTER_ID = parseInt(process.env.SHOPGO_MASTER_ID ?? '98') || 98;
+const SHOPGO_ONLY = process.argv.includes('--shopgo');
+const BRAND_IDS = (() => {
+    const arg = process.argv.find((a) => a.startsWith('--brand='));
+    if (!arg) return null;
+    const ids = arg.slice('--brand='.length).split(',')
+        .map((s) => parseInt(s.trim())).filter((n) => Number.isFinite(n) && n > 0);
+    if (ids.length === 0) {
+        console.error('--brand= 뒤에 브랜드 id 를 쉼표로 넣어야 합니다. 예: --brand=98,101');
+        process.exit(1);
+    }
+    return ids;
+})();
+
 const ONLY = (() => {
     const arg = process.argv.find((a) => a.startsWith('--only='));
     if (!arg) return null;
@@ -80,17 +107,25 @@ const run = async () => {
     // is_use_lang 은 setting_obj 안에 **문자열 "1"** 로 저장되는 경우가 많다.
     // JSON_EXTRACT(...) = 1 로 비교하면 문자열 "1" 이 걸리지 않아 전부 놓친다 —
     // JS 쪽에서 String() 으로 비교한다.
-    let brands = await readPool.query(`SELECT id, name, setting_obj FROM brands WHERE is_delete = 0`);
+    let brands = await readPool.query(`SELECT id, name, parent_id, setting_obj FROM brands WHERE is_delete = 0`);
     brands = brands[0].filter((b) => {
-        try { return String(JSON.parse(b?.setting_obj ?? '{}')?.is_use_lang) === '1'; }
+        try { if (String(JSON.parse(b?.setting_obj ?? '{}')?.is_use_lang) !== '1') return false; }
         catch (e) { return false; }
+        if (BRAND_IDS) return BRAND_IDS.includes(Number(b.id));
+        if (SHOPGO_ONLY) return Number(b.id) === SHOPGO_MASTER_ID || Number(b.parent_id) === SHOPGO_MASTER_ID;
+        return true;
     });
     if (brands.length === 0) {
-        console.log('언어팩을 켠 브랜드가 없습니다. 할 일 없음.');
+        console.log('대상 브랜드가 없습니다(언어팩이 켜져 있고 지정 범위에 드는 브랜드 기준). 할 일 없음.');
         process.exit(0);
     }
+    const scope = BRAND_IDS ? `브랜드 ${BRAND_IDS.join()}` : (SHOPGO_ONLY ? `ShopGo(${SHOPGO_MASTER_ID} 및 산하)` : '전체 ⚠');
+    if (!BRAND_IDS && !SHOPGO_ONLY) {
+        console.log('⚠ 범위를 지정하지 않아 언어팩 켠 브랜드 전부를 대상으로 합니다.');
+        console.log('  대형몰이 섞여 있으면 번역 요청이 폭주해 차단당할 수 있습니다 — --shopgo 또는 --brand= 를 권장합니다.\n');
+    }
     const tables = ONLY ?? Object.keys(lang_obj_columns);
-    console.log(`언어팩 켠 브랜드 ${brands.length}곳 / 대상 테이블: ${tables.join()}`);
+    console.log(`대상 브랜드 ${brands.length}곳 (범위: ${scope}) / 대상 테이블: ${tables.join()}`);
 
     let grand = 0;
     const by_table = {};
