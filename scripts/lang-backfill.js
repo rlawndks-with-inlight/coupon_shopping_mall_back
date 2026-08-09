@@ -77,12 +77,14 @@ const run = async () => {
         console.log('언어팩을 켠 브랜드가 없습니다. 할 일 없음.');
         process.exit(0);
     }
-    console.log(`언어팩 켠 브랜드 ${brands.length}곳`);
+    const tables = ONLY ?? Object.keys(lang_obj_columns);
+    console.log(`언어팩 켠 브랜드 ${brands.length}곳 / 대상 테이블: ${tables.join()}`);
 
     let grand = 0;
+    const by_table = {};
     for (const brand of brands) {
         let rows_to_insert = [];
-        for (const table of Object.keys(lang_obj_columns)) {
+        for (const table of tables) {
             const cols = lang_obj_columns[table];
             let items = await readPool.query(selectFor(table, cols), [brand.id]);
             items = items[0];
@@ -100,6 +102,7 @@ const run = async () => {
             const pending_set = new Set(pending[0].map((r) => `${r.table_name}:${r.item_id}`));
             rows_to_insert = rows_to_insert.filter((r) => !pending_set.has(`${r[0]}:${r[1]}`));
         }
+        for (const r of rows_to_insert) by_table[r[0]] = (by_table[r[0]] ?? 0) + 1;
         console.log(`  브랜드 ${brand.id} (${brand.name}) : ${rows_to_insert.length}건`);
         grand += rows_to_insert.length;
         if (DRY || rows_to_insert.length === 0) continue;
