@@ -714,10 +714,23 @@ const productCtrl = {
             dns_data = dns_data[0][0];
             dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
 
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, result?.insertId, true);
-            if (langs?.lang_obj) {
-                await updateQuery(table_name, { lang_obj: langs.lang_obj }, result?.insertId);
-            }
+            // 번역은 큐에 담고 스케줄러가 처리한다(마지막 인자 생략 = is_process false).
+            //
+            // 예전엔 여기서 true 를 넘겨 그 자리에서 구글 번역을 돌렸다. 번역 대상 컬럼 4개
+            // (product_name·product_comment·product_spec·product_description) × 켜진 언어 4개가
+            // 3중 for+await 로 중첩돼 있고 번역 경로에 Promise.all 이 한 개도 없어서,
+            // 상품 1건 저장에 구글 왕복이 12회(상세설명 없음) ~ 40회(8,000자) 직렬로 쌓였다.
+            // 회당 timeout 은 20초인데 전체 데드라인이 없어 상한도 없었다.
+            // 그동안 응답이 안 나가므로 가맹점 화면은 저장 버튼을 누른 채 수 초~수십 초 멈춰 있었다.
+            // ("상품 추가가 오래 걸린다"는 가맹점 의견의 실체가 이것이다)
+            //
+            // 게시글·카테고리 컨트롤러는 원래부터 인자를 생략해 전부 큐로 보내고 있었다 —
+            // 상품만 예외였다. 같은 방식으로 되돌린다.
+            //
+            // 반영 시점: 스케줄러가 1분마다 큐를 비우므로 보통 저장 후 1~2분 내에 채워진다.
+            // 그 사이 화면이 비지는 않는다 — 프론트 formatLang 이 번역이 없으면 원문으로 폴백하므로
+            // 한국어 화면은 무변화이고, 그 시간에 외국어로 보는 고객에게만 원문이 보인다.
+            await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, result?.insertId);
 
 
             if (!result?.insertId) {
@@ -946,10 +959,10 @@ const productCtrl = {
             dns_data = dns_data[0][0];
             dns_data["setting_obj"] = JSON.parse(dns_data?.setting_obj ?? "{}");
 
-            let langs = await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, id, true);
-            if (langs?.lang_obj) {
-                await updateQuery(table_name, { lang_obj: langs.lang_obj }, id);
-            }
+            // 수정도 저장과 같은 이유로 큐에 담는다(create 쪽 주석 참고).
+            // 큐의 else 분기가 같은 (table_name, item_id) 행을 먼저 지우고 새로 넣으므로,
+            // 한 상품을 여러 번 저장해도 대기열에 중복으로 쌓이지 않는다.
+            await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, id);
 
             const product_id = id;
             //option
