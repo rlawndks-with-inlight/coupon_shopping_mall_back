@@ -24,13 +24,26 @@ export const lang_obj_columns = {
         'product_name',
         'product_comment',
         'product_spec',
+        // 상세설명이 빠져 있었다. 그런데 고객 화면(프레임2 상품상세 등)은
+        // formatLang(product, 'product_description', ...) 을 부르고 있어서,
+        // 있지도 않은 번역을 찾다가 늘 원문으로 폴백했다 — 다른 건 다 번역됐는데
+        // 상세설명만 한국어로 남는 이유가 이것이다.
+        // HTML 이므로 HTML_LANG_COLUMNS 에도 함께 등록해 태그를 보존한다.
+        'product_description',
     ],
     product_options: [
         'option_name',
     ],
     product_option_groups: [
         'group_name'
-    ]
+    ],
+    // 특성은 번역 대상에 아예 없었다 — 고객 상품상세에 노출되는데도 늘 한국어였다.
+    // 옵션과 같은 계층이라 브랜드 판정도 같은 방식(부모 products 조인)으로 한다.
+    // ⚠ migrations/2026-08-10_product_characters_lang_obj.sql 실행이 선행돼야 한다.
+    product_characters: [
+        'character_name',
+        'character_value',
+    ],
 }
 
 // 이전 틱이 아직 돌고 있는지. 스케줄러가 1분마다 부르는데 한 틱이 1분을 넘길 수 있다.
@@ -250,6 +263,18 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
             } else if (table == 'product_options') {
                 // product_options 에는 brand_id 컬럼이 없어 그룹→상품 으로 조인해 브랜드 필터
                 let items = await readPool.query(`SELECT product_options.id, ${lang_obj_columns[table].map(c => `product_options.${c}`).join()} FROM product_options LEFT JOIN product_option_groups ON product_options.group_id=product_option_groups.id LEFT JOIN products ON product_option_groups.product_id=products.id WHERE products.brand_id=?`, [new_brand_data?.id]);
+                items = items[0];
+                for (var j = 0; j < items.length; j++) {
+                    insert_lang_process_list.push([
+                        table,
+                        items[j]?.id,
+                        new_brand_data?.id,
+                        JSON.stringify(items[j])
+                    ])
+                }
+            } else if (table == 'product_characters') {
+                // product_characters 에도 brand_id 컬럼이 없어 부모(products)로 조인해 브랜드 필터
+                let items = await readPool.query(`SELECT product_characters.id, ${lang_obj_columns[table].map(c => `product_characters.${c}`).join()} FROM product_characters LEFT JOIN products ON product_characters.product_id=products.id WHERE products.brand_id=?`, [new_brand_data?.id]);
                 items = items[0];
                 for (var j = 0; j < items.length; j++) {
                     insert_lang_process_list.push([

@@ -98,6 +98,13 @@ const selectFor = (table, cols) => {
                  WHERE products.brand_id = ?
                    AND ${NO_TRANSLATION('product_options')}`;
     }
+    if (table === 'product_characters') {
+        // 특성도 brand_id 컬럼이 없다 — 부모(products)로 조인해 브랜드를 판정한다.
+        return `SELECT product_characters.id, ${c} FROM product_characters
+                  LEFT JOIN products ON product_characters.product_id = products.id
+                 WHERE products.brand_id = ?
+                   AND ${NO_TRANSLATION('product_characters')}`;
+    }
     return `SELECT id, ${cols.join()} FROM ${table}
              WHERE brand_id = ?
                AND ${NO_TRANSLATION(table)}`;
