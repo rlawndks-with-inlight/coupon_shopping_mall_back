@@ -71,11 +71,22 @@ const ONLY = (() => {
 // 원문만 담긴 {"category_name":{"ko":"주방용품"}} 형태로 저장된다 — 비어 있지 않으므로
 // 이 조건을 통과해 '이미 번역됨'으로 취급됐고, 다시 대기열에 들어가지 못했다.
 // 대상 언어 키(en/ja/cn/es)가 하나도 없으면 번역이 없는 것으로 본다.
-const NO_TRANSLATION = (t) => `(
+// 세 번째 보완: 판정이 '행 단위' 라 **번역 대상 컬럼이 나중에 늘어나면 영영 안 채워진다**.
+//   실제로 products 에 product_description 을 추가했더니, 상품명이 이미 번역된 18건이
+//   전부 '번역됨' 으로 걸러져 상세설명만 원문으로 남았다(백필을 돌려도 0건 적재).
+//   → 컬럼마다 'lang_obj 안에 그 컬럼 키가 있는지' 를 따로 본다.
+//     원문이 비어 있는 컬럼은 번역할 것이 없으므로 대상에서 뺀다.
+const NO_TRANSLATION = (t, cols = []) => {
+    const perColumn = cols.map((col) =>
+        `(${t}.${col} IS NOT NULL AND ${t}.${col} <> '' AND (${t}.lang_obj IS NULL OR ${t}.lang_obj NOT LIKE '%"${col}"%'))`
+    );
+    return `(
     ${t}.lang_obj IS NULL OR ${t}.lang_obj = '' OR ${t}.lang_obj = '{}'
     OR (${t}.lang_obj NOT LIKE '%"en"%' AND ${t}.lang_obj NOT LIKE '%"ja"%'
         AND ${t}.lang_obj NOT LIKE '%"cn"%' AND ${t}.lang_obj NOT LIKE '%"es"%')
+    ${perColumn.length ? 'OR ' + perColumn.join('\n    OR ') : ''}
 )`;
+};
 
 const selectFor = (table, cols) => {
     const c = cols.map((x) => `${table}.${x}`).join();
@@ -83,31 +94,31 @@ const selectFor = (table, cols) => {
         return `SELECT posts.id, ${c} FROM posts
                   LEFT JOIN post_categories ON posts.category_id = post_categories.id
                  WHERE post_categories.brand_id = ?
-                   AND ${NO_TRANSLATION('posts')}`;
+                   AND ${NO_TRANSLATION('posts', cols)}`;
     }
     if (table === 'product_option_groups') {
         return `SELECT product_option_groups.id, ${c} FROM product_option_groups
                   LEFT JOIN products ON product_option_groups.product_id = products.id
                  WHERE products.brand_id = ?
-                   AND ${NO_TRANSLATION('product_option_groups')}`;
+                   AND ${NO_TRANSLATION('product_option_groups', cols)}`;
     }
     if (table === 'product_options') {
         return `SELECT product_options.id, ${c} FROM product_options
                   LEFT JOIN product_option_groups ON product_options.group_id = product_option_groups.id
                   LEFT JOIN products ON product_option_groups.product_id = products.id
                  WHERE products.brand_id = ?
-                   AND ${NO_TRANSLATION('product_options')}`;
+                   AND ${NO_TRANSLATION('product_options', cols)}`;
     }
     if (table === 'product_characters') {
         // 특성도 brand_id 컬럼이 없다 — 부모(products)로 조인해 브랜드를 판정한다.
         return `SELECT product_characters.id, ${c} FROM product_characters
                   LEFT JOIN products ON product_characters.product_id = products.id
                  WHERE products.brand_id = ?
-                   AND ${NO_TRANSLATION('product_characters')}`;
+                   AND ${NO_TRANSLATION('product_characters', cols)}`;
     }
     return `SELECT id, ${cols.join()} FROM ${table}
              WHERE brand_id = ?
-               AND ${NO_TRANSLATION(table)}`;
+               AND ${NO_TRANSLATION(table, cols)}`;
 };
 
 const run = async () => {
