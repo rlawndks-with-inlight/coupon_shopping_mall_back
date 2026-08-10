@@ -215,6 +215,8 @@ export const LANG_TARGETS = [
 // (Quill 에디터가 만든 마크업이라 통째로 번역기에 넣으면 태그가 깨진다)
 export const HTML_LANG_COLUMNS = {
     posts: ['post_content'],
+    // 상품 상세설명도 Quill 이 만든 HTML 이다. 태그를 보존하고 텍스트 노드만 번역해야 한다.
+    products: ['product_description'],
 };
 
 // 호출량 관측 — 스케줄러가 한 틱의 요청 예산을 지키는 데 쓴다.
