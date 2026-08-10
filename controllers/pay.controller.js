@@ -173,6 +173,7 @@ const payCtrl = {
         // 해외배송. 주소록 행은 나중에 수정·삭제될 수 있으므로
         // '그때 어디로 보내기로 했는지'는 주문 자체에 박아 둔다.
         country_code = 'KR',
+        country_name = null,   // 고객이 직접 적은 나라 이름(코드 컬럼은 VARCHAR(2))
         city = null,
         state_region = null,
         mid,
@@ -367,6 +368,8 @@ const payCtrl = {
         zonecode,
         ...(hasCountryColumn ? {
             country_code: overseasCountry,
+            // 나라 이름은 고객이 직접 적는다 — 저장하지 않으면 주문서에서 받은 국가가 버려진다.
+            country_name: country_name ? String(country_name).slice(0, 60) : null,
             city,
             state_region,
         } : {}),

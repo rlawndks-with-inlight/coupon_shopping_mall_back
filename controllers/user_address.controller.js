@@ -219,7 +219,8 @@ const userAddressCtrl = {
                 zonecode,        // 우편번호
                 address_type,    // 배송지 구분(집/회사 등)
                 is_default,      // 기본배송지 여부
-                country_code,    // 배송 국가(KR=국내). 국내/해외 입력 방식이 여기서 갈린다
+                country_code,    // 배송 국가(KR=국내, ZZ=해외). 국내/해외 입력 방식이 여기서 갈린다
+                country_name,    // 고객이 직접 적은 나라 이름(코드 컬럼은 VARCHAR(2) 라 이름을 못 담는다)
                 city,            // 도시(해외배송)
                 state_region,    // 주/지역(해외배송)
             } = req.body;
@@ -250,6 +251,11 @@ const userAddressCtrl = {
             // 컬럼이 있으면 국내(KR)도 그대로 저장한다(해외→국내로 되돌리는 수정이 가능해야 한다).
             if (country_code !== undefined && await hasColumn(table_name, 'country_code')) {
                 obj.country_code = String(country_code || 'KR').toUpperCase().slice(0, 2);
+                // 나라 이름은 고객이 직접 적는다(목록에 없는 나라도 주문할 수 있어야 한다).
+                // 이걸 저장하지 않으면 화면에서 입력받은 국가가 통째로 버려진다.
+                if (country_name !== undefined && await hasColumn(table_name, 'country_name')) {
+                    obj.country_name = String(country_name ?? '').slice(0, 60);
+                }
                 if (city !== undefined) obj.city = city;
                 if (state_region !== undefined) obj.state_region = state_region;
             }
@@ -301,6 +307,7 @@ const userAddressCtrl = {
                 address_type,
                 is_default,
                 country_code,
+                country_name,
                 city,
                 state_region,
             } = req.body;
@@ -343,6 +350,11 @@ const userAddressCtrl = {
             // 컬럼이 있으면 국내(KR)도 그대로 저장한다(해외→국내로 되돌리는 수정이 가능해야 한다).
             if (country_code !== undefined && await hasColumn(table_name, 'country_code')) {
                 obj.country_code = String(country_code || 'KR').toUpperCase().slice(0, 2);
+                // 나라 이름은 고객이 직접 적는다(목록에 없는 나라도 주문할 수 있어야 한다).
+                // 이걸 저장하지 않으면 화면에서 입력받은 국가가 통째로 버려진다.
+                if (country_name !== undefined && await hasColumn(table_name, 'country_name')) {
+                    obj.country_name = String(country_name ?? '').slice(0, 60);
+                }
                 if (city !== undefined) obj.city = city;
                 if (state_region !== undefined) obj.state_region = state_region;
             }
