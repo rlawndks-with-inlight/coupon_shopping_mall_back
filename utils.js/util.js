@@ -118,7 +118,14 @@ export const response = async (req, res, code, message, data) => { //응답 포�
         return resDict;
     } else {
         if (code < 0) {
-            res.status(500).send(resDict)
+            // 실패 코드는 지금까지 전부 HTTP 500 이었다. '권한이 없습니다'(-150)도 마찬가지라,
+            // 로그인 전에 화면이 부르는 조회 하나하나가 서버 오류로 잡혀 5xx 지표를 오염시켰다.
+            // 권한 거부는 서버 잘못이 아니므로 403 으로 내린다.
+            //
+            // 프론트 동작은 그대로다 — axios 는 2xx 가 아니면 어느 코드든 reject 하고,
+            // 인터셉터가 응답 본문을 그대로 넘기므로 화면에 뜨는 메시지도 같다(utils/axios.js).
+            // 나머지 실패 코드는 이번 범위가 아니라 500 그대로 둔다.
+            res.status(code === -150 ? 403 : 500).send(resDict)
         } else {
             res.status(200).send(resDict)
         }
