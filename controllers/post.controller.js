@@ -70,6 +70,14 @@ const postCtrl = {
             sql += ` LEFT JOIN post_categories ON ${table_name}.category_id=post_categories.id `
             sql += ` WHERE ${table_name}.parent_id=-1 `
             let params = [];
+            // ⚠ 브랜드 스코프는 무조건 건다.
+            //
+            // 예전엔 브랜드 조건이 아예 없었고, 좁히는 건 아래 `if (category_id)` 하나뿐이었다.
+            // 즉 category_id 를 빼고 부르면 **전 가맹점의 글**이 한 번에 나왔다(직원 레벨10 이상).
+            // 글은 게시판(post_categories)을 통해 브랜드에 속하므로 그 조인으로 스코프를 건다.
+            // (LEFT JOIN 이지만 이 조건이 붙으면 사실상 INNER — 카테고리 없는 글은 목록 대상이 아니다)
+            sql += ` AND post_categories.brand_id=? `
+            params.push(decode_dns?.id ?? 0);
             if (category_id) {
                 sql += ` AND ${table_name}.category_id IN (${category_ids.map(() => '?').join(',')}) `
                 params.push(...category_ids);
