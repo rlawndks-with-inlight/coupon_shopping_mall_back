@@ -159,29 +159,47 @@ const requireMasterManager = async (req, res, minLevel = 10) => {
 // API로 임의값을 보내면 그대로 브랜드가 만들어지므로 서버에서도 막는다.
 // 프레임 키 → 신청 화면에 표기되는 이름. front frameList.js 의 no/title 과 반드시 동일하게 유지할 것.
 // 메일에 'blog:1' 같은 내부 키가 그대로 나가면 사장님이 무엇을 신청했는지 알 수 없다.
+//
+// ⚠ 판매 프레임을 11개 → 6개로 줄이면서 번호를 다시 매겼다. key 는 그대로다 —
+//   key 뒷숫자가 shop_demo_num/blog_demo_num 이고 이미 접수된 신청서에도 저장돼 있다.
 const FRAME_LABELS = {
     'shop:1': '01 탐색 중심형',
     'shop:2': '02 브랜드 무드형',
-    'shop:4': '03 다카테고리 잡화몰',
-    'blog:1': '04 매거진 에디토리얼',
-    'blog:2': '05 종합 그리드',
-    'blog:4': '06 럭셔리 미니멀',
-    'blog:5': '07 다크 럭셔리',
-    'blog:6': '08 신뢰형 단일 브랜드',
-    'blog:7': '09 동양 미니멀',
-    'blog:8': '10 트렌디 그래픽',
-    'blog:9': '11 파스텔 감성',
+    'blog:1': '03 매거진 에디토리얼',
+    'blog:2': '04 카테고리 그리드',
+    'blog:4': '05 럭셔리 미니멀',
+    'blog:9': '06 파스텔 감성',
 };
-const ALLOWED_FRAMES = Object.keys(FRAME_LABELS);
-const isAllowedFrame = (frame) => ALLOWED_FRAMES.includes(String(frame || ''));
+
+// 판매를 중단한 프레임. 새 신청에서는 고를 수 없지만 **이미 접수된 신청건이 있어서**
+// 라벨은 남겨야 한다 — 지우면 관리자 목록과 메일에 내부 키('blog:5')가 그대로 나간다.
+const RETIRED_FRAME_LABELS = {
+    'shop:4': '(판매중단) 다카테고리 잡화몰',
+    'blog:5': '(판매중단) 다크 럭셔리',
+    'blog:6': '(판매중단) 신뢰형 단일 브랜드',
+    'blog:7': '(판매중단) 동양 미니멀',
+    'blog:8': '(판매중단) 트렌디 그래픽',
+};
+
+// 새 신청에서 고를 수 있는 프레임(프론트 SELECTABLE_FRAME_KEYS 와 같은 목록이어야 한다).
+const SELECTABLE_FRAMES = Object.keys(FRAME_LABELS);
+// 값으로 인정되는 프레임 — 판매를 중단했어도 이미 저장된 값은 유효하다.
+// 이 둘을 하나로 묶으면, 판매중단과 동시에 '대기 중인 신청건'이 승인 시 엉뚱한 몰로 개설된다.
+const KNOWN_FRAMES = [...SELECTABLE_FRAMES, ...Object.keys(RETIRED_FRAME_LABELS)];
+const isSelectableFrame = (frame) => SELECTABLE_FRAMES.includes(String(frame || ''));
+const isKnownFrame = (frame) => KNOWN_FRAMES.includes(String(frame || ''));
 // 메일 표기용. 알 수 없는 값이면 원본을 그대로 보여 준다(정보를 잃지 않도록).
-const frameLabel = (frame) => FRAME_LABELS[String(frame || '')] || (frame || '-');
+const frameLabel = (frame) =>
+    FRAME_LABELS[String(frame || '')] || RETIRED_FRAME_LABELS[String(frame || '')] || (frame || '-');
 
 // 선택 프레임("shop:1" / "blog:4") → 데모번호 매핑
-// 화이트리스트에 없는 값이 어떤 경로로든 들어오면 shop:1로 떨어뜨린다.
-// (기존엔 0/0이 되어 쇼핑몰이 404로 뜨지 않는 브랜드가 만들어졌다)
+//
+// ⚠ 판정에 KNOWN_FRAMES 를 쓴다(SELECTABLE 이 아니다). 판매를 중단한 프레임으로
+//   **이미 접수돼 대기 중인 신청**이 있는데, 선택 가능 목록으로 판정하면 승인하는 순간
+//   조용히 shop:1 로 떨어져 사장님이 고른 것과 다른 몰이 만들어진다(로그도 안 남는다).
+//   정말 모르는 값일 때만 shop:1 로 떨어뜨린다(0/0 이면 404 나는 브랜드가 생긴다).
 const frameToDemo = (frame) => {
-    const safeFrame = isAllowedFrame(frame) ? String(frame) : 'shop:1';
+    const safeFrame = isKnownFrame(frame) ? String(frame) : 'shop:1';
     const [category, num] = safeFrame.split(':');
     const n = parseInt(num) || 0;
     if (category === 'blog') return { shop_demo_num: '0', blog_demo_num: String(n) };
@@ -367,7 +385,7 @@ const merchantApplicationCtrl = {
             if (!BIZNO_RE.test(bizNo)) {
                 return response(req, res, -102, "사업자번호 형식이 올바르지 않습니다", false);
             }
-            if (!isAllowedFrame(selected_frame)) {
+            if (!isSelectableFrame(selected_frame)) {
                 return response(req, res, -103, "선택하신 디자인 프레임을 확인할 수 없습니다. 다시 선택해 주세요.", false);
             }
             if (!ceo_email || !EMAIL_RE.test(ceo_email)) {
