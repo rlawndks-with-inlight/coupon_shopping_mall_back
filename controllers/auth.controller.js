@@ -97,11 +97,6 @@ const makeUserTokenPayload = (user, agent) => ({
     // ⚠ 값이 아니라 '설정됐는지'만 담는다(질문 id 는 토큰에 넣지 않는다).
     has_security_question: (user.security_question_id === null || user.security_question_id === undefined) ? 0 : 1,
 
-    // 수신동의 — 회원정보수정 화면이 현재 상태를 체크박스에 표시해야 한다.
-    // 컬럼이 아직 없는 환경(마이그레이션 전)에서는 undefined 가 되므로 0 으로 떨어뜨린다.
-    is_marketing_agree: user.is_marketing_agree ? 1 : 0,
-    is_sms_agree: user.is_sms_agree ? 1 : 0,
-    is_email_agree: user.is_email_agree ? 1 : 0,
 });
 
 // 토큰 쿠키 발급. signIn 의 res.cookie 옵션과 100% 동일해야 한다.
@@ -322,25 +317,6 @@ const authCtrl = {
                 }
             }
 
-            // ── 수신동의 ────────────────────────────────────────────────────
-            // 가입폼의 '쇼핑정보/SMS/이메일 수신 동의' 체크박스는 값이 전송조차 되지 않았고
-            // 받을 컬럼도 없었다(고객에게는 '회원정보수정에서 언제든 변경 가능'이라고
-            // 안내하면서 그 화면엔 항목이 없었다). 이제 실제로 저장한다.
-            //
-            // 컬럼이 아직 없을 수 있으므로(마이그레이션 전 배포) hasColumn 으로 감싼다 —
-            // 없으면 이 필드들만 빼고 저장하며 가입 자체는 그대로 성공한다.
-            let marketing_fields = {};
-            if (await hasColumn('users', 'is_marketing_agree')) {
-                const on = (v) => (v == 1 || v === true || v === 'true') ? 1 : 0;
-                const marketing = on(req.body?.is_marketing_agree);
-                marketing_fields = {
-                    is_marketing_agree: marketing,
-                    is_sms_agree: on(req.body?.is_sms_agree),
-                    is_email_agree: on(req.body?.is_email_agree),
-                    // 동의 사실만으로는 부족하다 — 언제 동의했는지도 남긴다.
-                    marketing_agreed_at: marketing ? returnMoment() : null,
-                };
-            }
 
             user_pw = pw_data.hashedPassword;
             let user_salt = pw_data.salt;
@@ -367,7 +343,6 @@ const authCtrl = {
                 register_img,
                 seller_id,
                 ...security_fields,
-                ...marketing_fields
             }
 
             obj = encForSave('users', obj); // 실명·전화 암호화 + blind-index (신규 security_* 키는 그대로 통과)
@@ -458,21 +433,6 @@ const authCtrl = {
                     return response(req, res, -100, "인증시간이 지났습니다. 다시 인증해 주세요.", false)
                 }
             }
-            // 수신동의 — 가입 안내문이 '회원정보수정에서 언제든 변경 가능'이라고 약속하는 항목이다.
-            // 보내온 경우에만 반영한다(이 API 를 부르는 다른 화면들이 값을 안 보내는데,
-            // 무조건 덮으면 닉네임만 바꿔도 동의가 꺼져 버린다).
-            let marketing_update = {};
-            if (await hasColumn('users', 'is_marketing_agree')) {
-                const on = (v) => (v == 1 || v === true || v === 'true') ? 1 : 0;
-                if ('is_marketing_agree' in req.body) {
-                    const marketing = on(req.body?.is_marketing_agree);
-                    marketing_update.is_marketing_agree = marketing;
-                    // 껐다 켜면 시각을 새로 남기고, 끄면 비운다.
-                    marketing_update.marketing_agreed_at = marketing ? returnMoment() : null;
-                }
-                if ('is_sms_agree' in req.body) marketing_update.is_sms_agree = on(req.body?.is_sms_agree);
-                if ('is_email_agree' in req.body) marketing_update.is_email_agree = on(req.body?.is_email_agree);
-            }
 
             let result = await updateQuery('users', encForSave('users', {
                 nickname,
@@ -486,8 +446,7 @@ const authCtrl = {
                 contract_img,
                 bsin_lic_img,
                 shareholder_img,
-                register_img,
-                ...marketing_update
+                register_img
             }), decode_user?.id); // phone_num 암호화 + phone_idx 세팅(부분 업데이트 안전, name 없음)
 
             // 토큰 재발급 — payload 에 nickname·phone_num·profile_img 가 들어 있어서

@@ -82,6 +82,9 @@ const domainCtrl = {
         "is_use_otp",
         "is_closure",
         "parent_id",
+        // 약관·개인정보처리방침의 시행일자로 쓴다. 관리자에서 손으로 넣는 establish_date 는
+        // 대부분 비어 있어 "이 약관은 (빈칸)부터 시행합니다" 로 나갔다 — 가맹점 등록일을 쓴다.
+        "created_at",
       ];
 
       const columns_seller = [
