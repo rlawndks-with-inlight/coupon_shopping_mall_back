@@ -242,6 +242,25 @@ const shopCtrl = {
             popup_sql += ` WHERE popups.brand_id=? AND popups.is_delete=0 AND popups.open_s_dt <= ? AND popups.open_e_dt >= ? `;
             popup_sql += ` ORDER BY id DESC`;
 
+            // 상품상세 '혜택 안내' — 본사가 만든 것을 가맹점이 그대로 받는다.
+            //
+            // 소유자는 항상 본사다. 가맹점이면 부모(parent_id), 본사 자신이면 자기 id 를 본다.
+            // 가맹점 소유 행은 존재하지 않으므로 여기서 잘못 짚으면 그냥 빈 목록이 된다
+            // (화면이 깨지지는 않고 혜택 줄이 안 뜬다).
+            const benefit_owner_brand_id = Number(decode_dns?.parent_id) > 0
+                ? Number(decode_dns.parent_id)
+                : (decode_dns?.id ?? 0);
+
+            let benefit_notice_sql = `SELECT benefit_notices.* FROM benefit_notices `;
+            benefit_notice_sql += ` WHERE benefit_notices.brand_id=? AND benefit_notices.is_delete=0 AND benefit_notices.is_show=1 `;
+            benefit_notice_sql += ` ORDER BY benefit_notices.sort ASC, benefit_notices.id ASC`;
+
+            // 탭은 부모 줄을 조인해 브랜드를 거른다(탭 테이블에는 brand_id 가 없다).
+            let benefit_tab_sql = `SELECT benefit_notice_tabs.* FROM benefit_notice_tabs `;
+            benefit_tab_sql += ` LEFT JOIN benefit_notices ON benefit_notice_tabs.notice_id=benefit_notices.id `;
+            benefit_tab_sql += ` WHERE benefit_notices.brand_id=? AND benefit_notices.is_delete=0 AND benefit_notices.is_show=1 AND benefit_notice_tabs.is_delete=0 `;
+            benefit_tab_sql += ` ORDER BY benefit_notice_tabs.sort ASC, benefit_notice_tabs.id ASC`;
+
             //when
             let sql_list = [
                 { table: 'products', sql: product_sql, data: [...product_ids] },
@@ -257,6 +276,8 @@ const shopCtrl = {
                 { table: 'payment_modules', sql: payment_module_sql, data: [decode_dns?.id ?? 0] },
                 { table: 'user_wishs', sql: user_wish_sql, data: [decode_dns?.id ?? 0, decode_user?.id ?? 0] },
                 { table: 'popups', sql: popup_sql, data: [decode_dns?.id ?? 0, return_moment.substring(0, 10), return_moment.substring(0, 10)] },
+                { table: 'benefit_notices', sql: benefit_notice_sql, data: [benefit_owner_brand_id] },
+                { table: 'benefit_notice_tabs', sql: benefit_tab_sql, data: [benefit_owner_brand_id] },
             ]
 
             let data = await getMultipleQueryByWhen(sql_list);

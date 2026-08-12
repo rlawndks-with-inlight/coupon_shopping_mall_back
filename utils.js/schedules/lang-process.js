@@ -44,6 +44,16 @@ export const lang_obj_columns = {
         'character_name',
         'character_value',
     ],
+    // 상품상세 '혜택 안내'. 본사가 한국어로 한 번 쓰면 나머지 4개 언어는 여기서 채워진다.
+    benefit_notices: [
+        'label',
+        'summary',
+    ],
+    // 탭 본문은 Quill 이 만든 HTML 이라 HTML_LANG_COLUMNS 에도 등록돼 있다(태그 보존).
+    benefit_notice_tabs: [
+        'tab_title',
+        'tab_content',
+    ],
 }
 
 // 이전 틱이 아직 돌고 있는지. 스케줄러가 1분마다 부르는데 한 틱이 1분을 넘길 수 있다.
@@ -275,6 +285,21 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
             } else if (table == 'product_characters') {
                 // product_characters 에도 brand_id 컬럼이 없어 부모(products)로 조인해 브랜드 필터
                 let items = await readPool.query(`SELECT product_characters.id, ${lang_obj_columns[table].map(c => `product_characters.${c}`).join()} FROM product_characters LEFT JOIN products ON product_characters.product_id=products.id WHERE products.brand_id=?`, [new_brand_data?.id]);
+                items = items[0];
+                for (var j = 0; j < items.length; j++) {
+                    insert_lang_process_list.push([
+                        table,
+                        items[j]?.id,
+                        new_brand_data?.id,
+                        JSON.stringify(items[j])
+                    ])
+                }
+            } else if (table == 'benefit_notice_tabs') {
+                // benefit_notice_tabs 에도 brand_id 컬럼이 없다 — 부모(benefit_notices)로 조인한다.
+                // 이 분기가 없으면 else 로 떨어져 `WHERE brand_id=?` 를 붙이고,
+                // MySQL 이 Unknown column 으로 던져 **언어팩 켜기 자체가 실패**한다
+                // (그 브랜드의 다른 테이블 번역까지 통째로 안 걸린다).
+                let items = await readPool.query(`SELECT benefit_notice_tabs.id, ${lang_obj_columns[table].map(c => `benefit_notice_tabs.${c}`).join()} FROM benefit_notice_tabs LEFT JOIN benefit_notices ON benefit_notice_tabs.notice_id=benefit_notices.id WHERE benefit_notices.brand_id=?`, [new_brand_data?.id]);
                 items = items[0];
                 for (var j = 0; j < items.length; j++) {
                     insert_lang_process_list.push([

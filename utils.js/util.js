@@ -224,6 +224,8 @@ export const HTML_LANG_COLUMNS = {
     posts: ['post_content'],
     // 상품 상세설명도 Quill 이 만든 HTML 이다. 태그를 보존하고 텍스트 노드만 번역해야 한다.
     products: ['product_description'],
+    // 혜택 안내 팝업의 탭 본문. 카드사 로고 <img> 가 섞여 있어 태그 보존이 특히 중요하다.
+    benefit_notice_tabs: ['tab_content'],
 };
 
 // 호출량 관측 — 스케줄러가 한 틱의 요청 예산을 지키는 데 쓴다.
