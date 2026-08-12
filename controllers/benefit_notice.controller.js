@@ -17,16 +17,23 @@ const tab_table_name = 'benefit_notice_tabs';
 // 가맹점이 각자 적으면 실제 행사와 어긋난 고지가 몰마다 흩어지기 때문이다.
 //
 // 그래서 쓰기 권한이 보통 CRUD 보다 좁다:
-//   · 레벨 50(본사 관리자) 이상만 쓴다.
+//   · **본사 브랜드(is_main_dns=1)의 관리자**만 쓴다.
 //   · brand_id 는 body 를 믿지 않고 **로그인한 관리자의 브랜드**로 못박는다.
 //     (한 줄만 잘못 들어가도 전 가맹점 화면에 동시에 나간다)
 //
 // 읽기는 가맹점 스토어프론트가 shop.controller 의 setting 묶음으로 받아간다
 // (여기 list 는 관리자 화면 전용이다).
 
-// 쓰기 주체를 확정한다. 본사 관리자만 통과.
-const 본사브랜드 = (decode_user, decode_dns) => {
-    if (!decode_user || decode_user?.level < 50) return 0;
+// 쓰기·조회 주체를 확정한다. 본사 브랜드의 관리자만 통과하고, 그 브랜드 id 를 돌려준다.
+//
+// ⚠ 레벨 50 으로 걸었다가 본사에서 '권한이 없습니다'만 떴다.
+//   레벨 50 은 개발사 계정이고 ShopGo 본사 운영자는 레벨 40 이다(본사에 50 계정이 아예 없다).
+//   그렇다고 레벨 40 만 보면 가맹점 관리자도 통과하므로, **브랜드가 마스터인지**를 함께 본다.
+//   이 DB 는 다른 클라이언트와 공유하는데, 그쪽 마스터는 자기 산하 가맹점에만 영향을 주므로
+//   같은 규칙으로 통과시켜도 서로 침범하지 않는다(읽기가 부모 brand_id 기준이라 격리된다).
+const 본사관리자 = (decode_user, decode_dns) => {
+    if (!decode_user || Number(decode_user?.level) < 40) return 0;
+    if (Number(decode_dns?.is_main_dns) !== 1) return 0;
     return Number(decode_dns?.id) || 0;
 };
 
@@ -36,10 +43,10 @@ const benefitNoticeCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            if (!decode_user || decode_user?.level < 50) {
+            const brand_id = 본사관리자(decode_user, decode_dns);
+            if (!brand_id) {
                 return lowLevelException(req, res);
             }
-            const brand_id = Number(decode_dns?.id) || 0;
 
             let rows = await readPool.query(
                 `SELECT * FROM ${table_name} WHERE brand_id=? AND is_delete=0 ORDER BY sort ASC, id ASC`,
@@ -74,14 +81,15 @@ const benefitNoticeCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            if (!decode_user || decode_user?.level < 50) {
+            const brand_id = 본사관리자(decode_user, decode_dns);
+            if (!brand_id) {
                 return lowLevelException(req, res);
             }
             const { id } = req.params;
             let rows = await readPool.query(`SELECT * FROM ${table_name} WHERE id=? AND is_delete=0`, [id]);
             let data = rows[0][0];
             // 남의 브랜드 행을 열어보지 못하게 — 본사가 여럿인 공유 DB 다.
-            if (!data || Number(data.brand_id) !== Number(decode_dns?.id)) {
+            if (!data || Number(data.brand_id) !== brand_id) {
                 return lowLevelException(req, res);
             }
             data.lang_obj = JSON.parse(data?.lang_obj ?? '{}');
@@ -100,7 +108,7 @@ const benefitNoticeCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const brand_id = 본사브랜드(decode_user, decode_dns);
+            const brand_id = 본사관리자(decode_user, decode_dns);
             if (!brand_id) {
                 return lowLevelException(req, res);
             }
@@ -131,7 +139,7 @@ const benefitNoticeCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const brand_id = 본사브랜드(decode_user, decode_dns);
+            const brand_id = 본사관리자(decode_user, decode_dns);
             if (!brand_id) {
                 return lowLevelException(req, res);
             }
@@ -165,7 +173,7 @@ const benefitNoticeCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const brand_id = 본사브랜드(decode_user, decode_dns);
+            const brand_id = 본사관리자(decode_user, decode_dns);
             if (!brand_id) {
                 return lowLevelException(req, res);
             }
