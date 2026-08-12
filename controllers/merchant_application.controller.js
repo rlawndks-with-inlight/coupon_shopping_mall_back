@@ -164,11 +164,11 @@ const requireMasterManager = async (req, res, minLevel = 10) => {
 //   key 뒷숫자가 shop_demo_num/blog_demo_num 이고 이미 접수된 신청서에도 저장돼 있다.
 const FRAME_LABELS = {
     'shop:1': '01 탐색 중심형',
-    'shop:2': '02 브랜드 무드형',
-    'blog:1': '03 매거진 에디토리얼',
-    'blog:2': '04 카테고리 그리드',
-    'blog:4': '05 럭셔리 미니멀',
-    'blog:9': '06 파스텔 감성',
+    'shop:2': '02 비주얼 중심형',
+    'blog:1': '03 매거진형',
+    'blog:2': '04 스크롤형',
+    'blog:4': '05 프리미엄 에디토리얼형',
+    'blog:9': '06 파스텔 감성형',
 };
 
 // 판매를 중단한 프레임. 새 신청에서는 고를 수 없지만 **이미 접수된 신청건이 있어서**
