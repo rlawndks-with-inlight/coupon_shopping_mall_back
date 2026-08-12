@@ -26,6 +26,7 @@ import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
 import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
+import { saveOrderFormValues } from "../utils.js/order-form.js";
 
 
 const table_name = "transactions";
@@ -473,6 +474,15 @@ const payCtrl = {
           `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee, seller_trx_fee_type) VALUES ?`,
           [insert_item_data]
         );
+      }
+      // 주문서 추가 입력항목(행사일·행사장소 등). 서식이 걸린 가맹점에서만 값이 온다.
+      //
+      // 실패해도 결제를 막지 않는다 — 여기서 던지면 카드는 승인됐는데 주문이 안 만들어지는
+      // 상황이 된다. 값이 빠진 주문은 업체가 고객에게 물어보면 되지만, 결제 실패는 되돌리기 어렵다.
+      try {
+        await saveOrderFormValues(trans_id, brand_id, req.body?.order_form);
+      } catch (e) {
+        logger.error('order_form save failed: ' + (e?.message ?? e));
       }
       if (trx_method == 1) {
         let result = await axios.post(

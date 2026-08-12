@@ -7,7 +7,8 @@ import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
 import fs from 'fs';
 import { readPool } from "../config/db-pool.js";
-import { decRow, decRows, decListContent, blindIndex, encForSave } from "../utils.js/pii.js";
+import { decRow, decRows, decListContent, blindIndex, encForSave, decField } from "../utils.js/pii.js";
+import { PII_FIELD_TYPES } from "../utils.js/order-form.js";
 import { orderPasswordCandidates } from "../utils.js/order-password.js";
 const table_name = 'transactions';
 
@@ -153,6 +154,24 @@ const transactionCtrl = {
 
                 for (var i = 0; i < data?.content.length; i++) {
                     data.content[i].orders = transactions_order_obj[data?.content[i]?.is_cancel == 1 ? data?.content[i]?.transaction_id : data?.content[i]?.id];
+                }
+
+                // 주문서 추가 입력항목(행사일·행사장소 등). 서식이 걸린 가맹점 주문에만 값이 있다.
+                // 전화·주소 유형은 암호화돼 있어 여기서 되돌린다.
+                const form_rows = await readPool.query(
+                    `SELECT * FROM transaction_order_forms WHERE trans_id IN (${trx_placeholders}) ORDER BY sort ASC, id ASC`,
+                    trx_ids
+                );
+                const form_obj = {};
+                for (const r of form_rows[0]) {
+                    if (!form_obj[r.trans_id]) form_obj[r.trans_id] = [];
+                    form_obj[r.trans_id].push({
+                        ...r,
+                        value: PII_FIELD_TYPES.includes(r.field_type) ? decField(r.value) : r.value,
+                    });
+                }
+                for (var i = 0; i < data?.content.length; i++) {
+                    data.content[i].order_forms = form_obj[data?.content[i]?.id] ?? [];
                 }
             }
             //console.log(data)

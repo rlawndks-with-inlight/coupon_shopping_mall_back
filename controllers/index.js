@@ -16,6 +16,7 @@ import utilCtrl from './util.controller.js';
 import productReviewCtrl from './product_review.controller.js';
 import popupCtrl from './popup.controller.js';
 import benefitNoticeCtrl from './benefit_notice.controller.js';
+import orderFormCtrl from './order_form.controller.js';
 import paymentModuleCtrl from './payment_module.controller.js';
 import transactionCtrl from './transaction.controller.js';
 import sellerCtrl from './seller.controller.js';
@@ -52,6 +53,7 @@ export {
     productReviewCtrl,
     popupCtrl,
     benefitNoticeCtrl,
+    orderFormCtrl,
     paymentModuleCtrl,
     transactionCtrl,
     sellerCtrl,
