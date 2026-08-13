@@ -60,6 +60,13 @@ export const lang_obj_columns = {
         'label',
         'placeholder',
     ],
+    // 상품에 실제로 걸린 입력항목. 손님 화면에 그대로 보이므로 번역 대상이다.
+    // ⚠ 위 order_form_fields 는 마스터가 만드는 '템플릿'이라 손님에게 안 보인다.
+    //   이걸 빠뜨리면 상품에 붙인 '행사일' 이 외국어 화면에서 한국어로 남는다.
+    product_order_form_fields: [
+        'label',
+        'placeholder',
+    ],
 }
 
 // 이전 틱이 아직 돌고 있는지. 스케줄러가 1분마다 부르는데 한 틱이 1분을 넘길 수 있다.
@@ -306,6 +313,19 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
                 // MySQL 이 Unknown column 으로 던져 **언어팩 켜기 자체가 실패**한다
                 // (그 브랜드의 다른 테이블 번역까지 통째로 안 걸린다).
                 let items = await readPool.query(`SELECT benefit_notice_tabs.id, ${lang_obj_columns[table].map(c => `benefit_notice_tabs.${c}`).join()} FROM benefit_notice_tabs LEFT JOIN benefit_notices ON benefit_notice_tabs.notice_id=benefit_notices.id WHERE benefit_notices.brand_id=?`, [new_brand_data?.id]);
+                items = items[0];
+                for (var j = 0; j < items.length; j++) {
+                    insert_lang_process_list.push([
+                        table,
+                        items[j]?.id,
+                        new_brand_data?.id,
+                        JSON.stringify(items[j])
+                    ])
+                }
+            } else if (table == 'product_order_form_fields') {
+                // 이 테이블에도 brand_id 가 없다 — 상품(products)으로 조인한다.
+                // 분기가 없으면 else 로 떨어져 Unknown column 으로 언어팩 켜기가 통째로 실패한다.
+                let items = await readPool.query(`SELECT product_order_form_fields.id, ${lang_obj_columns[table].map(c => `product_order_form_fields.${c}`).join()} FROM product_order_form_fields LEFT JOIN products ON product_order_form_fields.product_id=products.id WHERE products.brand_id=?`, [new_brand_data?.id]);
                 items = items[0];
                 for (var j = 0; j < items.length; j++) {
                     insert_lang_process_list.push([

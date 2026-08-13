@@ -6,6 +6,7 @@ import logger from "../utils.js/winston/index.js";
 import { invalidateAllShopSettingCache } from "../utils.js/cache.js";
 import { readPool } from "../config/db-pool.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
+import { getOrderFormTemplates } from "../utils.js/order-form.js";
 
 const table_name = 'order_form_templates';
 const field_table = 'order_form_fields';
@@ -87,6 +88,28 @@ const orderFormCtrl = {
                 `SELECT id, dns, name FROM brands WHERE parent_id=? AND is_delete=0 ORDER BY dns ASC`, [brand_id]
             );
             return response(req, res, 100, "success", { content: rows[0] });
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        }
+    },
+    // 가맹점 상품등록 화면의 '서식 불러오기'용 — 본사가 만든 템플릿을 읽기만 한다.
+    //
+    // 이 하나만 마스터가 아니어도 열려 있다. 상품 100개에 '행사날짜'를 손으로 넣는 건
+    // 말이 안 되므로, 본사가 만든 서식을 가맹점이 상품에 **복사해** 붙일 수 있어야 한다.
+    // (복사한 뒤에는 상품의 것이다 — 본사가 템플릿을 고쳐도 판매 중인 상품은 안 바뀐다)
+    templates: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            // 가맹점 관리자 이상이면 읽을 수 있다. 고객에게는 열지 않는다.
+            if (!decode_user || Number(decode_user?.level) < 10) return lowLevelException(req, res);
+            // 소유자는 항상 본사다. 가맹점이면 부모, 본사 자신이면 자기 id.
+            const owner = Number(decode_dns?.parent_id) > 0
+                ? Number(decode_dns.parent_id)
+                : Number(decode_dns?.id) || 0;
+            return response(req, res, 100, "success", { content: await getOrderFormTemplates(owner) });
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))

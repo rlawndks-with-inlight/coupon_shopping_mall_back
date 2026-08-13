@@ -1,0 +1,353 @@
+import { readPool, writePool } from "../config/db-pool.js";
+
+// 상품 옵션 — 선택옵션 / 추가상품 / 조합형 / 재고 공용 로직.
+//
+// 용어 (네이버 스마트스토어·카페24와 같은 뜻으로 맞췄다):
+//   선택옵션 group_type=0  골라야 산다. 그룹마다 1개.            색상 · 사이즈
+//   추가상품 group_type=1  안 골라도 산다. 여러 개 고를 수 있다.  한복 +10,000
+//   조합형   option_mode=1 옵션 조합마다 가격·재고가 따로 있다.   분홍/M +5,000
+//
+// 재고는 NULL 이 '무제한'이다. 0 이 아니다 —
+// 0 을 기본값으로 뒀다면 마이그레이션 직후 전 상품이 품절이 된다.
+
+export const 선택옵션 = 0;
+export const 추가상품 = 1;
+
+// 조합 키 — 고른 옵션 id 를 **오름차순 정렬해** 하이픈으로 잇는다.
+// 정렬하지 않으면 '101-205' 와 '205-101' 이 다른 조합으로 갈려 재고가 두 벌이 된다.
+export const comboKey = (optionIds = []) =>
+    [...new Set((optionIds ?? []).map((v) => Number(v) || 0).filter(Boolean))]
+        .sort((a, b) => a - b)
+        .join('-');
+
+// 주문 줄에 실려 온 groups 에서 고른 옵션 id 만 뽑는다.
+// 프론트 저장 형태: groups[i].options[j] = { id, option_name, option_price, ... }
+// 문자열 옵션(특성 잔재)은 id 가 없으므로 걸러진다 — 재고 대상이 아니다.
+export const pickedOptionIds = (groups) => {
+    const list = Array.isArray(groups) ? groups : [];
+    const ids = [];
+    for (const g of list) {
+        for (const o of (Array.isArray(g?.options) ? g.options : [])) {
+            const id = Number(o?.id) || 0;
+            if (id) ids.push(id);
+        }
+    }
+    return [...new Set(ids)];
+};
+
+// 상품 여러 개의 옵션 묶음을 한 번에 읽는다(스토어프론트 상세·목록용).
+// 상품마다 쿼리를 돌리면 목록 화면에서 N+1 이 된다.
+export const getOptionsForProducts = async (product_ids = []) => {
+    const ids = [...new Set((product_ids ?? []).map((v) => Number(v) || 0).filter(Boolean))];
+    if (!ids.length) return {};
+    const ph = ids.map(() => '?').join(',');
+
+    const [groups] = await readPool.query(
+        `SELECT * FROM product_option_groups
+          WHERE product_id IN (${ph}) AND is_delete=0
+          ORDER BY group_type ASC, sort ASC, id ASC`, ids);
+    const group_ids = groups.map((g) => g.id);
+
+    let options = [];
+    if (group_ids.length) {
+        const gph = group_ids.map(() => '?').join(',');
+        const [rows] = await readPool.query(
+            `SELECT * FROM product_options
+              WHERE group_id IN (${gph}) AND is_delete=0
+              ORDER BY sort ASC, id ASC`, group_ids);
+        options = rows;
+    }
+
+    const [combos] = await readPool.query(
+        `SELECT * FROM product_option_combinations
+          WHERE product_id IN (${ph}) AND is_delete=0`, ids);
+
+    const byProduct = {};
+    for (const id of ids) byProduct[id] = { groups: [], combinations: [] };
+    for (const g of groups) {
+        byProduct[g.product_id]?.groups.push({
+            ...g,
+            lang_obj: safeParse(g.lang_obj),
+            options: options
+                .filter((o) => o.group_id === g.id)
+                .map((o) => ({ ...o, lang_obj: safeParse(o.lang_obj) })),
+        });
+    }
+    for (const c of combos) byProduct[c.product_id]?.combinations.push(c);
+    return byProduct;
+};
+
+const safeParse = (v) => { try { return JSON.parse(v ?? '{}'); } catch (e) { return {}; } };
+
+// ── 저장 ────────────────────────────────────────────────────────────────────
+//
+// create 와 update 가 **같은 함수**를 쓴다.
+// 예전에는 두 갈래에 비슷한 코드가 따로 있어서, 한쪽에만 컬럼을 추가하면
+// '새로 만들 땐 되는데 수정하면 사라지는' 종류의 버그가 생겼다.
+
+const 정수 = (v, 기본 = 0) => (isNaN(parseInt(v)) ? 기본 : parseInt(v));
+// 재고칸을 비우면 '무제한'이다. 0 으로 접으면 저장하는 순간 품절이 된다.
+const 재고 = (v) => (v === '' || v === null || v === undefined ? null : (isNaN(parseInt(v)) ? null : parseInt(v)));
+
+// 옵션그룹 + 옵션 저장. 화면이 보낸 is_delete=1 을 소프트 삭제로 처리한다.
+// 돌려주는 값: { [group_name]: { id, options: { [option_name]: id } } } — 조합 해석에 쓴다.
+export const saveOptionGroups = async (product_id, groups = []) => {
+    const pid = Number(product_id) || 0;
+    const 이름표 = {};
+    if (!pid) return 이름표;
+
+    for (let i = 0; i < (Array.isArray(groups) ? groups.length : 0); i++) {
+        const g = groups[i];
+        const gid = Number(g?.id) || 0;
+        if (g?.is_delete == 1) {
+            if (gid) {
+                await writePool.query(`UPDATE product_option_groups SET is_delete=1 WHERE id=? AND product_id=?`, [gid, pid]);
+                await writePool.query(`UPDATE product_options SET is_delete=1 WHERE group_id=?`, [gid]);
+            }
+            continue;
+        }
+        if (!String(g?.group_name ?? '').trim()) continue; // 이름 없는 그룹은 저장하지 않는다
+
+        const 그룹값 = {
+            group_name: g.group_name,
+            group_type: 정수(g?.group_type, 0),
+            // 추가상품은 여러 개 고를 수 있다. 선택옵션은 그룹당 하나다.
+            is_able_duplicate_select: 정수(g?.group_type, 0) === 추가상품 ? 1 : 0,
+            group_description: g?.group_description ?? '',
+            sort: 정수(g?.sort, i),
+        };
+
+        let group_id = gid;
+        if (group_id) {
+            const 키 = Object.keys(그룹값);
+            await writePool.query(
+                `UPDATE product_option_groups SET ${키.map((k) => `${k}=?`).join(',')} WHERE id=? AND product_id=?`,
+                [...키.map((k) => 그룹값[k]), group_id, pid]);
+        } else {
+            const [r] = await writePool.query(
+                `INSERT INTO product_option_groups (product_id, group_name, group_type, is_able_duplicate_select, group_description, sort)
+                 VALUES (?,?,?,?,?,?)`,
+                [pid, 그룹값.group_name, 그룹값.group_type, 그룹값.is_able_duplicate_select, 그룹값.group_description, 그룹값.sort]);
+            group_id = r?.insertId;
+        }
+        if (!group_id) continue;
+
+        이름표[그룹값.group_name] = { id: group_id, type: 그룹값.group_type, options: {} };
+
+        const options = Array.isArray(g?.options) ? g.options : [];
+        for (let j = 0; j < options.length; j++) {
+            const o = options[j];
+            const oid = Number(o?.id) || 0;
+            if (o?.is_delete == 1) {
+                if (oid) await writePool.query(`UPDATE product_options SET is_delete=1 WHERE id=? AND group_id=?`, [oid, group_id]);
+                continue;
+            }
+            if (!String(o?.option_name ?? '').trim()) continue;
+            const 옵션값 = {
+                option_name: o.option_name,
+                option_price: 정수(o?.option_price, 0),
+                option_description: o?.option_description ?? '',
+                stock_qty: 재고(o?.stock_qty),
+                is_soldout: o?.is_soldout ? 1 : 0,
+                sort: 정수(o?.sort, j),
+            };
+            let option_id = oid;
+            if (option_id) {
+                const 키 = Object.keys(옵션값);
+                await writePool.query(
+                    `UPDATE product_options SET ${키.map((k) => `${k}=?`).join(',')} WHERE id=? AND group_id=?`,
+                    [...키.map((k) => 옵션값[k]), option_id, group_id]);
+            } else {
+                const [r] = await writePool.query(
+                    `INSERT INTO product_options (group_id, option_name, option_price, option_description, stock_qty, is_soldout, sort)
+                     VALUES (?,?,?,?,?,?,?)`,
+                    [group_id, 옵션값.option_name, 옵션값.option_price, 옵션값.option_description,
+                     옵션값.stock_qty, 옵션값.is_soldout, 옵션값.sort]);
+                option_id = r?.insertId;
+            }
+            if (option_id) 이름표[그룹값.group_name].options[옵션값.option_name] = option_id;
+        }
+    }
+    return 이름표;
+};
+
+// 조합형 저장.
+//
+// 화면은 조합을 **이름으로** 보낸다: { option_names: ['분홍','M'], add_price, stock_qty }.
+// id 로 보내면 새로 만든 옵션은 아직 id 가 없어(저장 전) 조합을 못 만든다.
+// 이름 → id 는 방금 저장한 결과(이름표)로 푼다.
+export const saveCombinations = async (product_id, combinations = [], 이름표 = {}) => {
+    const pid = Number(product_id) || 0;
+    if (!pid) return;
+    const list = Array.isArray(combinations) ? combinations : [];
+
+    // 그룹이 달라도 옵션 이름은 상품 안에서 유일하다고 본다(색상 '분홍' 과 사이즈 '분홍' 은 없다).
+    const 전체옵션 = {};
+    for (const g of Object.values(이름표)) {
+        for (const [name, id] of Object.entries(g.options)) 전체옵션[name] = id;
+    }
+
+    const 살아있는 = [];
+    for (const c of list) {
+        const names = Array.isArray(c?.option_names) ? c.option_names : [];
+        const ids = names.map((n) => 전체옵션[n]).filter(Boolean);
+        if (ids.length !== names.length || !ids.length) continue; // 못 푼 조합은 건너뛴다
+        const key = comboKey(ids);
+        살아있는.push(key);
+        await writePool.query(
+            `INSERT INTO product_option_combinations (product_id, combo_key, add_price, stock_qty, is_soldout, is_delete)
+             VALUES (?,?,?,?,?,0)
+             ON DUPLICATE KEY UPDATE add_price=VALUES(add_price), stock_qty=VALUES(stock_qty),
+                                     is_soldout=VALUES(is_soldout), is_delete=0`,
+            [pid, key, 정수(c?.add_price, 0), 재고(c?.stock_qty), c?.is_soldout ? 1 : 0]);
+    }
+    // 화면에서 사라진 조합은 내린다. 지우지 않고 내리는 이유는 지난 주문의 재고 복구 때문이다.
+    if (살아있는.length) {
+        const ph = 살아있는.map(() => '?').join(',');
+        await writePool.query(
+            `UPDATE product_option_combinations SET is_delete=1 WHERE product_id=? AND combo_key NOT IN (${ph})`,
+            [pid, ...살아있는]);
+    } else {
+        await writePool.query(`UPDATE product_option_combinations SET is_delete=1 WHERE product_id=?`, [pid]);
+    }
+};
+
+// ── 재고 ────────────────────────────────────────────────────────────────────
+//
+// 어디에 붙는가:
+//   조합형        조합(product_option_combinations.stock_qty)
+//   단독형 옵션   옵션(product_options.stock_qty)
+//   옵션 없는 상품 상품(products.stock_qty)
+//
+// 추가상품 수량은 **상품 수량과 같다**. 돌상 2세트를 시키면 한복도 2벌이다.
+// (수량을 따로 받게 하면 화면과 검증이 배로 늘고, 이 업종에서 쓸 일이 거의 없다)
+
+// 주문 한 줄이 재고를 얼마나 쓰는지 계산한다. 실제 차감은 하지 않는다.
+const 줄별차감 = async (line) => {
+    const product_id = Number(line?.id) || 0;
+    const count = Math.max(1, Number(line?.order_count) || 1);
+    if (!product_id) return [];
+
+    const [[product]] = await readPool.query(
+        `SELECT id, option_mode, stock_qty FROM products WHERE id=?`, [product_id]);
+    if (!product) return [];
+
+    const ids = pickedOptionIds(line?.groups);
+
+    // 조합형 — 고른 옵션 조합 하나가 재고 단위다.
+    if (Number(product.option_mode) === 1 && ids.length) {
+        const key = comboKey(ids);
+        const [[combo]] = await readPool.query(
+            `SELECT id, stock_qty, is_soldout FROM product_option_combinations
+              WHERE product_id=? AND combo_key=? AND is_delete=0`, [product_id, key]);
+        if (!combo) return []; // 등록 안 된 조합이면 재고를 걸지 않는다(주문은 막지 않음)
+        return [{ product_id, option_id: 0, combo_id: combo.id, qty: count,
+                  stock: combo.stock_qty, soldout: combo.is_soldout, label: '선택한 조합' }];
+    }
+
+    // 단독형 — 고른 옵션마다 따로 센다.
+    if (ids.length) {
+        const ph = ids.map(() => '?').join(',');
+        const [rows] = await readPool.query(
+            `SELECT id, option_name, stock_qty, is_soldout FROM product_options
+              WHERE id IN (${ph}) AND is_delete=0`, ids);
+        if (rows.length) {
+            return rows.map((o) => ({
+                product_id, option_id: o.id, combo_id: 0, qty: count,
+                stock: o.stock_qty, soldout: o.is_soldout, label: o.option_name,
+            }));
+        }
+    }
+
+    // 옵션을 안 쓰는 상품 — 상품 자체 재고.
+    return [{ product_id, option_id: 0, combo_id: 0, qty: count,
+              stock: product.stock_qty, soldout: 0, label: '상품' }];
+};
+
+// 주문 전체가 재고 안에 들어오는지 본다. 부족하면 { ok:false, message } 를 돌려준다.
+export const checkStock = async (products = []) => {
+    const lines = Array.isArray(products) ? products : [];
+    // 같은 옵션을 두 줄에 나눠 담았을 수 있다 — 합쳐서 봐야 한다.
+    // (한 줄씩 보면 재고 1개짜리를 1개씩 두 줄로 담아 통과시킬 수 있다)
+    const 합계 = new Map();
+    for (const line of lines) {
+        for (const need of await 줄별차감(line)) {
+            const k = `${need.product_id}/${need.option_id}/${need.combo_id}`;
+            const prev = 합계.get(k);
+            합계.set(k, prev ? { ...prev, qty: prev.qty + need.qty } : need);
+        }
+    }
+    for (const need of 합계.values()) {
+        if (Number(need.soldout) === 1) return { ok: false, message: `${need.label} 은(는) 품절입니다.` };
+        if (need.stock === null || need.stock === undefined) continue; // 무제한
+        if (Number(need.stock) < need.qty) {
+            return { ok: false, message: `${need.label} 의 재고가 부족합니다. (남은 수량 ${Number(need.stock)}개)` };
+        }
+    }
+    return { ok: true };
+};
+
+// 주문 확정 시 차감. 원장(product_stock_moves)에 남기고 실제 수량을 줄인다.
+//
+// ⚠ 결제를 막지 않는다. 여기서 던지면 카드는 승인됐는데 주문이 안 만들어진다.
+//   재고가 안 줄어든 것은 사람이 고칠 수 있지만, 결제 실패는 되돌리기 어렵다.
+//   재고 검사는 결제 **전에** checkStock 으로 이미 한 번 한다.
+export const decreaseStock = async (trans_id, products = []) => {
+    const tid = Number(trans_id) || 0;
+    if (!tid) return false;
+    const 합계 = new Map();
+    for (const line of (Array.isArray(products) ? products : [])) {
+        for (const need of await 줄별차감(line)) {
+            if (need.stock === null || need.stock === undefined) continue; // 무제한은 원장도 안 남긴다
+            const k = `${need.product_id}/${need.option_id}/${need.combo_id}`;
+            const prev = 합계.get(k);
+            합계.set(k, prev ? { ...prev, qty: prev.qty + need.qty } : need);
+        }
+    }
+    for (const n of 합계.values()) {
+        // UNIQUE(trans_id, kind, product_id, option_id, combo_id) 가 중복 차감을 DB 에서 막는다.
+        // 결제 콜백이 두 번 들어와도 재고는 한 번만 줄어든다.
+        const [r] = await writePool.query(
+            `INSERT IGNORE INTO product_stock_moves (trans_id, product_id, option_id, combo_id, qty, kind)
+             VALUES (?,?,?,?,?,'out')`,
+            [tid, n.product_id, n.option_id, n.combo_id, n.qty]);
+        if (!r?.affectedRows) continue; // 이미 차감된 주문
+        await 수량이동(n, -n.qty);
+    }
+    return true;
+};
+
+// 취소·환불 시 복구. 차감 원장에 남은 만큼만 되돌린다.
+export const restoreStock = async (trans_id) => {
+    const tid = Number(trans_id) || 0;
+    if (!tid) return false;
+    const [outs] = await readPool.query(
+        `SELECT * FROM product_stock_moves WHERE trans_id=? AND kind='out'`, [tid]);
+    for (const n of outs) {
+        const [r] = await writePool.query(
+            `INSERT IGNORE INTO product_stock_moves (trans_id, product_id, option_id, combo_id, qty, kind)
+             VALUES (?,?,?,?,?,'in')`,
+            [tid, n.product_id, n.option_id, n.combo_id, n.qty]);
+        if (!r?.affectedRows) continue; // 이미 복구된 주문 — 두 번 늘지 않는다
+        await 수량이동(n, n.qty);
+    }
+    return true;
+};
+
+// 실제 수량을 움직인다. delta 는 음수(차감)/양수(복구).
+// GREATEST(...,0) 로 음수 재고를 막는다 — 화면에 '-3개'가 뜨면 아무도 못 믿는다.
+const 수량이동 = async (n, delta) => {
+    if (n.combo_id) {
+        await writePool.query(
+            `UPDATE product_option_combinations SET stock_qty = GREATEST(IFNULL(stock_qty,0) + ?, 0)
+              WHERE id=? AND stock_qty IS NOT NULL`, [delta, n.combo_id]);
+    } else if (n.option_id) {
+        await writePool.query(
+            `UPDATE product_options SET stock_qty = GREATEST(IFNULL(stock_qty,0) + ?, 0)
+              WHERE id=? AND stock_qty IS NOT NULL`, [delta, n.option_id]);
+    } else {
+        await writePool.query(
+            `UPDATE products SET stock_qty = GREATEST(IFNULL(stock_qty,0) + ?, 0)
+              WHERE id=? AND stock_qty IS NOT NULL`, [delta, n.product_id]);
+    }
+};

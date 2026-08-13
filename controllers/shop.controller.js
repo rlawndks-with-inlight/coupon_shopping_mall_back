@@ -14,7 +14,6 @@ import { redisClient } from "../config/redis-client.js";
 import { decRows, blindIndex } from "../utils.js/pii.js";
 import { orderPasswordCandidates } from "../utils.js/order-password.js";
 import { stripUserSecretsList } from "../utils.js/security-question.js";
-import { getOrderFormForBrand } from "../utils.js/order-form.js";
 
 const shopCtrl = {
     setting: async (req, res, next) => {
@@ -262,9 +261,11 @@ const shopCtrl = {
             benefit_tab_sql += ` WHERE benefit_notices.brand_id=? AND benefit_notices.is_delete=0 AND benefit_notices.is_show=1 AND benefit_notice_tabs.is_delete=0 `;
             benefit_tab_sql += ` ORDER BY benefit_notice_tabs.sort ASC, benefit_notice_tabs.id ASC`;
 
-            // 주문서 추가 입력항목. 본사가 이 가맹점에 서식을 걸어 뒀을 때만 값이 있다.
-            // (혜택 안내와 달리 부모가 아니라 **자기 브랜드**로 찾는다 — 서식은 가맹점마다 다르게 건다)
-            const order_form = await getOrderFormForBrand(decode_dns?.id ?? 0);
+            // 손님 입력항목(행사날짜 등)은 여기서 내려보내지 않는다.
+            //
+            // 예전엔 가맹점 단위로 서식 하나를 걸어 이 응답에 실었다. 그러면 그 몰의 **모든 상품**에
+            // 같은 칸이 떠서, 답례품만 사는 손님에게도 행사날짜를 물었다.
+            // 지금은 상품마다 다르므로 상품 상세 응답(product.controller)에 실려 간다.
 
             //when
             let sql_list = [
@@ -464,7 +465,7 @@ const shopCtrl = {
             brand_data['shop_obj'] = await finallySettingMainObj(brand_data['shop_obj'], data);
             brand_data['blog_obj'] = await finallySettingMainObj(brand_data['blog_obj'], data);
             // 주문서 추가 입력항목(없으면 null). 주문서 화면이 이걸 보고 입력칸을 그린다.
-            let responseData = { ...data, ...brand_data, order_form };
+            let responseData = { ...data, ...brand_data };
 
             // Redis 캐시 저장 (180초 TTL)
             if (canUseCache) {

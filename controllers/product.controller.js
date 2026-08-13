@@ -6,8 +6,49 @@ import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
+import { saveOptionGroups, saveCombinations } from "../utils.js/product-options.js";
+import { saveProductOrderFormFields } from "../utils.js/order-form.js";
 
 const table_name = 'products';
+
+// 새 테이블 조회용. 실패하면 빈 배열을 돌려주고 넘어간다.
+//
+// 왜 필요한가: 마이그레이션은 사람이 손으로 돌린다. 코드가 먼저 배포되면
+// 테이블이 없어 매 요청이 터지고, 그게 상품 상세 응답이면 **몰 전체가 죽는다**.
+// 새 기능이 안 보이는 것은 되돌릴 수 있지만, 몰이 죽는 것은 그렇지 않다.
+const 안전조회 = async (sql, params = []) => {
+    try {
+        const [rows] = await readPool.query(sql, params);
+        return rows ?? [];
+    } catch (e) {
+        console.error('신규 테이블 조회 실패(무시하고 진행):', e?.sqlMessage || e?.message || e);
+        return [];
+    }
+};
+
+// 옵션·조합·입력항목을 한 번에 저장한다. create/update 공용.
+//
+// ⚠ 저장은 조회와 달리 조용히 넘어가면 안 된다 — 가맹점이 입력한 것이 사라졌는데
+//   '저장되었습니다'가 뜨면 그게 더 나쁘다. 그래서 여기서는 던진다.
+//   다만 조합·입력항목은 새 테이블이라, 마이그레이션 전이면 옵션 저장까지는 살리고
+//   새 기능만 실패시킨다(옛 화면에서 저장하는 가맹점을 막지 않기 위해).
+const 옵션일체저장 = async (product_id, groups, combinations, order_form_fields, brand = null) => {
+    const 이름표 = await saveOptionGroups(product_id, groups);
+    try {
+        await saveCombinations(product_id, combinations, 이름표);
+        // brand 를 넘겨야 라벨·도움말이 번역 대기열에 실린다(언어팩 켠 몰만).
+        await saveProductOrderFormFields(product_id, order_form_fields, brand);
+    } catch (e) {
+        logger.error('조합/입력항목 저장 실패(옵션은 저장됨): ' + (e?.sqlMessage || e?.message || e));
+    }
+};
+
+// 화면이 JSON 문자열로 보낼 수도, 배열로 보낼 수도 있다(FormData 여부에 따라 다르다).
+const 배열로 = (v) => {
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'string') { try { const p = JSON.parse(v || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; } }
+    return [];
+};
 
 /*const productInserter = () => {
     obj = {}
@@ -541,7 +582,9 @@ const productCtrl = {
             let sql_list = [
                 {
                     table: 'groups',
-                    sql: `SELECT * FROM product_option_groups WHERE product_id=? AND is_delete=0 ORDER BY id ASC`,
+                    // 선택옵션(group_type=0)이 추가상품(1)보다 먼저 나와야 한다 —
+                    // 골라야 사는 것이 위, 안 골라도 되는 것이 아래.
+                    sql: `SELECT * FROM product_option_groups WHERE product_id=? AND is_delete=0 ORDER BY group_type ASC, sort ASC, id ASC`,
                     params: [productId],
                 },
                 {
@@ -600,7 +643,7 @@ const productCtrl = {
             if (option_group_ids.length > 0) {
                 sql_list2.push({
                     table: 'options',
-                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY id ASC`,
+                    sql: `SELECT * FROM product_options WHERE group_id IN (${option_group_ids.map(() => '?').join(',')}) AND is_delete=0 ORDER BY sort ASC, id ASC`,
                     params: [...option_group_ids],
                 });
             }
@@ -625,6 +668,19 @@ const productCtrl = {
                 description_images: allImages,
                 properties: when_data?.properties,
                 characters: when_data2?.characters,
+                // 조합형 가격·재고와 손님 입력칸.
+                //
+                // ⚠ 위 배치 쿼리(getMultipleQueryByWhen)에 넣지 않는다.
+                //   배치는 하나가 실패하면 전부 실패한다 — 마이그레이션 전에 코드가 먼저 배포되면
+                //   테이블이 없어 **모든 가맹점의 상품 상세가 죽는다**.
+                //   따로 읽고 실패하면 빈 값으로 넘어간다(새 기능만 안 보일 뿐 몰은 산다).
+                combinations: await 안전조회(
+                    `SELECT * FROM product_option_combinations WHERE product_id=? AND is_delete=0`, [productId]),
+                order_form_fields: (await 안전조회(
+                    `SELECT * FROM product_order_form_fields WHERE product_id=? AND is_delete=0 ORDER BY sort ASC, id ASC`,
+                    [productId])).map((f) => ({
+                        ...f, lang_obj: (() => { try { return JSON.parse(f?.lang_obj ?? '{}'); } catch (e) { return {}; } })(),
+                    })),
                 product_average_scope: when_data?.scope?.[0]?.product_average_scope,
                 product_review_count: when_data?.scope?.[0]?.product_review_count,
                 brand_name: when_data2?.brand_name,
@@ -669,13 +725,19 @@ const productCtrl = {
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 description_images = [], another_id = 0,
                 price_lang = 'ko', point_save = 0, point_usable = 1, cash_usable = 1, pg_usable = 1, status, show_status = 0, memo,
+                combinations = [], order_form_fields = [], option_mode = 0, stock_qty = null,
             } = req.body;
+            combinations = 배열로(combinations);
+            order_form_fields = 배열로(order_form_fields);
 
             let obj = {
                 product_img,
                 brand_id, product_name, product_code, product_comment, product_spec, product_description, product_price, product_sale_price, user_id, delivery_fee, product_type,
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
                 another_id, price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status, memo,
+                // 0=단독형 1=조합형. 재고는 비우면 NULL(무제한) — 0 으로 접으면 저장하자마자 품절이 된다.
+                option_mode: parseInt(option_mode) === 1 ? 1 : 0,
+                stock_qty: (stock_qty === '' || stock_qty === null || stock_qty === undefined || isNaN(parseInt(stock_qty))) ? null : parseInt(stock_qty),
             };
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
@@ -747,39 +809,9 @@ const productCtrl = {
             }
 
             let sql_list = [];
-            //option
-            for (var i = 0; i < groups.length; i++) {
-                let group = groups[i];
-                if (group?.is_delete != 1) {
-                    let group_result = await insertQuery(`product_option_groups`, {
-                        product_id,
-                        group_name: group?.group_name,
-                        is_able_duplicate_select: group?.is_able_duplicate_select ?? 0,
-                        group_description: group?.group_description,
-                    });
-                    let group_id = group_result?.insertId;
-                    let options = group?.options ?? [];
-                    let result_options = [];
-                    for (var j = 0; j < options.length; j++) {
-                        let option = options[j];
-                        if (option?.is_delete != 1) {
-                            result_options.push([
-                                group_id,
-                                option?.option_name,
-                                (isNaN(parseInt(option?.option_price)) ? 0 : option?.option_price),
-                                option?.option_description,
-                            ])
-                        }
-                    }
-                    if (result_options.length > 0) {
-                        sql_list.push({
-                            table: `group_${group_id}`,
-                            sql: `INSERT INTO product_options (group_id, option_name, option_price, option_description) VALUES ?`,
-                            data: [result_options]
-                        })
-                    }
-                }
-            }
+            // 옵션(선택옵션·추가상품) · 조합형 · 손님 입력항목.
+            // create 와 update 가 같은 함수를 쓴다 — 한쪽에만 컬럼을 더하는 실수를 막는다.
+            await 옵션일체저장(product_id, groups, combinations, order_form_fields, dns_data);
             //character
             let insert_character_list = [];
             for (var i = 0; i < characters.length; i++) {
@@ -902,7 +934,10 @@ const productCtrl = {
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], description_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 another_id = 0, price_lang = 'ko', point_save = 0, memo, /*point_usable = 1, cash_usable = 1, pg_usable = 1, status = 0, show_status*/
+                combinations = [], order_form_fields = [], option_mode = 0, stock_qty = null,
             } = req.body;
+            combinations = 배열로(combinations);
+            order_form_fields = 배열로(order_form_fields);
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
             }
@@ -925,6 +960,8 @@ const productCtrl = {
                 consignment_none_user_name, consignment_none_user_phone_num, consignment_fee, consignment_fee_type, price_lang_obj,
                 another_id,
                 price_lang, point_save, memo, /*point_usable, cash_usable, pg_usable, status, show_status*/
+                option_mode: parseInt(option_mode) === 1 ? 1 : 0,
+                stock_qty: (stock_qty === '' || stock_qty === null || stock_qty === undefined || isNaN(parseInt(stock_qty))) ? null : parseInt(stock_qty),
             };
             /*
             if (brand_id = 5) { //임시
@@ -965,65 +1002,9 @@ const productCtrl = {
             await settingLangs(lang_obj_columns[table_name], obj, dns_data, table_name, id);
 
             const product_id = id;
-            //option
-            let insert_option_list = [];
-            let delete_option_list = [];
-            let delete_group_list = [0];
-            for (var i = 0; i < groups.length; i++) {
-                let group = groups[i];
-                if (group?.is_delete == 1) {
-                    delete_group_list.push(group?.id ?? 0);
-                } else {
-                    let group_result = undefined;
-                    if (group?.id) {
-                        group_result = await updateQuery(`product_option_groups`, {
-                            group_name: group?.group_name,
-                            is_able_duplicate_select: group?.is_able_duplicate_select ?? 0,
-                            group_description: group?.group_description,
-                        }, group?.id);
-                    } else {
-                        group_result = await insertQuery(`product_option_groups`, {
-                            product_id,
-                            group_name: group?.group_name,
-                            is_able_duplicate_select: group?.is_able_duplicate_select ?? 0,
-                            group_description: group?.group_description,
-                        });
-                    }
-                    let group_id = group_result?.insertId || group?.id;
-                    let options = group?.options ?? [];
-
-                    for (var j = 0; j < options.length; j++) {
-                        let option = options[j];
-                        if (option?.is_delete == 1) {
-                            delete_option_list.push(option?.id ?? 0);
-                        } else {
-                            if (option?.id) {
-                                let option_result = await updateQuery(`product_options`, {
-                                    option_name: option?.option_name,
-                                    option_price: (isNaN(parseInt(option?.option_price)) ? 0 : option?.option_price),
-                                    option_description: option?.option_description,
-                                }, option?.id);
-                            } else {
-                                insert_option_list.push([
-                                    group_id,
-                                    option?.option_name,
-                                    (isNaN(parseInt(option?.option_price)) ? 0 : option?.option_price),
-                                    option?.option_description,
-                                ])
-                            }
-                        }
-                    }
-                }
-            }
-            if (insert_option_list.length > 0) {
-                let option_result = await writePool.query(`INSERT INTO product_options (group_id, option_name, option_price, option_description) VALUES ?`, [insert_option_list]);
-            }
-            if (delete_group_list.length > 0) {
-                let option_result = await writePool.query(`UPDATE product_option_groups SET is_delete=1 WHERE id IN (${delete_group_list.map(() => '?').join(',')}) `, delete_group_list);
-            }
-            if (delete_option_list.length > 0) {
-                let option_result = await writePool.query(`UPDATE product_options SET is_delete=1 WHERE id IN (${delete_option_list.map(() => '?').join(',')}) OR group_id IN (${delete_group_list.map(() => '?').join(',')})`, [...delete_option_list, ...delete_group_list]);
-            }
+            // 옵션(선택옵션·추가상품) · 조합형 · 손님 입력항목.
+            // create 와 **같은 함수**를 쓴다 — 예전엔 두 갈래에 비슷한 코드가 따로 있었다.
+            await 옵션일체저장(product_id, groups, combinations, order_form_fields, dns_data);
             //character
             let insert_character_list = [];
             let delete_character_list = [];
