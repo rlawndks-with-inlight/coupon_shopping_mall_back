@@ -6,7 +6,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
 import fs from 'fs';
-import { readPool } from "../config/db-pool.js";
+import { readPool, writePool } from "../config/db-pool.js";
 import { decRow, decRows, decListContent, blindIndex, encForSave, decField } from "../utils.js/pii.js";
 import { PII_FIELD_TYPES } from "../utils.js/order-form.js";
 import { orderPasswordCandidates } from "../utils.js/order-password.js";
@@ -465,6 +465,41 @@ const transactionCtrl = {
             if (!CANCELABLE_STATUS.includes(Number(data?.trx_status))) {
                 return response(req, res, -100, "출고된 주문은 취소할 수 없습니다. 반품/환불은 판매자에게 문의해 주세요.", false)
             }
+            // 어느 상품을 몇 개 취소하고 싶은지 남긴다.
+            //
+            // 예전엔 trx_status 를 1 로 바꾸는 게 전부였다. 무엇을 취소하고 싶은지
+            // 적을 자리가 없어서 관리자는 주문 전체를 취소하거나 고객에게 따로 물어야 했다.
+            // items 를 안 보내면 예전처럼 '주문 전체' 요청으로 본다(옛 화면 호환).
+            const { items, reason } = req.body ?? {};
+            try {
+                const [lines] = await readPool.query(
+                    `SELECT id, order_count, cancel_count FROM transaction_orders WHERE trans_id=?`, [id]);
+                const 요청 = (Array.isArray(items) ? items : [])
+                    .map((x) => ({ order_id: Number(x?.order_id) || 0, qty: Math.max(0, Number(x?.qty) || 0) }))
+                    .filter((x) => x.order_id && x.qty);
+                // 아무것도 안 고르면 남은 수량 전부를 요청한 것으로 본다.
+                const 대상 = 요청.length ? 요청 : lines.map((l) => ({
+                    order_id: l.id,
+                    qty: Math.max(0, (Number(l.order_count) || 0) - (Number(l.cancel_count) || 0)),
+                })).filter((x) => x.qty > 0);
+
+                for (const t of 대상) {
+                    const line = lines.find((l) => Number(l.id) === t.order_id);
+                    if (!line) continue; // 이 주문에 없는 줄은 무시한다
+                    const 남은 = Math.max(0, (Number(line.order_count) || 0) - (Number(line.cancel_count) || 0));
+                    const qty = Math.min(t.qty, 남은);
+                    if (qty <= 0) continue;
+                    await writePool.query(
+                        `INSERT INTO transaction_cancel_requests (trans_id, order_id, req_count, reason, user_id)
+                         VALUES (?,?,?,?,?)`,
+                        [id, t.order_id, qty, reason ?? null, decode_user?.id ?? null]);
+                }
+            } catch (e) {
+                // 요청 내역을 못 남겨도 '취소요청' 자체는 접수되게 한다 —
+                // 여기서 막으면 고객은 취소를 아예 못 한다. 관리자가 물어보면 되는 문제다.
+                console.error('취소요청 상세 저장 실패(요청은 접수됨):', e?.sqlMessage || e?.message || e);
+            }
+
             let result = await updateQuery(`${table_name}`, {
                 trx_status: 1,
             }, id)

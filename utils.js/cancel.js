@@ -129,9 +129,30 @@ export const getCancelState = async (trans_id) => {
             remain_amount: Math.max(0, 상품가 - (Number(l.cancel_amount) || 0)),
         };
     });
+    // 고객이 '무엇을 몇 개' 취소해 달라고 했는지. 관리자 화면이 그 수량을 미리 채운다 —
+    // 안 채우면 관리자가 고객 요청을 다시 읽고 손으로 옮겨 적어야 하고, 그 자리에서 어긋난다.
+    let requests = [];
+    try {
+        const [rows] = await readPool.query(
+            `SELECT order_id, SUM(req_count) AS req_count,
+                    MAX(reason) AS reason, MAX(created_at) AS created_at
+               FROM transaction_cancel_requests
+              WHERE trans_id=? AND status=0
+              GROUP BY order_id`, [tid]);
+        requests = rows;
+    } catch (e) {
+        // 테이블이 아직 없어도(마이그레이션 전) 취소 자체는 되게 한다.
+        requests = [];
+    }
+
     return {
         trx,
-        lines,
+        lines: lines.map((l) => ({
+            ...l,
+            requested_count: Number(requests.find((r) => Number(r.order_id) === Number(l.id))?.req_count) || 0,
+        })),
+        request_reason: requests.find((r) => r.reason)?.reason ?? null,
+        has_request: requests.length > 0,
         cancelable: CANCELABLE_STATUS.includes(Number(trx.trx_status))
             && Number(trx.is_cancel) !== 1 && Number(trx.is_cancel_trans) !== 1,
         all_canceled: lines.length > 0 && lines.every((l) => l.remain_count === 0),
@@ -312,6 +333,20 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
     // 포인트는 환불 비율만큼. 전체취소면 남은 전부를 정산한다.
     const 비율 = 전체취소 ? 1 : Math.min(1, (기취소상품가 + 이번상품가) / Math.max(1, 전체상품가));
     await applyCancelEffects(tid, { ratio: 비율, restock: false });
+
+    // 고객이 낸 대기 요청을 닫는다. 안 닫으면 이미 처리한 요청이 계속 대기로 남아
+    // 관리자가 같은 건을 또 취소하려 든다.
+    try {
+        for (const c of 계산) {
+            await writePool.query(
+                `UPDATE transaction_cancel_requests
+                    SET status=1, cancel_id=?, processed_at=NOW()
+                  WHERE trans_id=? AND order_id=? AND status=0`,
+                [cancel_id, tid, c.line.id]);
+        }
+    } catch (e) {
+        logger.error(`[부분취소] 요청 마감 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
+    }
 
     if (전체취소) {
         await writePool.query(`UPDATE transactions SET is_cancel_trans=1 WHERE id=?`, [tid]);

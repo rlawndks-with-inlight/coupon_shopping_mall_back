@@ -1090,12 +1090,16 @@ const payCtrl = {
       return response(req, res, 100, "success", {
         cancelable: state.cancelable,
         all_canceled: state.all_canceled,
+        // 고객이 낸 취소요청 내역. 화면이 수량을 미리 채운다.
+        has_request: state.has_request,
+        request_reason: state.request_reason,
         // 부분취소를 지원하는 결제수단인지. 아니면 화면이 버튼을 감춘다.
         partial_supported: PARTIAL_CANCEL_METHODS.includes(Number(state.trx?.trx_method)),
         lines: state.lines.map((l) => ({
           order_id: l.id, product_id: l.product_id, order_name: l.order_name,
           order_count: l.order_count, cancel_count: l.cancel_count,
           remain_count: l.remain_count, unit_price: l.unit_price, remain_amount: l.remain_amount,
+          requested_count: l.requested_count,
         })),
       });
     } catch (err) {
