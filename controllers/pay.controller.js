@@ -26,9 +26,24 @@ import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
 import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
+import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
+import { checkStock, decreaseStock, restoreStock } from "../utils.js/product-options.js";
 
 
 const table_name = "transactions";
+
+// 취소가 확정되면 재고를 되돌린다.
+//
+// ⚠ 취소를 막지 않는다. PG 취소는 이미 끝난 뒤이므로 여기서 던지면
+//   '돈은 돌려줬는데 화면은 실패'가 된다. 재고는 사람이 고칠 수 있다.
+// 원장(product_stock_moves)의 UNIQUE 가 이중 복구를 막으므로 여러 번 불러도 안전하다.
+const 재고복구 = async (trans_id) => {
+  try {
+    await restoreStock(trans_id);
+  } catch (e) {
+    logger.error('재고 복구 실패(취소는 정상 처리됨): ' + (e?.sqlMessage || e?.message || e));
+  }
+};
 
 // ── 결제금액 서버 재계산 ──────────────────────────────────────────────────────
 //
@@ -87,6 +102,39 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
     ));
   }
 
+  // 조합형(option_mode=1) 상품은 조합마다 추가금이 따로다.
+  // 이걸 빼먹으면 '분홍/M +5,000' 을 고른 주문이 5,000원 싸게 결제된다(가맹점 손실).
+  //
+  // ⚠ 새 컬럼·새 테이블이라 마이그레이션 전이면 쿼리가 터진다.
+  //   여기서 던지면 recalc 가 통째로 죽어 **결제가 전부 막힌다**.
+  //   못 읽으면 조합 추가금 0 원 = 개편 전과 똑같이 동작한다.
+  let optionModeById = new Map();   // product_id -> 0|1
+  let comboPriceByKey = new Map();  // `${product_id}:${combo_key}` -> add_price
+  let groupTypeByOption = new Map();// `${product_id}:${option_id}` -> 0|1
+  try {
+    const [mrows] = await readPool.query(
+      `SELECT id, option_mode FROM products WHERE id IN (${ph})`, product_ids);
+    optionModeById = new Map(mrows.map((r) => [parseInt(r.id), parseInt(r.option_mode) || 0]));
+
+    const [crows] = await readPool.query(
+      `SELECT product_id, combo_key, add_price FROM product_option_combinations
+        WHERE product_id IN (${ph}) AND is_delete=0`, product_ids);
+    comboPriceByKey = new Map(crows.map(
+      (r) => [`${parseInt(r.product_id)}:${r.combo_key}`, Number(r.add_price) || 0]));
+
+    if (option_ids.length > 0) {
+      const oph2 = option_ids.map(() => '?').join(',');
+      const [grows] = await readPool.query(
+        `SELECT o.id, g.product_id, g.group_type FROM product_options o
+           JOIN product_option_groups g ON g.id = o.group_id
+          WHERE o.id IN (${oph2}) AND o.is_delete=0 AND g.is_delete=0`, option_ids);
+      groupTypeByOption = new Map(grows.map(
+        (r) => [`${parseInt(r.product_id)}:${parseInt(r.id)}`, parseInt(r.group_type) || 0]));
+    }
+  } catch (e) {
+    logger.error('조합형 금액 조회 실패(추가금 0원으로 진행): ' + (e?.sqlMessage || e?.message || e));
+  }
+
   // 브랜드 배송비 정책 (front: getBrandShipping 과 동일 규칙)
   let brand = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [brand_id ?? 0]);
   let setting = {};
@@ -108,14 +156,24 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
     // 남의 상품 옵션 id 는 가격 0 으로 무시된다(주문 자체는 상태 하드블록이 따로 본다).
     const counted = new Set();
     const line_product_id = parseInt(lines[i]?.id);
+    const 조합형 = optionModeById.get(line_product_id) === 1;
+    const 선택옵션ids = [];
     for (const g of (lines[i]?.groups ?? [])) {
       for (const o of (g?.options ?? [])) {
         const oid = parseInt(o?.id);
         if (!(Number.isInteger(oid) && oid > 0)) continue;
         if (counted.has(oid)) continue;
         counted.add(oid);
+        const 종류 = groupTypeByOption.get(`${line_product_id}:${oid}`) ?? 0;
+        // 조합형 상품의 **선택옵션**은 개별 가격이 아니라 조합 추가금으로 값이 매겨진다.
+        // 추가상품(종류 1)은 조합과 무관하게 늘 개별 가격이 붙는다.
+        if (조합형 && 종류 === 0) { 선택옵션ids.push(oid); continue; }
         optionPrice += (optionPriceById.get(`${line_product_id}:${oid}`) ?? 0);
       }
+    }
+    if (조합형 && 선택옵션ids.length > 0) {
+      const key = [...new Set(선택옵션ids)].sort((a, b) => a - b).join('-');
+      optionPrice += (comboPriceByKey.get(`${line_product_id}:${key}`) ?? 0);
     }
     const count = parseInt(lines[i]?.order_count);
     if (!Number.isInteger(count) || count <= 0) return null;
@@ -399,6 +457,27 @@ const payCtrl = {
 
       //console.log(obj)
 
+      // 결제로 넘어가기 전 서버가 다시 본다. 프론트 검사는 우회할 수 있다.
+      //
+      // 재고: 화면에 '남은 1개'가 떠 있어도 두 사람이 동시에 누르면 둘 다 통과한다.
+      //       여기서 막지 않으면 없는 물건을 팔고 나서 전화로 취소를 돌려야 한다.
+      // 입력항목: 행사날짜 없는 예약주문이 들어오면 업체가 고객에게 다시 물어야 한다.
+      //
+      // ⚠ 이 검사는 결제 **전**이라 막아도 안전하다. 결제 후에는 절대 막지 않는다
+      //   (아래 차감·저장이 실패해도 주문은 그대로 만든다).
+      {
+        const 줄 = Array.isArray(products) ? products : [products];
+        try {
+          const 부족 = await checkStock(줄);
+          if (!부족.ok) return response(req, res, -100, 부족.message, false);
+          const 빠진항목 = await findMissingOrderFormField(줄);
+          if (빠진항목) return response(req, res, -100, `${빠진항목}을(를) 입력해 주세요.`, false);
+        } catch (e) {
+          // 새 테이블이 아직 없으면(마이그레이션 전) 검사를 건너뛴다 — 결제를 막지 않는다.
+          logger.error('주문 사전검사 실패(무시하고 진행): ' + (e?.sqlMessage || e?.message || e));
+        }
+      }
+
       obj = encForSave('transactions', obj); // PII(주문자명·전화·주소) 암호화 + blind-index(이름·전화)
       let result = await insertQuery(`${table_name}`, obj);
 
@@ -473,6 +552,23 @@ const payCtrl = {
           `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee, seller_trx_fee_type) VALUES ?`,
           [insert_item_data]
         );
+      }
+      // 주문 추가 입력항목(행사일·행사장소 등). 상품상세에서 받아 장바구니 줄에 실려 온다.
+      // 줄 순서를 transaction_orders 와 맞추기 위해 같은 products 배열을 그대로 넘긴다.
+      //
+      // 실패해도 결제를 막지 않는다 — 여기서 던지면 카드는 승인됐는데 주문이 안 만들어지는
+      // 상황이 된다. 값이 빠진 주문은 업체가 고객에게 물어보면 되지만, 결제 실패는 되돌리기 어렵다.
+      try {
+        await saveOrderFormValues(trans_id, products);
+      } catch (e) {
+        logger.error('order_form save failed: ' + (e?.message ?? e));
+      }
+      // 재고 차감. 원장(product_stock_moves)의 UNIQUE 가 중복 차감을 막으므로
+      // 결제 콜백이 두 번 들어와도 재고는 한 번만 줄어든다.
+      try {
+        await decreaseStock(trans_id, products);
+      } catch (e) {
+        logger.error('재고 차감 실패(주문은 그대로 진행): ' + (e?.sqlMessage || e?.message || e));
       }
       if (trx_method == 1) {
         let result = await axios.post(
@@ -745,6 +841,7 @@ const payCtrl = {
         let update_pay_data = updateQuery(table_name, {//이미 결제된건 취소로 판별
           is_cancel_trans: 1,
         }, pay_data?.id);
+        await 재고복구(pay_data?.id);
         if (
           amount * -1 * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) <
           0
@@ -859,6 +956,7 @@ const payCtrl = {
         try {
           await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount });
           await updateQuery('transactions', { is_cancel_trans: 1 }, id);
+          await 재고복구(id);
           return response(req, res, 100, "success", {});
         } catch (e) {
           logger.error(JSON.stringify(e?.response?.data || e));
@@ -881,6 +979,7 @@ const payCtrl = {
         const cancelRes = await cancelPayment({ client_id: creds.client_id, payment_key: creds.payment_key, user_id: trx.user_id, tid: trx.trx_id, ip_addr, pgcode: 'creditcard' });
         if (cancelRes?.tid) {
           await updateQuery('transactions', { is_cancel_trans: 1 }, id);
+          await 재고복구(id);
           return response(req, res, 100, "success", {});
         }
         return response(req, res, -200, cancelRes?.message || "페이레터 취소 실패", false);
@@ -899,6 +998,7 @@ const payCtrl = {
         fintree_cancel = fintree_cancel?.data ?? {};
         if (fintree_cancel?.resultCd == "0000") {
           let update_transaction = await updateQuery('transactions', { is_cancel: 1 }, id)
+          await 재고복구(id);
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, fintree_cancel?.result_msg, false);

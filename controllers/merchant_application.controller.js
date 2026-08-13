@@ -273,9 +273,20 @@ const createSubBrandFromApplication = async (app, adminId) => {
         throw new Error('이미 사용 중인 아이디입니다: ' + finalAdminId);
     }
 
-    // 이미 같은 dns 브랜드가 있으면 그걸 반환(중복 생성 방지)
+    // 같은 dns 브랜드가 이미 있을 때:
+    //  - 이 신청 자신의 브랜드면(멱등 재승인/복구) 그대로 반환
+    //  - 그 외엔 슬러그 충돌(다른 신청·몰이 이미 이 주소를 씀) → 승인 차단(에러).
+    //    예전엔 조용히 그 브랜드에 연결(created:false)해버려서, 반려건의 아이디만 바꿔
+    //    재승인하면 남의/기존 몰(brand)에 붙는 사고가 있었다(신청 31·39 → brand 122).
+    //    이제는 URL이 겹치면 승인 자체를 막고(호출부 catch → -110), 다른 슬러그로 받게 한다.
     const dup = await readPool.query(`SELECT id FROM brands WHERE dns=? LIMIT 1`, [subDns]);
-    if (dup[0]?.length > 0) return { brandId: dup[0][0].id, created: false, subDns, adminId: finalAdminId };
+    if (dup[0]?.length > 0) {
+        const dupId = dup[0][0].id;
+        if (app.brand_id && String(app.brand_id) === String(dupId)) {
+            return { brandId: dupId, created: false, subDns, adminId: finalAdminId };
+        }
+        throw new Error('이미 사용 중인 쇼핑몰 주소입니다: ' + app.desired_slug);
+    }
 
     const demo = frameToDemo(app.selected_frame);
     const setting_obj = JSON.stringify({
@@ -296,7 +307,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
         phone_num: app.cs_phone || app.ceo_phone || '',
         business_num: app.business_number || '',
         mail_order_num: app.mail_order_number || '',
-        theme_css: JSON.stringify({ main_color: '#111111' }),
+        theme_css: JSON.stringify({ main_color: '#00ab55' }), // shopgo 산하 신규 몰 기본 메인색상: 초록(기존 몰은 미변경)
         // 개설 직후 홈이 백지가 되지 않도록 기본 배너슬라이드 섹션을 심는다.
         // 실제 섹션으로 저장되므로 가맹점이 디자인관리 › 메인페이지관리에서 이미지만 교체하면 된다.
         // 섹션 빌더가 아닌 데모(shop 7·8·10, blog 4~9)는 '[]' 그대로 — 심어도 화면에 안 나온다.

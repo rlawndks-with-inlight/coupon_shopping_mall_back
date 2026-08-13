@@ -261,6 +261,12 @@ const shopCtrl = {
             benefit_tab_sql += ` WHERE benefit_notices.brand_id=? AND benefit_notices.is_delete=0 AND benefit_notices.is_show=1 AND benefit_notice_tabs.is_delete=0 `;
             benefit_tab_sql += ` ORDER BY benefit_notice_tabs.sort ASC, benefit_notice_tabs.id ASC`;
 
+            // 손님 입력항목(행사날짜 등)은 여기서 내려보내지 않는다.
+            //
+            // 예전엔 가맹점 단위로 서식 하나를 걸어 이 응답에 실었다. 그러면 그 몰의 **모든 상품**에
+            // 같은 칸이 떠서, 답례품만 사는 손님에게도 행사날짜를 물었다.
+            // 지금은 상품마다 다르므로 상품 상세 응답(product.controller)에 실려 간다.
+
             //when
             let sql_list = [
                 { table: 'products', sql: product_sql, data: [...product_ids] },
@@ -458,6 +464,7 @@ const shopCtrl = {
             //메인obj처리
             brand_data['shop_obj'] = await finallySettingMainObj(brand_data['shop_obj'], data);
             brand_data['blog_obj'] = await finallySettingMainObj(brand_data['blog_obj'], data);
+            // 주문서 추가 입력항목(없으면 null). 주문서 화면이 이걸 보고 입력칸을 그린다.
             let responseData = { ...data, ...brand_data };
 
             // Redis 캐시 저장 (180초 TTL)
