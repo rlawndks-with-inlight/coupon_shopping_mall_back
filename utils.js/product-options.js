@@ -312,7 +312,18 @@ export const decreaseStock = async (trans_id, products = []) => {
              VALUES (?,?,?,?,?,'out')`,
             [tid, n.product_id, n.option_id, n.combo_id, n.qty]);
         if (!r?.affectedRows) continue; // 이미 차감된 주문
-        await 수량이동(n, -n.qty);
+        const 뺐다 = await 차감(n);
+        if (!뺐다) {
+            // checkStock 을 통과한 뒤 결제가 끝나기 전에 다른 주문이 마지막 재고를 가져간 경우.
+            // 마지막 1개를 두 사람이 동시에 누르면 둘 다 검사를 통과한다(검사와 차감 사이가 벌어져 있다).
+            //
+            // 여기서 결제를 되돌리지는 않는다 — 취소는 관리자가 PG 에 직접 요청하는 절차다.
+            // 대신 '누구의 어느 주문이 초과 판매됐는지'를 남긴다. 안 남기면 재고만 0 으로 멈춰 있고
+            // 업체는 무엇이 잘못됐는지 영영 모른다.
+            console.error(`[재고] 초과 판매 — 주문 ${tid} / 상품 ${n.product_id}`
+                + `${n.option_id ? ` / 옵션 ${n.option_id}` : ''}${n.combo_id ? ` / 조합 ${n.combo_id}` : ''}`
+                + ` / 필요 ${n.qty}개. 재고가 모자라 차감하지 못했다 — 업체 확인 필요.`);
+        }
     }
     return true;
 };
@@ -334,8 +345,25 @@ export const restoreStock = async (trans_id) => {
     return true;
 };
 
-// 실제 수량을 움직인다. delta 는 음수(차감)/양수(복구).
-// GREATEST(...,0) 로 음수 재고를 막는다 — 화면에 '-3개'가 뜨면 아무도 못 믿는다.
+// 재고를 **조건부로** 뺀다. 남은 수량이 모자라면 아무것도 하지 않고 false 를 돌려준다.
+//
+// 왜 조건부인가: `stock_qty = stock_qty - N` 을 무조건 실행하면, 마지막 1개를 두 사람이
+// 동시에 산 경우 둘 다 성공한 것처럼 보이고 재고만 0(또는 음수)이 된다.
+// `WHERE stock_qty >= N` 을 걸면 **DB 가 한 명만 통과**시킨다 — 밀린 쪽은 affectedRows=0 이라
+// 초과 판매를 그 자리에서 알 수 있다.
+// (읽고-빼는 두 단계로 나누면 그 사이가 벌어져 같은 문제가 생긴다. 한 문장이어야 한다)
+const 차감 = async (n) => {
+    const [표, 키] = n.combo_id ? ['product_option_combinations', n.combo_id]
+        : n.option_id ? ['product_options', n.option_id]
+            : ['products', n.product_id];
+    const [r] = await writePool.query(
+        `UPDATE ${표} SET stock_qty = stock_qty - ?
+          WHERE id=? AND stock_qty IS NOT NULL AND stock_qty >= ?`,
+        [n.qty, 키, n.qty]);
+    return (r?.affectedRows ?? 0) > 0;
+};
+
+// 취소로 되돌릴 때 쓴다(양수만). 차감은 위 조건부 함수를 쓴다.
 const 수량이동 = async (n, delta) => {
     if (n.combo_id) {
         await writePool.query(
