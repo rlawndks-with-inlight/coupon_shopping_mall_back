@@ -307,7 +307,7 @@ const createSubBrandFromApplication = async (app, adminId) => {
         phone_num: app.cs_phone || app.ceo_phone || '',
         business_num: app.business_number || '',
         mail_order_num: app.mail_order_number || '',
-        theme_css: JSON.stringify({ main_color: '#111111' }),
+        theme_css: JSON.stringify({ main_color: '#00ab55' }), // shopgo 산하 기본 메인색상: 초록으로 통일
         // 개설 직후 홈이 백지가 되지 않도록 기본 배너슬라이드 섹션을 심는다.
         // 실제 섹션으로 저장되므로 가맹점이 디자인관리 › 메인페이지관리에서 이미지만 교체하면 된다.
         // 섹션 빌더가 아닌 데모(shop 7·8·10, blog 4~9)는 '[]' 그대로 — 심어도 화면에 안 나온다.
