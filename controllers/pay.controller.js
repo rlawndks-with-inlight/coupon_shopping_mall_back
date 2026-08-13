@@ -475,12 +475,13 @@ const payCtrl = {
           [insert_item_data]
         );
       }
-      // 주문서 추가 입력항목(행사일·행사장소 등). 서식이 걸린 가맹점에서만 값이 온다.
+      // 주문 추가 입력항목(행사일·행사장소 등). 상품상세에서 받아 장바구니 줄에 실려 온다.
+      // 줄 순서를 transaction_orders 와 맞추기 위해 같은 products 배열을 그대로 넘긴다.
       //
       // 실패해도 결제를 막지 않는다 — 여기서 던지면 카드는 승인됐는데 주문이 안 만들어지는
       // 상황이 된다. 값이 빠진 주문은 업체가 고객에게 물어보면 되지만, 결제 실패는 되돌리기 어렵다.
       try {
-        await saveOrderFormValues(trans_id, brand_id, req.body?.order_form);
+        await saveOrderFormValues(trans_id, brand_id, products);
       } catch (e) {
         logger.error('order_form save failed: ' + (e?.message ?? e));
       }

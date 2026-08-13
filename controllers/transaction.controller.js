@@ -158,17 +158,24 @@ const transactionCtrl = {
 
                 // 주문서 추가 입력항목(행사일·행사장소 등). 서식이 걸린 가맹점 주문에만 값이 있다.
                 // 전화·주소 유형은 암호화돼 있어 여기서 되돌린다.
-                const form_rows = await readPool.query(
-                    `SELECT * FROM transaction_order_forms WHERE trans_id IN (${trx_placeholders}) ORDER BY sort ASC, id ASC`,
-                    trx_ids
-                );
+                //
+                // ⚠ 실패해도 주문 목록 자체는 뜨게 한다 — 마이그레이션 전에 코드가 먼저 배포되면
+                //   테이블이 없어 여기서 터지고, 그러면 관리자가 주문을 아예 못 본다.
                 const form_obj = {};
-                for (const r of form_rows[0]) {
-                    if (!form_obj[r.trans_id]) form_obj[r.trans_id] = [];
-                    form_obj[r.trans_id].push({
-                        ...r,
-                        value: PII_FIELD_TYPES.includes(r.field_type) ? decField(r.value) : r.value,
-                    });
+                try {
+                    const form_rows = await readPool.query(
+                        `SELECT * FROM transaction_order_forms WHERE trans_id IN (${trx_placeholders}) ORDER BY sort ASC, id ASC`,
+                        trx_ids
+                    );
+                    for (const r of form_rows[0]) {
+                        if (!form_obj[r.trans_id]) form_obj[r.trans_id] = [];
+                        form_obj[r.trans_id].push({
+                            ...r,
+                            value: PII_FIELD_TYPES.includes(r.field_type) ? decField(r.value) : r.value,
+                        });
+                    }
+                } catch (e) {
+                    console.error('order_form 값 조회 실패(무시하고 진행):', e?.sqlMessage || e?.message || e);
                 }
                 for (var i = 0; i < data?.content.length; i++) {
                     data.content[i].order_forms = form_obj[data?.content[i]?.id] ?? [];

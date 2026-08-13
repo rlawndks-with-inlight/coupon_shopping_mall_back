@@ -20,7 +20,19 @@ export const PII_FIELD_TYPES = ['tel', 'address'];
 export const getOrderFormForBrand = async (brand_id) => {
     const id = Number(brand_id) || 0;
     if (!id) return null;
+    try {
+        return await 서식조회(id);
+    } catch (e) {
+        // ⚠ 여기서 던지면 스토어프론트 setting 응답이 통째로 실패해 **모든 가맹점 몰이 죽는다**.
+        //   특히 마이그레이션 전에 코드가 먼저 배포되면 테이블이 없어 매 요청이 터진다
+        //   (배포 순서를 사람이 지켜야 하는 구조를 코드로 막는다).
+        //   서식을 못 읽으면 입력칸이 안 뜰 뿐이고, 그건 되돌릴 수 있는 문제다.
+        console.error('order_form 조회 실패(무시하고 진행):', e?.sqlMessage || e?.message || e);
+        return null;
+    }
+};
 
+const 서식조회 = async (id) => {
     const rows = await readPool.query(
         `SELECT t.id, t.name, t.guide
            FROM order_form_targets g
@@ -44,36 +56,45 @@ export const getOrderFormForBrand = async (brand_id) => {
     return { ...tpl, fields };
 };
 
-// 고객이 낸 값을 주문에 붙여 저장한다.
+// 고객이 낸 값을 주문 **줄마다** 붙여 저장한다.
+//
+// 입력을 상품상세에서 받으므로 값은 장바구니 줄에 실려 온다(products[i].order_form_values).
+// 날짜가 다른 두 상품을 한 번에 담아도 각각 남는다 — 주문서에서 한 번만 받던 때는 불가능했다.
 //
 // ⚠ 값을 그대로 믿지 않는다. 서식에 있는 항목만 저장하고, 라벨·유형은 **서버가 가진 것**을
 //   스냅샷으로 넣는다. 프론트가 보낸 라벨을 그대로 쓰면 주문 내역을 위조할 수 있다.
-export const saveOrderFormValues = async (trans_id, brand_id, submitted) => {
+export const saveOrderFormValues = async (trans_id, brand_id, products) => {
     const tid = Number(trans_id) || 0;
     if (!tid) return false;
+    if (!Array.isArray(products) || !products.length) return false;
     const form = await getOrderFormForBrand(brand_id);
     if (!form) return false;
 
-    const 값 = (submitted && typeof submitted === 'object') ? submitted : {};
     const rows = [];
-    form.fields.forEach((f, idx) => {
-        let v = 값[String(f.id)];
-        if (Array.isArray(v)) v = v.join(', '); // multiselect
-        v = v === undefined || v === null ? '' : String(v);
-        if (!v.trim()) return; // 빈 값은 남기지 않는다(선택 항목을 안 채운 것)
-        rows.push([
-            tid,
-            f.id,
-            f.label,
-            f.field_type,
-            PII_FIELD_TYPES.includes(f.field_type) ? encField(v) : v,
-            idx,
-        ]);
+    products.forEach((p, line_index) => {
+        const 값 = (p?.order_form_values && typeof p.order_form_values === 'object') ? p.order_form_values : {};
+        form.fields.forEach((f, idx) => {
+            let v = 값[String(f.id)];
+            if (Array.isArray(v)) v = v.join(', '); // multiselect
+            if (v === true) v = 'Y';                // 동의 체크
+            v = v === undefined || v === null || v === false ? '' : String(v);
+            if (!v.trim()) return; // 빈 값은 남기지 않는다(선택 항목을 안 채운 것)
+            rows.push([
+                tid,
+                Number(p?.id) || null,
+                line_index,
+                f.id,
+                f.label,
+                f.field_type,
+                PII_FIELD_TYPES.includes(f.field_type) ? encField(v) : v,
+                idx,
+            ]);
+        });
     });
     if (!rows.length) return false;
 
     await writePool.query(
-        `INSERT INTO transaction_order_forms (trans_id, field_id, label, field_type, value, sort) VALUES ?`,
+        `INSERT INTO transaction_order_forms (trans_id, product_id, line_index, field_id, label, field_type, value, sort) VALUES ?`,
         [rows]
     );
     return true;
