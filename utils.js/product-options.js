@@ -307,6 +307,59 @@ export const findMissingRequiredOption = async (products = []) => {
     return null;
 };
 
+// ── 한정판: 1인당 구매 개수 ──────────────────────────────────────────────────
+//
+// products.purchase_limit 이 있으면 그 상품은 **회원만** 살 수 있다.
+// 비회원은 같은 사람인지 확인할 방법이 없어서, 제한을 걸어도 지켜지지 않는다.
+// (전화번호로 세는 방법도 있지만 번호만 바꾸면 그만이다)
+// 제한을 안 건 상품은 지금처럼 비회원도 그대로 산다 — 전체 정책이 아니라 상품별 정책이다.
+export const checkPurchaseLimit = async (user_id, products = []) => {
+    const lines = Array.isArray(products) ? products : [];
+    const ids = [...new Set(lines.map((p) => Number(p?.id) || 0).filter(Boolean))];
+    if (!ids.length) return { ok: true };
+    const ph = ids.map(() => '?').join(',');
+
+    const [rows] = await readPool.query(
+        `SELECT id, product_name, purchase_limit FROM products
+          WHERE id IN (${ph}) AND purchase_limit IS NOT NULL AND purchase_limit > 0`, ids);
+    if (!rows.length) return { ok: true }; // 한정 상품이 하나도 없다
+
+    const uid = Number(user_id) || 0;
+    if (!uid) {
+        return { ok: false, message: `'${rows[0].product_name}' 은(는) 회원만 구매할 수 있는 한정 상품입니다. 로그인 후 이용해 주세요.` };
+    }
+
+    // 지난 구매 수량. 취소된 주문은 빼고, 결제대기는 센다 —
+    // 한정 상품은 '덜 세서 초과 판매' 보다 '더 세서 막는' 쪽이 안전하다.
+    // (버려진 결제대기는 cleanup-abandoned 스케줄러가 지운다)
+    const [past] = await readPool.query(
+        `SELECT o.product_id, SUM(o.order_count) AS cnt
+           FROM transaction_orders o
+           JOIN transactions t ON t.id = o.trans_id
+          WHERE o.product_id IN (${ph}) AND t.user_id = ?
+            AND t.is_cancel = 0 AND t.is_cancel_trans = 0 AND t.is_delete = 0
+          GROUP BY o.product_id`, [...ids, uid]);
+    const 지난것 = new Map(past.map((r) => [Number(r.product_id), Number(r.cnt) || 0]));
+
+    for (const p of rows) {
+        const pid = Number(p.id);
+        // 같은 상품을 옵션만 달리해 여러 줄로 담았을 수 있다 — 합쳐서 본다.
+        const 이번 = lines.filter((l) => Number(l?.id) === pid)
+            .reduce((s, l) => s + Math.max(1, Number(l?.order_count) || 1), 0);
+        const 합 = (지난것.get(pid) ?? 0) + 이번;
+        if (합 > Number(p.purchase_limit)) {
+            const 남은 = Math.max(0, Number(p.purchase_limit) - (지난것.get(pid) ?? 0));
+            return {
+                ok: false,
+                message: 남은 > 0
+                    ? `'${p.product_name}' 은(는) 1인 ${p.purchase_limit}개까지 구매할 수 있습니다. (지금 ${남은}개 더 구매 가능)`
+                    : `'${p.product_name}' 은(는) 1인 ${p.purchase_limit}개까지 구매할 수 있습니다. 이미 모두 구매하셨습니다.`,
+            };
+        }
+    }
+    return { ok: true };
+};
+
 // 주문 전체가 재고 안에 들어오는지 본다. 부족하면 { ok:false, message } 를 돌려준다.
 export const checkStock = async (products = []) => {
     const lines = Array.isArray(products) ? products : [];
