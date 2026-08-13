@@ -424,6 +424,48 @@ export const decreaseStock = async (trans_id, products = []) => {
     return true;
 };
 
+// 부분취소 — 주문 한 줄에서 **수량만큼만** 되돌린다.
+//
+// 전체취소(restoreStock)와 다른 점 둘:
+//   ① 차감 원장 전부가 아니라 **그 줄이 쓴 옵션**만 되돌린다.
+//      같은 상품을 옵션만 달리해 두 줄로 담았을 수 있어서, product_id 만 보면 남의 줄까지 푼다.
+//   ② 원장 'in' 행에 cancel_id 를 넣는다. 안 넣으면 UNIQUE 때문에
+//      **첫 부분취소만 반영되고 두 번째부터 재고가 안 돌아온다.**
+export const restoreStockPartial = async (trans_id, { product_id, option_ids = [], qty, cancel_id }) => {
+    const tid = Number(trans_id) || 0;
+    const pid = Number(product_id) || 0;
+    const 수량 = Math.max(0, Number(qty) || 0);
+    const cid = Number(cancel_id) || 0;
+    if (!tid || !pid || !수량 || !cid) return false;
+
+    const [outs] = await readPool.query(
+        `SELECT * FROM product_stock_moves WHERE trans_id=? AND kind='out' AND product_id=?`, [tid, pid]);
+    if (!outs.length) return true; // 재고를 안 쓰는 상품(무제한)
+
+    const 고른것 = new Set(option_ids.map((v) => Number(v) || 0).filter(Boolean));
+    // 옵션이 걸린 행은 그 줄이 고른 옵션만, 상품/조합 단위 행(option_id=0)은 그대로 되돌린다.
+    const 대상 = outs.filter((r) => Number(r.option_id) === 0 || 고른것.has(Number(r.option_id)));
+
+    for (const n of 대상) {
+        // 이 줄이 원래 몇 개를 잡았는지보다 많이 되돌리면 안 된다.
+        const 이미 = (await readPool.query(
+            `SELECT COALESCE(SUM(qty),0) q FROM product_stock_moves
+              WHERE trans_id=? AND kind='in' AND product_id=? AND option_id=? AND combo_id=?`,
+            [tid, pid, n.option_id, n.combo_id]))[0][0];
+        const 남은 = Math.max(0, Number(n.qty) - (Number(이미?.q) || 0));
+        const 이번 = Math.min(수량, 남은);
+        if (이번 <= 0) continue;
+
+        const [r] = await writePool.query(
+            `INSERT IGNORE INTO product_stock_moves (trans_id, product_id, option_id, combo_id, qty, kind, cancel_id)
+             VALUES (?,?,?,?,?,'in',?)`,
+            [tid, pid, n.option_id, n.combo_id, 이번, cid]);
+        if (!r?.affectedRows) continue; // 같은 취소 건이 두 번 들어왔다
+        await 수량이동({ product_id: pid, option_id: n.option_id, combo_id: n.combo_id }, 이번);
+    }
+    return true;
+};
+
 // 취소·환불 시 복구. 차감 원장에 남은 만큼만 되돌린다.
 export const restoreStock = async (trans_id) => {
     const tid = Number(trans_id) || 0;
@@ -431,12 +473,22 @@ export const restoreStock = async (trans_id) => {
     const [outs] = await readPool.query(
         `SELECT * FROM product_stock_moves WHERE trans_id=? AND kind='out'`, [tid]);
     for (const n of outs) {
+        // ⚠ 이미 부분취소로 되돌린 만큼은 빼고 되돌린다.
+        //   안 빼면 '3개 중 1개 부분취소 → 나머지 전체취소' 때 3개를 또 되돌려
+        //   **재고가 실제보다 1개 늘어난다**(팔지도 않은 재고가 생긴다).
+        const 이미 = (await readPool.query(
+            `SELECT COALESCE(SUM(qty),0) q FROM product_stock_moves
+              WHERE trans_id=? AND kind='in' AND product_id=? AND option_id=? AND combo_id=?`,
+            [tid, n.product_id, n.option_id, n.combo_id]))[0][0];
+        const 남은 = Math.max(0, Number(n.qty) - (Number(이미?.q) || 0));
+        if (남은 <= 0) continue;
+
         const [r] = await writePool.query(
             `INSERT IGNORE INTO product_stock_moves (trans_id, product_id, option_id, combo_id, qty, kind)
              VALUES (?,?,?,?,?,'in')`,
-            [tid, n.product_id, n.option_id, n.combo_id, n.qty]);
-        if (!r?.affectedRows) continue; // 이미 복구된 주문 — 두 번 늘지 않는다
-        await 수량이동(n, n.qty);
+            [tid, n.product_id, n.option_id, n.combo_id, 남은]);
+        if (!r?.affectedRows) continue; // 이미 전체복구된 주문 — 두 번 늘지 않는다
+        await 수량이동(n, 남은);
     }
     return true;
 };

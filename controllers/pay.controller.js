@@ -28,10 +28,21 @@ import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, g
 import { encForSave } from "../utils.js/pii.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
-import { applyCancelEffects, markCanceled } from "../utils.js/cancel.js";
+import { applyCancelEffects, markCanceled, getCancelState, cancelLines } from "../utils.js/cancel.js";
 
 
 const table_name = "transactions";
+
+// 부분취소를 지원하는 결제수단(trx_method).
+//
+// 41 = 포스페이. cancel API 의 amount 가 선택 파라미터이고(생략 시 전액),
+//      조회의 cxl_seq 가 "취소 순번(0=원승인, 부분취소는 1,2,…)" 이라 여러 번 나눠 취소도 된다.
+// 40 = 페이레터는 우리 연동이 전체취소뿐이다(함수 주석부터 '전체취소', body 에 금액이 없다).
+// 핀트리·헥토는 partCanFlg='1' 로 가능하지만 mid·tid·encData 를 화면이 만들어 보내는 구조라
+// 부분취소용 서명을 다시 설계해야 한다 — 쓰는 가맹점이 생기면 그때 붙인다.
+//
+// ⚠ 지원 안 하는 PG 에 부분취소를 걸면 **전액이 취소된다**. 목록에 없으면 막는다.
+const PARTIAL_CANCEL_METHODS = [41];
 
 // 결제가 실패로 끝나면 주문을 만들며 잡아둔 것들을 전부 놓아준다.
 //
@@ -1064,6 +1075,78 @@ const payCtrl = {
     } finally {
     }
   },
+  // 부분취소 — 남은 수량 조회.
+  // 관리자 화면이 '이 줄은 몇 개까지 취소 가능한지' 를 그리는 데 쓴다.
+  cancelState: async (req, res, next) => {
+    try {
+      const decode_user = checkLevel(req.cookies.token, 0, res);
+      if (!decode_user || decode_user?.level < 10) return lowLevelException(req, res);
+      const id = parseInt(req.params?.id) || 0;
+      if (!id) return response(req, res, -100, "주문을 특정할 수 없습니다.", false);
+      const state = await getCancelState(id);
+      if (!state) return response(req, res, -100, "주문을 찾을 수 없습니다.", false);
+      // 남의 브랜드 주문을 들여다볼 수 없다.
+      if (!canWriteBrand(decode_user, state.trx?.brand_id)) return lowLevelException(req, res);
+      return response(req, res, 100, "success", {
+        cancelable: state.cancelable,
+        all_canceled: state.all_canceled,
+        // 부분취소를 지원하는 결제수단인지. 아니면 화면이 버튼을 감춘다.
+        partial_supported: PARTIAL_CANCEL_METHODS.includes(Number(state.trx?.trx_method)),
+        lines: state.lines.map((l) => ({
+          order_id: l.id, product_id: l.product_id, order_name: l.order_name,
+          order_count: l.order_count, cancel_count: l.cancel_count,
+          remain_count: l.remain_count, unit_price: l.unit_price, remain_amount: l.remain_amount,
+        })),
+      });
+    } catch (err) {
+      console.log(err);
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return response(req, res, -200, "서버 에러 발생", false);
+    }
+  },
+
+  // 부분취소 실행.
+  //
+  // 화면은 **수량만** 보낸다. 금액은 서버가 transaction_orders 를 다시 읽어 계산한다 —
+  // 화면이 보낸 금액을 믿으면 10만원 주문에 100만원 환불을 걸 수 있다.
+  cancelPartial: async (req, res, next) => {
+    try {
+      const decode_user = checkLevel(req.cookies.token, 0, res);
+      if (!decode_user || decode_user?.level < 10) return lowLevelException(req, res);
+      const id = parseInt(req.params?.id) || 0;
+      if (!id) return response(req, res, -100, "취소할 주문을 특정할 수 없습니다.", false);
+      const { items, reason, idem_key } = req.body;
+
+      const state = await getCancelState(id);
+      if (!state) return response(req, res, -100, "주문을 찾을 수 없습니다.", false);
+      if (!canWriteBrand(decode_user, state.trx?.brand_id)) return lowLevelException(req, res);
+
+      const method = Number(state.trx?.trx_method);
+      if (!PARTIAL_CANCEL_METHODS.includes(method)) {
+        // 정직하게 막는다. 지원 안 하는 PG 로 부분취소를 시도하면 전액이 취소돼 버린다.
+        return response(req, res, -100,
+          "이 결제수단은 부분취소를 지원하지 않습니다. 전체 취소만 가능합니다.", false);
+      }
+
+      const result = await cancelLines(id, {
+        items, reason, idem_key,
+        user_id: decode_user?.id ?? null,
+        // PG 호출은 여기서 주입한다. cancel.js 는 PG 를 모른다.
+        pgCancel: async ({ trx, amount }) => {
+          const creds = await getForspayCreds(trx.brand_id);
+          if (!creds?.app_key) throw new Error("포스페이 결제모듈 설정이 없습니다.");
+          return await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount });
+        },
+      });
+      if (!result?.ok) return response(req, res, -100, result?.message ?? "취소에 실패했습니다.", false);
+      return response(req, res, 100, "success", result);
+    } catch (err) {
+      console.log(err);
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return response(req, res, -200, "서버 에러 발생", false);
+    }
+  },
+
   payletterCallback: async (req, res, next) => {
     // 페이레터 서버→서버 콜백 (성공 시에만 호출). 반드시 {code:0} 으로 응답해야 함.
     try {

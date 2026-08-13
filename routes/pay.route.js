@@ -11,6 +11,12 @@ router
 router
     .route('/cancel')
     .post(payCtrl.cancel);
+// 부분취소 — 주문 '줄' 단위. 조회(GET)로 남은 수량을 보고, 실행(POST)으로 취소한다.
+// ⚠ '/:trx_type' 보다 먼저 둔다. 뒤에 두면 trx_type='cancel-partial' 로 잡혀 결제 시도가 된다.
+router
+    .route('/cancel-partial/:id')
+    .get(payCtrl.cancelState)
+    .post(payCtrl.cancelPartial);
 router
     .route('/payletter/callback')
     .post(payCtrl.payletterCallback);
