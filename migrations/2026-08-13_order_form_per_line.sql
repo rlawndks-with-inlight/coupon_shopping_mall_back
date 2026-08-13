@@ -15,15 +15,33 @@
 --   아직 값이 없으므로(주문이 들어온 적 없음) 사실상 무해하다.
 --
 -- 선행: 2026-08-13_order_form_fields.sql 이 먼저 실행돼 있어야 한다.
+--
+-- ▶ **여러 번 돌려도 안전하다.**
+--   처음 판은 그냥 ALTER 였고, 이미 적용된 상태에서 다시 돌리면
+--   `SQL 오류 (1060): Duplicate column name 'product_id'` 로 멈췄다.
+--   손으로 실행하는 파일이라 '이미 했는지'를 사람이 기억하고 있어야 하는 구조가 나빴다.
+--   MySQL 에는 ADD COLUMN IF NOT EXISTS 가 없어서 information_schema 를 보고 정한다.
 -- ============================================================================
 
-ALTER TABLE transaction_order_forms
-  ADD COLUMN product_id INT NULL     COMMENT '어느 상품 줄의 입력인지 (transaction_orders.product_id)',
-  ADD COLUMN line_index INT NOT NULL DEFAULT 0 COMMENT '한 주문에 같은 상품이 옵션만 달리 두 줄 담길 수 있다 — 그 순번';
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='transaction_order_forms' AND COLUMN_NAME='product_id'),
+  'SELECT ''transaction_order_forms.product_id 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE transaction_order_forms ADD COLUMN product_id INT NULL COMMENT ''어느 상품 줄의 입력인지 (transaction_orders.product_id)''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='transaction_order_forms' AND COLUMN_NAME='line_index'),
+  'SELECT ''transaction_order_forms.line_index 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE transaction_order_forms ADD COLUMN line_index INT NOT NULL DEFAULT 0 COMMENT ''한 주문에 같은 상품이 옵션만 달리 두 줄 담길 수 있다 — 그 순번''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- 주문 상세를 열 때 줄별로 묶어 보여주려면 이 순서로 읽는다.
-ALTER TABLE transaction_order_forms
-  ADD INDEX idx_trx_order_form_line (trans_id, line_index, sort);
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.STATISTICS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='transaction_order_forms'
+                         AND INDEX_NAME='idx_trx_order_form_line'),
+  'SELECT ''idx_trx_order_form_line 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE transaction_order_forms ADD INDEX idx_trx_order_form_line (trans_id, line_index, sort)');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- 확인 -----------------------------------------------------------------------
 --   SHOW COLUMNS FROM transaction_order_forms;

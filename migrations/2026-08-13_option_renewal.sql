@@ -31,33 +31,62 @@
 --     stock_qty=NULL 무제한). 즉 이 SQL 만 돌리고 코드를 안 올려도 화면이 그대로다.
 --   · 재고는 NULL = 무제한이다. 0 이 아니다 — 0 으로 뒀다면 전 상품이 즉시 품절된다.
 --
+-- ▶ **여러 번 돌려도 안전하다.**
+--   이미 있는 컬럼·테이블은 건너뛴다. MySQL 에는 ADD COLUMN IF NOT EXISTS 가 없어서
+--   information_schema 를 보고 실행 여부를 정하는 방식으로 만들었다.
+--   (중간에 오류로 멈췄을 때 처음부터 다시 돌릴 수 있어야 한다 —
+--    한 줄씩 골라 실행하다 보면 무엇을 했는지 사람이 놓친다)
+--   각 단계는 건너뛸 때 '이미 있음' 이라는 안내 행을 하나 돌려준다.
+--
 -- ▶ 이 SQL 만으로는 화면이 안 바뀐다. 백엔드/프론트 코드가 함께 배포돼야 한다.
 -- ============================================================================
 
 -- (1) 상품: 옵션 방식과 상품 자체 재고 -----------------------------------------
-ALTER TABLE products
-  ADD COLUMN option_mode TINYINT(1) NOT NULL DEFAULT 0
-      COMMENT '0=단독형(그룹마다 따로 고름) 1=조합형(옵션 조합마다 가격·재고)',
-  ADD COLUMN stock_qty INT NULL DEFAULT NULL
-      COMMENT '옵션이 없는 상품의 재고. NULL=무제한(지금까지의 동작)';
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='products' AND COLUMN_NAME='option_mode'),
+  'SELECT ''products.option_mode 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE products ADD COLUMN option_mode TINYINT(1) NOT NULL DEFAULT 0 COMMENT ''0=단독형(그룹마다 따로 고름) 1=조합형(옵션 조합마다 가격·재고)''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='products' AND COLUMN_NAME='stock_qty'),
+  'SELECT ''products.stock_qty 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE products ADD COLUMN stock_qty INT NULL DEFAULT NULL COMMENT ''옵션이 없는 상품의 재고. NULL=무제한(지금까지의 동작)''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- (2) 옵션그룹: 선택옵션이냐 추가상품이냐 ----------------------------------------
 --   is_able_duplicate_select 는 컬럼만 있고 화면이 늘 0 을 넣어 죽은 값이었다.
 --   이제 추가상품(group_type=1)에서 '여러 개 고르기'로 실제 의미를 갖는다.
-ALTER TABLE product_option_groups
-  ADD COLUMN group_type TINYINT(1) NOT NULL DEFAULT 0
-      COMMENT '0=선택옵션(필수, 그룹당 1개) 1=추가상품(선택, 여러 개 가능)',
-  ADD COLUMN sort INT NOT NULL DEFAULT 0
-      COMMENT '표시 순서. 지금은 id 순이라 순서를 못 바꿨다';
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='product_option_groups' AND COLUMN_NAME='group_type'),
+  'SELECT ''product_option_groups.group_type 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE product_option_groups ADD COLUMN group_type TINYINT(1) NOT NULL DEFAULT 0 COMMENT ''0=선택옵션(필수, 그룹당 1개) 1=추가상품(선택, 여러 개 가능)''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='product_option_groups' AND COLUMN_NAME='sort'),
+  'SELECT ''product_option_groups.sort 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE product_option_groups ADD COLUMN sort INT NOT NULL DEFAULT 0 COMMENT ''표시 순서. 지금은 id 순이라 순서를 못 바꿨다''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- (3) 옵션: 재고와 품절 ---------------------------------------------------------
-ALTER TABLE product_options
-  ADD COLUMN stock_qty INT NULL DEFAULT NULL
-      COMMENT '이 옵션의 재고. NULL=무제한',
-  ADD COLUMN is_soldout TINYINT(1) NOT NULL DEFAULT 0
-      COMMENT '재고와 무관하게 수동으로 내리는 스위치',
-  ADD COLUMN sort INT NOT NULL DEFAULT 0
-      COMMENT '표시 순서';
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='product_options' AND COLUMN_NAME='stock_qty'),
+  'SELECT ''product_options.stock_qty 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE product_options ADD COLUMN stock_qty INT NULL DEFAULT NULL COMMENT ''이 옵션의 재고. NULL=무제한''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='product_options' AND COLUMN_NAME='is_soldout'),
+  'SELECT ''product_options.is_soldout 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE product_options ADD COLUMN is_soldout TINYINT(1) NOT NULL DEFAULT 0 COMMENT ''재고와 무관하게 수동으로 내리는 스위치''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @sql := IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='product_options' AND COLUMN_NAME='sort'),
+  'SELECT ''product_options.sort 이미 있음 — 건너뜀'' AS 안내',
+  'ALTER TABLE product_options ADD COLUMN sort INT NOT NULL DEFAULT 0 COMMENT ''표시 순서''');
+PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- (4) 조합형 옵션 ---------------------------------------------------------------
 --   색상×사이즈처럼 조합마다 가격·재고가 다른 경우.
@@ -124,12 +153,25 @@ CREATE TABLE IF NOT EXISTS product_stock_moves (
 );
 
 -- 확인 -----------------------------------------------------------------------
---   SHOW COLUMNS FROM products LIKE 'option_mode';
---   SHOW COLUMNS FROM product_option_groups LIKE 'group_type';
---   SHOW COLUMNS FROM product_options LIKE 'stock_qty';
---   SHOW TABLES LIKE 'product_option_combinations';
---   SHOW TABLES LIKE 'product_order_form_fields';
---   SHOW TABLES LIKE 'product_stock_moves';
+--   아래를 그대로 실행하면 6줄이 모두 'O' 여야 한다.
+SELECT 'products.option_mode' AS 항목,
+       IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
+                  AND TABLE_NAME='products' AND COLUMN_NAME='option_mode'),'O','X') AS 결과
+UNION ALL SELECT 'product_option_groups.group_type',
+       IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
+                  AND TABLE_NAME='product_option_groups' AND COLUMN_NAME='group_type'),'O','X')
+UNION ALL SELECT 'product_options.stock_qty',
+       IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
+                  AND TABLE_NAME='product_options' AND COLUMN_NAME='stock_qty'),'O','X')
+UNION ALL SELECT 'product_option_combinations',
+       IF(EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
+                  AND TABLE_NAME='product_option_combinations'),'O','X')
+UNION ALL SELECT 'product_order_form_fields',
+       IF(EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
+                  AND TABLE_NAME='product_order_form_fields'),'O','X')
+UNION ALL SELECT 'product_stock_moves',
+       IF(EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
+                  AND TABLE_NAME='product_stock_moves'),'O','X');
 
 -- 되돌리기 (필요할 때만) -------------------------------------------------------
 -- DROP TABLE IF EXISTS product_stock_moves;
