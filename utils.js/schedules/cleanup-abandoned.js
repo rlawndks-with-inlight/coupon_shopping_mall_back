@@ -1,6 +1,7 @@
 'use strict';
 import { writePool } from "../../config/db-pool.js";
 import logger from "../winston/index.js";
+import { restoreStock } from "../product-options.js";
 
 // 버려진 포스페이/페이레터 결제대기(승인 안 된 채 방치) 거래 + 자식(transaction_orders) 자동 정리.
 //
@@ -26,6 +27,23 @@ export const cleanupAbandonedPending = async ({ olderThanMinutes = 60, batch = 2
       );
       const ids = rows.map((r) => r.id);
       if (ids.length === 0) break;
+
+      // ⚠ 지우기 **전에** 재고를 놓아준다.
+      //
+      // 재고는 주문을 만들 때 미리 잡는다(결제창을 띄운 사이 남이 사가지 못하게).
+      // 손님이 결제창을 닫고 사라지면 그 거래는 여기서 지워지는데,
+      // 잡아둔 재고를 안 돌려놓으면 **팔지도 못한 채 영영 잠긴다**.
+      // 한정 수량 상품이면 그대로 품절로 굳는다.
+      //
+      // 원장(product_stock_moves)을 먼저 지우면 무엇을 되돌릴지 알 수 없으므로 순서가 중요하다.
+      // 실패해도 정리는 계속한다 — 재고는 사람이 고칠 수 있지만 쌓인 결제대기는 그렇지 않다.
+      for (const id of ids) {
+        try { await restoreStock(id); } catch (e) {
+          logger.error(`[cleanup] 재고 복구 실패 trans_id=${id}: ${e?.sqlMessage || e?.message || e}`);
+        }
+      }
+      await writePool.query(`DELETE FROM product_stock_moves WHERE trans_id IN (?)`, [ids]);
+
       const [childRes] = await writePool.query(`DELETE FROM transaction_orders WHERE trans_id IN (?)`, [ids]);
       const [parentRes] = await writePool.query(`DELETE FROM transactions WHERE id IN (?)`, [ids]);
       totalO += childRes?.affectedRows ?? 0;

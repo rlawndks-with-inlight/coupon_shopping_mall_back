@@ -166,6 +166,14 @@ const productCtrl = {
                 columns.push(`0 AS order_count`);
                 columns.push(`0 AS review_count`);
             }
+            // 목록 카드에서 '이 상품은 골라야 할 옵션이 있는가' 를 알기 위한 값.
+            //
+            // 없으면 카드의 '장바구니담기' 가 옵션 없이 담아 버린다 — 목록 응답에 옵션이
+            // 안 실려 있어서 프론트 검사가 '모르면 통과' 로 빠져나가기 때문이다.
+            // 개수만 있으면 카드가 '상세로 보내기' 를 판단할 수 있다.
+            // 추가상품(group_type=1)은 안 골라도 사므로 세지 않는다.
+            columns.push(`(SELECT COUNT(*) FROM product_option_groups g WHERE g.product_id=${table_name}.id AND g.is_delete=0 AND g.group_type=0
+                AND EXISTS (SELECT 1 FROM product_options o WHERE o.group_id=g.id AND o.is_delete=0)) AS required_option_count`);
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
             //sql += ` LEFT JOIN users AS consignment_users ON ${table_name}.consignment_user_id=consignment_users.id `;
@@ -725,7 +733,7 @@ const productCtrl = {
                 sub_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 description_images = [], another_id = 0,
                 price_lang = 'ko', point_save = 0, point_usable = 1, cash_usable = 1, pg_usable = 1, status, show_status = 0, memo,
-                combinations = [], order_form_fields = [], option_mode = 0, stock_qty = null,
+                combinations = [], order_form_fields = [], option_mode = 0, stock_qty = null, purchase_limit = null,
             } = req.body;
             combinations = 배열로(combinations);
             order_form_fields = 배열로(order_form_fields);
@@ -738,6 +746,8 @@ const productCtrl = {
                 // 0=단독형 1=조합형. 재고는 비우면 NULL(무제한) — 0 으로 접으면 저장하자마자 품절이 된다.
                 option_mode: parseInt(option_mode) === 1 ? 1 : 0,
                 stock_qty: (stock_qty === '' || stock_qty === null || stock_qty === undefined || isNaN(parseInt(stock_qty))) ? null : parseInt(stock_qty),
+                // 1인당 최대 구매 수량. 비우면 제한 없음 — 값이 있으면 그 상품은 회원만 산다.
+                purchase_limit: (purchase_limit === '' || purchase_limit === null || purchase_limit === undefined || isNaN(parseInt(purchase_limit))) ? null : parseInt(purchase_limit),
             };
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
@@ -934,7 +944,7 @@ const productCtrl = {
                 consignment_user_name = "", consignment_none_user_name = "", consignment_none_user_phone_num = "", consignment_fee = 0, consignment_fee_type = 0,
                 sub_images = [], description_images = [], groups = [], characters = [], properties = "{}", price_lang_obj = '{}',
                 another_id = 0, price_lang = 'ko', point_save = 0, memo, /*point_usable = 1, cash_usable = 1, pg_usable = 1, status = 0, show_status*/
-                combinations = [], order_form_fields = [], option_mode = 0, stock_qty = null,
+                combinations = [], order_form_fields = [], option_mode = 0, stock_qty = null, purchase_limit = null,
             } = req.body;
             combinations = 배열로(combinations);
             order_form_fields = 배열로(order_form_fields);
@@ -962,6 +972,8 @@ const productCtrl = {
                 price_lang, point_save, memo, /*point_usable, cash_usable, pg_usable, status, show_status*/
                 option_mode: parseInt(option_mode) === 1 ? 1 : 0,
                 stock_qty: (stock_qty === '' || stock_qty === null || stock_qty === undefined || isNaN(parseInt(stock_qty))) ? null : parseInt(stock_qty),
+                // 1인당 최대 구매 수량. 비우면 제한 없음 — 값이 있으면 그 상품은 회원만 산다.
+                purchase_limit: (purchase_limit === '' || purchase_limit === null || purchase_limit === undefined || isNaN(parseInt(purchase_limit))) ? null : parseInt(purchase_limit),
             };
             /*
             if (brand_id = 5) { //임시

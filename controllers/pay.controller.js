@@ -27,7 +27,7 @@ import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/p
 import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
-import { checkStock, decreaseStock, restoreStock } from "../utils.js/product-options.js";
+import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
 
 
 const table_name = "transactions";
@@ -37,6 +37,17 @@ const table_name = "transactions";
 // ⚠ 취소를 막지 않는다. PG 취소는 이미 끝난 뒤이므로 여기서 던지면
 //   '돈은 돌려줬는데 화면은 실패'가 된다. 재고는 사람이 고칠 수 있다.
 // 원장(product_stock_moves)의 UNIQUE 가 이중 복구를 막으므로 여러 번 불러도 안전하다.
+// 결제가 실패로 끝나면 잡아둔 재고를 놓아준다.
+//
+// 재고는 주문을 만들 때 미리 잡는다(그래야 결제창을 띄운 사이 남이 사가지 못한다).
+// 그런데 잡기만 하고 놓아주는 자리가 없었다 — PG 가 거절하거나 설정이 없어 되돌아가면
+// **재고가 그대로 잠겼다**. 카드 실패가 반복되면 팔지도 못한 채 품절이 된다.
+// response 와 인자 모양이 같아 실패 응답 자리에 그대로 갈아끼운다.
+const 결제실패응답 = async (trans_id, req, res, code, msg, data) => {
+  await 재고복구(trans_id);
+  return response(req, res, code, msg, data);
+};
+
 const 재고복구 = async (trans_id) => {
   try {
     await restoreStock(trans_id);
@@ -208,6 +219,9 @@ const payCtrl = {
 
   ready: async (req, res, next) => {
     //인증결제
+    // ⚠ trans_id 를 try 밖에 둔다. catch 에서 재고를 놓아주려면 여기서 보여야 한다
+    //   (try 안에 let 으로 두면 catch 에서 ReferenceError 가 난다).
+    let trans_id = 0;
     try {
       const decode_user = checkLevel(req.cookies.token, 0, res);
       const decode_dns = checkDns(req.cookies.dns);
@@ -468,6 +482,13 @@ const payCtrl = {
       {
         const 줄 = Array.isArray(products) ? products : [products];
         try {
+          // 필수 옵션. 목록 카드의 '장바구니담기' 는 선택 정보 없이 담기므로
+          // 프론트 검사가 '모르면 통과' 로 빠져나간다 — 여기가 마지막 관문이다.
+          const 빠진옵션 = await findMissingRequiredOption(줄);
+          if (빠진옵션) return response(req, res, -100, `${빠진옵션} 을(를) 선택해 주세요.`, false);
+          // 한정판(1인당 구매수). 제한이 걸린 상품은 회원만 살 수 있다.
+          const 한정 = await checkPurchaseLimit(user_id, 줄);
+          if (!한정.ok) return response(req, res, -100, 한정.message, false);
           const 부족 = await checkStock(줄);
           if (!부족.ok) return response(req, res, -100, 부족.message, false);
           const 빠진항목 = await findMissingOrderFormField(줄);
@@ -483,7 +504,7 @@ const payCtrl = {
 
       //console.log(result)
 
-      let trans_id = result?.insertId;
+      trans_id = result?.insertId;
 
       // 사용한 포인트를 원장에 차감으로 남긴다.
       //
@@ -576,7 +597,7 @@ const payCtrl = {
           { ...req.body, temp: trans_id }
         );
         if (result?.data?.result_cd != "0000") {
-          return response(req, res, -100, result?.data?.result_msg, false);
+          return 결제실패응답(trans_id, req, res, -100, result?.data?.result_msg, false);
         }
       }
 
@@ -592,7 +613,7 @@ const payCtrl = {
         );
         //console.log(result)
         if (result?.data?.resultCd == "9999") {
-          return response(req, res, -100, result?.data?.resultMsg, false);
+          return 결제실패응답(trans_id, req, res, -100, result?.data?.resultMsg, false);
         } else {
           return;
         }
@@ -611,7 +632,7 @@ const payCtrl = {
         );
         //console.log(result)
         if (!["0000", "3001"].includes(result?.data?.resultCd)) {
-          return response(req, res, -100, result?.data?.resultMsg, false);
+          return 결제실패응답(trans_id, req, res, -100, result?.data?.resultMsg, false);
         } else {
           return response(req, res, 100, "success", {
             id: trans_id,
@@ -633,7 +654,7 @@ const payCtrl = {
           }
         );
         if (result?.data?.result_cd != "0000") {
-          return response(req, res, -100, result?.data?.result_msg, false);
+          return 결제실패응답(trans_id, req, res, -100, result?.data?.result_msg, false);
         }
       }
 
@@ -647,7 +668,7 @@ const payCtrl = {
           // 인증정보는 payment_modules 테이블에서 조회 (MID=client_id, 결제키=API키)
           const creds = await getPayletterCreds(brand_id);
           if (!creds?.client_id || !creds?.payment_key) {
-            return response(req, res, -100, "페이레터 결제모듈 설정이 필요합니다. (관리자 결제모듈에 MID=client_id, 결제키=API키 입력)", false);
+            return 결제실패응답(trans_id, req, res, -100, "페이레터 결제모듈 설정이 필요합니다. (관리자 결제모듈에 MID=client_id, 결제키=API키 입력)", false);
           }
           // return/callback 주소는 요청에서 유도 (별도 env 불필요)
           const front_url = (req.body.front_url || "").toString().trim();
@@ -671,7 +692,7 @@ const payCtrl = {
           });
 
           if (!pl?.online_url && !pl?.mobile_url) {
-            return response(req, res, -100, pl?.message || "페이레터 결제요청 실패", false);
+            return 결제실패응답(trans_id, req, res, -100, pl?.message || "페이레터 결제요청 실패", false);
           }
 
           // 상태조회 검증 시 사용할 order_no를 거래에 동기화(원본 ord_num을 정규화한 값)
@@ -685,7 +706,7 @@ const payCtrl = {
           });
         } catch (e) {
           logger.error(JSON.stringify(e?.response?.data || e));
-          return response(req, res, -100, e?.response?.data?.message || "페이레터 결제요청 오류", false);
+          return 결제실패응답(trans_id, req, res, -100, e?.response?.data?.message || "페이레터 결제요청 오류", false);
         }
       }
 
@@ -698,15 +719,15 @@ const payCtrl = {
         try {
           const creds = await getForspayCreds(brand_id);
           if (!creds?.app_key) {
-            return response(req, res, -100, "포스페이 결제모듈 설정이 필요합니다. (결제모듈 '결제키'에 App key 입력)", false);
+            return 결제실패응답(trans_id, req, res, -100, "포스페이 결제모듈 설정이 필요합니다. (결제모듈 '결제키'에 App key 입력)", false);
           }
           if (!FORSPAY_API_BASE || FORSPAY_API_BASE.includes('REPLACE')) {
-            return response(req, res, -100, "포스페이 Base URL(FORSPAY_API_BASE) 설정이 필요합니다.", false);
+            return 결제실패응답(trans_id, req, res, -100, "포스페이 Base URL(FORSPAY_API_BASE) 설정이 필요합니다.", false);
           }
           // 구매자가 고른 결제수단 → 포스페이 파라미터 매핑 (미지정 시 신용카드)
           const fsMethod = getForspayMethod(pay_method) || getForspayMethod('card');
           if (fsMethod?.pending) {
-            return response(req, res, -100, `'${fsMethod.label}'은(는) 아직 준비 중인 결제수단입니다. (협력사 확인 필요)`, false);
+            return 결제실패응답(trans_id, req, res, -100, `'${fsMethod.label}'은(는) 아직 준비 중인 결제수단입니다. (협력사 확인 필요)`, false);
           }
           // PG(페이레터/나이스) 라우팅: 수단별 지정 → 모듈 기본(MID) → 미지정 시 포스페이 자동
           const routedProvider = creds?.method_provider?.[fsMethod.key];
@@ -744,7 +765,7 @@ const payCtrl = {
           if (!launch_page_url) {
             // 포스페이가 201로 오류바디(예: {"error":"No payment module configured..."})를 줄 수 있어, 실제 사유를 로그·노출
             logger.error(`[forspay] launch_page_url 없음 — resp=${JSON.stringify(session)}`);
-            return response(req, res, -100, session?.message || session?.error || "포스페이 세션 생성 실패", false);
+            return 결제실패응답(trans_id, req, res, -100, session?.message || session?.error || "포스페이 세션 생성 실패", false);
           }
 
           // return/webhook 매칭용 ord_num을 거래에 동기화(정규화 값)
@@ -757,7 +778,7 @@ const payCtrl = {
           });
         } catch (e) {
           logger.error(JSON.stringify(e?.response?.data || e));
-          return response(req, res, -100, e?.response?.data?.message || "포스페이 세션 생성 오류", false);
+          return 결제실패응답(trans_id, req, res, -100, e?.response?.data?.message || "포스페이 세션 생성 오류", false);
         }
       }
 
@@ -767,6 +788,9 @@ const payCtrl = {
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
+      // 예외로 빠져나갈 때도 잡아둔 재고를 놓아준다.
+      // 거래가 안 만들어졌으면 trans_id 가 없고, 그때는 원장에도 아무것도 없어 무해하다.
+      try { if (trans_id) await 재고복구(trans_id); } catch (e) { /* 이미 로그를 남긴다 */ }
       return response(
         req,
         res,
