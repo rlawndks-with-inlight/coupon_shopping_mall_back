@@ -28,31 +28,33 @@ import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, g
 import { encForSave } from "../utils.js/pii.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
+import { applyCancelEffects, markCanceled } from "../utils.js/cancel.js";
 
 
 const table_name = "transactions";
 
-// 취소가 확정되면 재고를 되돌린다.
+// 결제가 실패로 끝나면 주문을 만들며 잡아둔 것들을 전부 놓아준다.
 //
-// ⚠ 취소를 막지 않는다. PG 취소는 이미 끝난 뒤이므로 여기서 던지면
-//   '돈은 돌려줬는데 화면은 실패'가 된다. 재고는 사람이 고칠 수 있다.
-// 원장(product_stock_moves)의 UNIQUE 가 이중 복구를 막으므로 여러 번 불러도 안전하다.
-// 결제가 실패로 끝나면 잡아둔 재고를 놓아준다.
+// 주문을 만들 때 두 가지를 미리 잡는다:
+//   재고        결제창을 띄운 사이 남이 사가면 안 되니까
+//   사용 포인트 같은 포인트로 두 번 할인받으면 안 되니까(type 10 음수 행)
+// 그런데 놓아주는 자리가 없었다. PG 가 거절하거나 설정이 없어 되돌아가면
+//   · 재고가 그대로 잠기고 (카드 실패가 반복되면 팔지도 못한 채 품절)
+//   · **고객 포인트가 차감된 채 사라진다** (결제는 안 됐는데 포인트만 없어진다)
 //
-// 재고는 주문을 만들 때 미리 잡는다(그래야 결제창을 띄운 사이 남이 사가지 못한다).
-// 그런데 잡기만 하고 놓아주는 자리가 없었다 — PG 가 거절하거나 설정이 없어 되돌아가면
-// **재고가 그대로 잠겼다**. 카드 실패가 반복되면 팔지도 못한 채 품절이 된다.
+// applyCancelEffects 가 둘 다 처리한다. 실패 시점에는 적립(type 0)이 아직 없으므로
+// 회수할 것도 없다 — 같은 함수를 그대로 써도 안전하다.
 // response 와 인자 모양이 같아 실패 응답 자리에 그대로 갈아끼운다.
 const 결제실패응답 = async (trans_id, req, res, code, msg, data) => {
-  await 재고복구(trans_id);
+  await 결제실패정리(trans_id);
   return response(req, res, code, msg, data);
 };
 
-const 재고복구 = async (trans_id) => {
+const 결제실패정리 = async (trans_id) => {
   try {
-    await restoreStock(trans_id);
+    await applyCancelEffects(trans_id);
   } catch (e) {
-    logger.error('재고 복구 실패(취소는 정상 처리됨): ' + (e?.sqlMessage || e?.message || e));
+    logger.error('결제 실패 정리 중 오류(응답은 그대로 나간다): ' + (e?.sqlMessage || e?.message || e));
   }
 };
 
@@ -790,7 +792,7 @@ const payCtrl = {
       logger.error(JSON.stringify(err?.response?.data || err));
       // 예외로 빠져나갈 때도 잡아둔 재고를 놓아준다.
       // 거래가 안 만들어졌으면 trans_id 가 없고, 그때는 원장에도 아무것도 없어 무해하다.
-      try { if (trans_id) await 재고복구(trans_id); } catch (e) { /* 이미 로그를 남긴다 */ }
+      try { if (trans_id) await 결제실패정리(trans_id); } catch (e) { /* 이미 로그를 남긴다 */ }
       return response(
         req,
         res,
@@ -865,37 +867,15 @@ const payCtrl = {
         let update_pay_data = updateQuery(table_name, {//이미 결제된건 취소로 판별
           is_cancel_trans: 1,
         }, pay_data?.id);
-        await 재고복구(pay_data?.id);
-        if (
-          amount * -1 * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) <
-          0
-        ) {
-          let result2 = await insertQuery(`points`, {
-            brand_id: dns_data?.id ?? 0,
-            user_id: pay_data?.user_id,
-            sender_id: 0,
-            point:
-              amount * -1 * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
-            type: 5,
-            trans_id: result?.insertId,
-          });
-        }
-        // 주문에 '사용했던' 포인트를 되돌린다.
-        // 위 블록은 결제로 '적립됐던' 포인트를 환수하는 것이고, 이건 그 반대다.
-        // ready 에서 use_point 만큼 음수 행(type 10)을 넣게 됐으므로 취소 시 반드시 복원해야 한다.
-        // (차감이 없던 시절엔 되돌릴 것도 없어서 이 처리가 아예 없었다 —
-        //  차감만 넣고 이걸 빠뜨리면 취소할 때마다 고객 포인트가 증발한다)
-        const restore_point = Math.abs(parseInt(pay_data?.use_point) || 0);
-        if (restore_point > 0 && pay_data?.user_id > 0) {
-          await insertQuery(`points`, {
-            brand_id: dns_data?.id ?? 0,
-            user_id: pay_data?.user_id,
-            sender_id: 0,
-            point: restore_point,
-            type: 5,
-            trans_id: result?.insertId,
-          });
-        }
+        // 재고 복구 · 적립 포인트 회수 · 사용 포인트 환불.
+        //
+        // 예전엔 이 자리에 포인트 처리가 손으로 두 덩어리 적혀 있었다(적립 회수 + 사용 복원).
+        // 다른 PG 경로에는 그게 없어서, **같은 취소인데 결제사에 따라 포인트가 달리 움직였다**.
+        // 이제 전부 applyCancelEffects 하나를 쓴다 — 여기 남겨두면 이중으로 들어간다.
+        //
+        // 회수 금액도 요율(point_rate)로 다시 계산하지 않고 **원장에 실제로 적립된 만큼**을 되돌린다.
+        // 요율은 나중에 바뀔 수 있어서, 다시 계산하면 적립된 적 없는 금액을 회수하게 된다.
+        await applyCancelEffects(pay_data?.id);
       } else {
         obj = {
           trx_id,
@@ -979,8 +959,7 @@ const payCtrl = {
         }
         try {
           await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount });
-          await updateQuery('transactions', { is_cancel_trans: 1 }, id);
-          await 재고복구(id);
+          await markCanceled(id);
           return response(req, res, 100, "success", {});
         } catch (e) {
           logger.error(JSON.stringify(e?.response?.data || e));
@@ -1002,8 +981,7 @@ const payCtrl = {
         const ip_addr = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '127.0.0.1').toString().split(',')[0].trim();
         const cancelRes = await cancelPayment({ client_id: creds.client_id, payment_key: creds.payment_key, user_id: trx.user_id, tid: trx.trx_id, ip_addr, pgcode: 'creditcard' });
         if (cancelRes?.tid) {
-          await updateQuery('transactions', { is_cancel_trans: 1 }, id);
-          await 재고복구(id);
+          await markCanceled(id);
           return response(req, res, 100, "success", {});
         }
         return response(req, res, -200, cancelRes?.message || "페이레터 취소 실패", false);
@@ -1021,8 +999,7 @@ const payCtrl = {
         //console.log(fintree_cancel)
         fintree_cancel = fintree_cancel?.data ?? {};
         if (fintree_cancel?.resultCd == "0000") {
-          let update_transaction = await updateQuery('transactions', { is_cancel: 1 }, id)
-          await 재고복구(id);
+          await markCanceled(id, { column: 'is_cancel' });
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, fintree_cancel?.result_msg, false);
@@ -1048,7 +1025,7 @@ const payCtrl = {
         );
         pay_cancel = pay_cancel?.data ?? {};
         if (pay_cancel?.result_cd == "0000") {
-          let update_transaction = await updateQuery('transactions', { is_cancel_trans: 1 }, id)
+          await markCanceled(id);
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, pay_cancel?.result_msg, false);
@@ -1066,6 +1043,9 @@ const payCtrl = {
         );
         payvery_cancel = payvery_cancel?.data ?? {};
         if (payvery_cancel?.result_cd == "0000") {
+          // 예전엔 PG 에만 취소를 걸고 DB 를 전혀 안 바꿨다 —
+          // 화면에는 정상 주문으로 남고 매출 집계도 취소분을 그대로 안고 갔다.
+          await markCanceled(id);
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, payvery_cancel?.result_msg, false);
@@ -1177,7 +1157,9 @@ const payCtrl = {
         if (!ok) { logger.error('forspay webhook signature mismatch'); return res.status(200).send({ ok: false }); }
       }
       if (String(body.is_cancel) === '1') {
-        await updateQuery('transactions', { is_cancel_trans: 1 }, trx.id);
+        // 웹훅으로 들어온 취소도 관리자 취소와 똑같이 처리한다.
+        // (부수처리는 멱등이라 관리자 취소와 웹훅이 겹쳐도 두 번 움직이지 않는다)
+        await markCanceled(trx.id);
         return res.status(200).send({ ok: true });
       }
       // 승인: 거래조회로 재확인 후 확정(멱등)
