@@ -27,7 +27,7 @@ import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/p
 import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
-import { checkStock, decreaseStock, restoreStock } from "../utils.js/product-options.js";
+import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption } from "../utils.js/product-options.js";
 
 
 const table_name = "transactions";
@@ -468,6 +468,10 @@ const payCtrl = {
       {
         const 줄 = Array.isArray(products) ? products : [products];
         try {
+          // 필수 옵션. 목록 카드의 '장바구니담기' 는 선택 정보 없이 담기므로
+          // 프론트 검사가 '모르면 통과' 로 빠져나간다 — 여기가 마지막 관문이다.
+          const 빠진옵션 = await findMissingRequiredOption(줄);
+          if (빠진옵션) return response(req, res, -100, `${빠진옵션} 을(를) 선택해 주세요.`, false);
           const 부족 = await checkStock(줄);
           if (!부족.ok) return response(req, res, -100, 부족.message, false);
           const 빠진항목 = await findMissingOrderFormField(줄);

@@ -264,6 +264,49 @@ const 줄별차감 = async (line) => {
               stock: product.stock_qty, soldout: 0, label: '상품' }];
 };
 
+// 필수 옵션(선택옵션)을 다 골랐는지 **서버가** 본다.
+//
+// 왜 서버가 또 보나: 프론트 검사는 우회할 수 있고, 무엇보다 우회할 필요도 없었다.
+// 상품 목록 카드의 '장바구니담기' 는 선택 정보 없이(false) 담기를 부르는데,
+// 목록 응답에는 옵션이 실려 있지 않아 프론트 검사가 '모르면 통과' 로 빠져나갔다.
+// 그러면 옵션 없는 주문이 그대로 접수되고, 가맹점은 무엇을 보내야 할지 모른다.
+//
+// 추가상품(group_type=1)은 검사하지 않는다 — 안 골라도 되는 것이 그 개념이다.
+export const findMissingRequiredOption = async (products = []) => {
+    const lines = Array.isArray(products) ? products : [];
+    const ids = [...new Set(lines.map((p) => Number(p?.id) || 0).filter(Boolean))];
+    if (!ids.length) return null;
+    const ph = ids.map(() => '?').join(',');
+
+    const [groups] = await readPool.query(
+        `SELECT g.id, g.product_id, g.group_name
+           FROM product_option_groups g
+          WHERE g.product_id IN (${ph}) AND g.is_delete=0 AND g.group_type=0
+            AND EXISTS (SELECT 1 FROM product_options o WHERE o.group_id=g.id AND o.is_delete=0)`, ids);
+    if (!groups.length) return null;
+
+    // 고른 옵션 id 가 어느 그룹 소속인지 확인한다.
+    // 남의 상품 옵션 id 를 실어 보내도 그 그룹을 채운 것으로 쳐주면 안 된다.
+    const 고른ids = [...new Set(lines.flatMap((p) => pickedOptionIds(p?.groups)))];
+    let 소속 = new Map();
+    if (고른ids.length) {
+        const oph = 고른ids.map(() => '?').join(',');
+        const [rows] = await readPool.query(
+            `SELECT id, group_id FROM product_options WHERE id IN (${oph}) AND is_delete=0`, 고른ids);
+        소속 = new Map(rows.map((r) => [Number(r.id), Number(r.group_id)]));
+    }
+
+    for (const line of lines) {
+        const pid = Number(line?.id) || 0;
+        const 필요 = groups.filter((g) => Number(g.product_id) === pid);
+        if (!필요.length) continue;
+        const 채운그룹 = new Set(pickedOptionIds(line?.groups).map((oid) => 소속.get(oid)).filter(Boolean));
+        const 빠진 = 필요.find((g) => !채운그룹.has(Number(g.id)));
+        if (빠진) return 빠진.group_name;
+    }
+    return null;
+};
+
 // 주문 전체가 재고 안에 들어오는지 본다. 부족하면 { ok:false, message } 를 돌려준다.
 export const checkStock = async (products = []) => {
     const lines = Array.isArray(products) ? products : [];

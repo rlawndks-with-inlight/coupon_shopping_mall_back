@@ -166,6 +166,14 @@ const productCtrl = {
                 columns.push(`0 AS order_count`);
                 columns.push(`0 AS review_count`);
             }
+            // 목록 카드에서 '이 상품은 골라야 할 옵션이 있는가' 를 알기 위한 값.
+            //
+            // 없으면 카드의 '장바구니담기' 가 옵션 없이 담아 버린다 — 목록 응답에 옵션이
+            // 안 실려 있어서 프론트 검사가 '모르면 통과' 로 빠져나가기 때문이다.
+            // 개수만 있으면 카드가 '상세로 보내기' 를 판단할 수 있다.
+            // 추가상품(group_type=1)은 안 골라도 사므로 세지 않는다.
+            columns.push(`(SELECT COUNT(*) FROM product_option_groups g WHERE g.product_id=${table_name}.id AND g.is_delete=0 AND g.group_type=0
+                AND EXISTS (SELECT 1 FROM product_options o WHERE o.group_id=g.id AND o.is_delete=0)) AS required_option_count`);
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.user_id=sellers.id `;
             //sql += ` LEFT JOIN users AS consignment_users ON ${table_name}.consignment_user_id=consignment_users.id `;
