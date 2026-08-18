@@ -111,8 +111,12 @@ export const getCancelState = async (trans_id) => {
     const tid = Number(trans_id) || 0;
     if (!tid) return null;
     const [[trx]] = await readPool.query(
+        // ⚠ delivery_fee 를 여기서 고르면 안 된다 — transactions 에는 그 컬럼이 없다.
+        //    배송비는 주문 줄(transaction_orders.delivery_fee)에만 있고, 아래 총배송비도
+        //    거기서 더한다. 이 한 칼럼 때문에 조회가 통째로 ER_BAD_FIELD_ERROR 로 죽어
+        //    부분취소 창이 늘 '주문 정보를 불러오지 못했습니다' 만 띄웠다(실행 경로도 같은 함수라 함께 죽었다).
         `SELECT id, brand_id, user_id, amount, use_point, trx_method, trx_status,
-                is_cancel, is_cancel_trans, ord_num, delivery_fee
+                is_cancel, is_cancel_trans, ord_num
            FROM transactions WHERE id=?`, [tid]);
     if (!trx) return null;
     const [rows] = await readPool.query(

@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "db-audit": "node scripts/db-audit.mjs",
     "start": "nodemon --trace-warnings --max-old-space-size=4096 index.js"
   },
   "author": "",

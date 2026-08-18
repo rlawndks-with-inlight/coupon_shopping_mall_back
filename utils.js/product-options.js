@@ -1,4 +1,5 @@
 import { readPool, writePool } from "../config/db-pool.js";
+import { isTruthyFlag } from "./util.js";
 
 // 상품 옵션 — 선택옵션 / 추가상품 / 조합형 / 재고 공용 로직.
 //
@@ -89,6 +90,20 @@ const 정수 = (v, 기본 = 0) => (isNaN(parseInt(v)) ? 기본 : parseInt(v));
 // 재고칸을 비우면 '무제한'이다. 0 으로 접으면 저장하는 순간 품절이 된다.
 const 재고 = (v) => (v === '' || v === null || v === undefined ? null : (isNaN(parseInt(v)) ? null : parseInt(v)));
 
+// 켜짐/꺼짐 값. **그냥 `v ? 1 : 0` 을 쓰면 안 된다.**
+//
+// 상품 저장은 multipart/form-data 다(프론트 api.js 가 object-to-formdata 로 직렬화한다).
+// 그래서 서버에 닿을 땐 **모든 값이 문자열**이다 — 꺼 둔 스위치는 0 이 아니라 "0" 으로 온다.
+// 자바스크립트에서 문자열 "0" 은 참이므로 `o?.is_soldout ? 1 : 0` 은 **항상 1** 이 된다.
+// 실제로 이 때문에 새로 만든 상품의 옵션이 전부 품절로 저장됐다(2026-08-18 확인).
+//
+// 조합(combinations)은 JSON 문자열로 따로 실려 와 숫자로 되살아나므로 증상이 없었다.
+// 그 차이가 곧 원인이었다 — 같은 코드인데 한쪽만 틀렸다.
+//
+// 같은 사고가 배송지 is_default(모든 배송지가 '기본'이 됐다)와
+// 회원목록 is_user(운영자 계정이 안 보였다)에서도 났다. 그래서 판정을 한 곳(util.js)에 둔다.
+const 켜짐 = (v) => (isTruthyFlag(v) ? 1 : 0);
+
 // 옵션그룹 + 옵션 저장. 화면이 보낸 is_delete=1 을 소프트 삭제로 처리한다.
 // 돌려주는 값: { [group_name]: { id, options: { [option_name]: id } } } — 조합 해석에 쓴다.
 export const saveOptionGroups = async (product_id, groups = []) => {
@@ -148,7 +163,7 @@ export const saveOptionGroups = async (product_id, groups = []) => {
                 option_price: 정수(o?.option_price, 0),
                 option_description: o?.option_description ?? '',
                 stock_qty: 재고(o?.stock_qty),
-                is_soldout: o?.is_soldout ? 1 : 0,
+                is_soldout: 켜짐(o?.is_soldout),
                 sort: 정수(o?.sort, j),
             };
             let option_id = oid;
@@ -199,7 +214,7 @@ export const saveCombinations = async (product_id, combinations = [], 이름표 
              VALUES (?,?,?,?,?,0)
              ON DUPLICATE KEY UPDATE add_price=VALUES(add_price), stock_qty=VALUES(stock_qty),
                                      is_soldout=VALUES(is_soldout), is_delete=0`,
-            [pid, key, 정수(c?.add_price, 0), 재고(c?.stock_qty), c?.is_soldout ? 1 : 0]);
+            [pid, key, 정수(c?.add_price, 0), 재고(c?.stock_qty), 켜짐(c?.is_soldout)]);
     }
     // 화면에서 사라진 조합은 내린다. 지우지 않고 내리는 이유는 지난 주문의 재고 복구 때문이다.
     if (살아있는.length) {
