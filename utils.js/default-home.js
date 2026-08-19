@@ -50,7 +50,6 @@ const bannerSection = (srcList) => ({
         sub_title_color: '#ffffff',
         link: '',
     })),
-    style: { min_height: 200 },
 });
 
 // 스토어 데모의 기본 shop_obj (JSON 문자열). 섹션 빌더가 아니면 '[]'.
