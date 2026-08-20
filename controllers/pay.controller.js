@@ -1251,6 +1251,8 @@ const payCtrl = {
     // 포스페이 웹훅(noti_url). 승인/취소 통지 — 공식 기록. 응답은 200.
     try {
       const body = { ...req.query, ...req.body };
+      // [진단·임시] 포스페이 웹훅 payload 에 할부 필드가 실리는지 확인용 — 키 이름만 기록(값 없음). 확인 후 제거.
+      try { logger.info('[forspay-diag] webhook body keys: ' + Object.keys(body || {}).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
       const ord = body.ord_num;
       const trx = (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
       if (!trx) return res.status(200).send({ ok: true });
@@ -1361,6 +1363,9 @@ async function settleForspayTransaction(transId, data = {}) {
   let rows = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [transId]);
   let trx = rows[0][0];
   if (!trx) return false;
+  // [진단·임시] 포스페이 응답(거래조회 txn 또는 웹훅 body 병합)에 할부 필드가 오는지 확인용.
+  // 값이 아니라 '키 이름'만 기록한다(개인정보 노출 없음). 필드명 확인 후 이 줄을 제거할 것.
+  try { logger.info('[forspay-diag] settle data keys: ' + Object.keys(data || {}).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
   if (trx.trx_status == 5) {
     // 이미 확정됨(중복 return/webhook 방지). 단, 카드번호는 거래조회 응답엔 없고 웹훅에만 있으므로
     // 리턴 경로가 먼저 확정해 카드번호가 비어있으면, 뒤늦게 온 웹훅 데이터로 1회 보강한다.
