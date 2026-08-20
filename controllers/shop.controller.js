@@ -578,14 +578,15 @@ const shopCtrl = {
             let data = {
                 user: decode_user,
             }
-            let point_sql = `SELECT SUM(point) FROM points WHERE user_id=?`;
+            // 이 몰의 포인트만 센다(브랜드를 넘나들던 것을 막는다).
+            let point_sql = `SELECT SUM(point) FROM points WHERE user_id=? AND brand_id=?`;
             let order_sql = `SELECT * FROM transactions WHERE user_id=? AND trx_status>=5 ORDER BY id DESC LIMIT 0, 5`;
             let product_view_sql = `SELECT product_views.*, products.product_name, products.product_img, products.product_comment, products.status, products.product_price, products.product_sale_price FROM product_views `;
             product_view_sql += ` LEFT JOIN products ON product_views.product_id=products.id `;
             product_view_sql += ` WHERE product_views.user_id=? AND product_views.brand_id=? ORDER BY id DESC `;
 
             let sql_list = [
-                { table: 'point', sql: point_sql, data: [decode_user?.id] },
+                { table: 'point', sql: point_sql, data: [decode_user?.id, decode_dns?.id] },
                 { table: 'orders', sql: order_sql, data: [decode_user?.id] },
                 { table: 'product_views', sql: product_view_sql, data: [decode_user?.id, decode_dns?.id] },
             ]

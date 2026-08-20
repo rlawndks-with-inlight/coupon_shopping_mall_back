@@ -25,7 +25,9 @@ const userCtrl = {
             const { is_user, is_seller, is_agent } = req.query;
             let columns = [
                 `${table_name}.*`,
-                `(SELECT SUM(point) FROM points WHERE user_id=${table_name}.id) AS point`
+                // 회원 목록의 보유 포인트도 이 몰 것만 센다 — 브랜드를 넘나들면
+                // 관리자 화면과 고객 화면의 숫자가 서로 달라진다.
+                `(SELECT SUM(point) FROM points WHERE user_id=${table_name}.id AND brand_id=${table_name}.brand_id) AS point`
             ]
             let params = [];
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;

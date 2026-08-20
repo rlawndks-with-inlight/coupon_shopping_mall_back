@@ -113,8 +113,43 @@ const authCtrl = {
     signIn: async (req, res, next) => {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
-            const decode_dns = checkDns(req.cookies.dns);
-            let { user_name, user_pw, is_manager, otp_num } = req.body;
+            let decode_dns = checkDns(req.cookies.dns);
+            let { user_name, user_pw, is_manager, otp_num, dns } = req.body;
+
+            // ⚠ dns 쿠키가 만료됐을 때 되살린다 — 이게 없으면 '비밀번호가 맞는데 로그인이 안 되는'
+            //   현상이 난다.
+            //
+            //   아래 회원 조회는 brand_id 를 decode_dns.id 에서 가져온다. 그런데 dns 쿠키도
+            //   3시간짜리라(토큰 180분 · 쿠키 maxAge 3시간) 창을 오래 열어 두면 로그인 토큰과
+            //   **같이** 죽는다. 그러면 checkDns 가 false 를 주고 brand_id 가 undefined 가 되어
+            //   어떤 회원과도 안 맞고, 화면에는 '가입되지 않은 회원입니다'(=아이디/비번 오류)가 뜬다.
+            //   새로고침하면 되는 이유는, 그때 프론트가 도메인 정보를 다시 받아 오면서
+            //   dns 쿠키가 새로 구워지기 때문이다. 자격증명과는 아무 상관이 없었다.
+            //
+            //   그래서 쿠키가 없으면 프론트가 함께 보낸 호스트로 브랜드를 다시 찾는다.
+            //   (요청 헤더의 host 는 프록시 설정에 따라 달라질 수 있어 몸통 값을 먼저 본다)
+            if (!decode_dns?.id) {
+                const host = String(dns || req.headers?.host || '').split(':')[0];
+                if (host) {
+                    const found = await readPool.query(
+                        `SELECT * FROM brands WHERE (dns=? OR admin_dns=?) AND is_delete=0 LIMIT 1`, [host, host]);
+                    const brand = found[0][0];
+                    if (brand) {
+                        // setting_obj 는 DB 에 문자열로 들어 있을 수 있다. 토큰에서 꺼낸 모양과 맞춘다.
+                        if (typeof brand.setting_obj === 'string') {
+                            try { brand.setting_obj = JSON.parse(brand.setting_obj); } catch (e) { brand.setting_obj = {}; }
+                        }
+                        decode_dns = brand;
+                        // 다음 요청부터는 쿠키로 풀리도록 다시 구워 준다.
+                        res.cookie("dns", makeUserToken(brand), {
+                            httpOnly: true,
+                            maxAge: 60 * 60 * 1000 * 3,
+                            sameSite: 'lax',
+                            secure: process.env.NODE_ENV !== 'development',
+                        });
+                    }
+                }
+            }
             let user = '';
             if (decode_dns?.setting_obj?.is_use_seller == 1) {
                 // `OR level >= 10` 에 brand_id 조건이 없어서, 아이디만 같으면
@@ -374,13 +409,50 @@ const authCtrl = {
 
         }
     },
+    // 로그인 상태를 알려주는 곳. 프론트는 여기 응답만 보고 '로그인/로그아웃'을 정한다
+    // (AuthGuard 가 isAuthenticated 가 거짓이면 곧바로 로그인 화면을 그린다).
+    // 그래서 이 함수가 실패하는 모든 경우가 곧 '로그아웃'이다 — 조심해서 다뤄야 한다.
     checkSign: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            let point_data = await readPool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=?`, [decode_user?.id ?? 0]);
-            let point = point_data[0][0]?.point;
+
+            // ⚠ 포인트 합계 조회를 이 try 안에 그냥 두면 안 된다.
+            //   예전에는 여기서 DB 가 한 번만 삐끗해도 catch 로 떨어져 -200 을 돌려줬고,
+            //   프론트는 그걸 '로그인 안 됨'으로 읽어 **작업 중이던 사용자를 로그인 화면으로
+            //   튕겼다**. 토큰은 멀쩡한데 포인트 합계 하나 때문에 쫓겨난 것이다.
+            //   포인트는 못 읽으면 0 으로 두면 그만이다 — 로그인 여부와는 상관이 없다.
+            let point = 0;
+            try {
+                // ⚠ brand_id 를 반드시 함께 건다.
+                //   예전 쿼리는 WHERE user_id=? 뿐이라 잔액이 브랜드를 넘나들었다.
+                //   보통 회원은 가맹점마다 user 행이 따로라 티가 안 났지만, level 50(마스터)은
+                //   user 행 하나로 모든 몰에 로그인한다 — 한 몰에서 받은 포인트가 다른 몰에서
+                //   그대로 쓰였다(실제로 브랜드 60 소속 마스터 계정이 브랜드 84 원장에
+                //   1,000억P 를 갖고 있었다). 가맹점의 포인트는 그 가맹점 안에서만 돈다.
+                const point_data = await readPool.query(
+                    `SELECT SUM(point) AS point FROM points WHERE user_id=? AND brand_id=?`,
+                    [decode_user?.id ?? 0, decode_dns?.id ?? 0]);
+                point = point_data[0][0]?.point ?? 0;
+            } catch (e) {
+                logger.error('checkSign point 조회 실패(로그인은 유지): ' + (e?.message ?? e));
+            }
+
+            // 토큰을 반쯤 쓴 사용자는 여기서 새로 발급해 준다(슬라이딩 세션).
+            //
+            // 토큰 수명은 180분이고 로그인할 때 한 번만 발급했다. 갱신이 없으니 계속 일하던
+            // 사람도 3시간이 되는 순간 끊겼다 — 무활동 3시간이 아니라 '로그인 후 3시간'이었다.
+            // 화면을 쓰고 있으면 이 함수가 주기적으로 불리므로, 남은 시간이 절반 아래로
+            // 내려갔을 때만 새로 준다(매번 주면 쿠키를 쓸데없이 계속 굽는다).
+            if (decode_user?.id > 0 && decode_user?.exp) {
+                const 남은초 = decode_user.exp - Math.floor(Date.now() / 1000);
+                if (남은초 > 0 && 남은초 < 90 * 60) {
+                    const { exp, iat, iss, ...payload } = decode_user;
+                    issueUserTokenCookie(res, makeUserToken(payload));
+                }
+            }
+
             return response(req, res, 100, "success", { ...decode_user, point })
         } catch (err) {
             console.log(err)

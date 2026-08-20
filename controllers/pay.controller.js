@@ -1,5 +1,6 @@
 "use strict";
 import axios from "axios";
+import { 포인트사용상한 } from '../utils.js/point-policy.js';
 import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
 import { hashOrderPassword } from "../utils.js/order-password.js";
 import {
@@ -396,15 +397,31 @@ const payCtrl = {
           return response(req, res, -100, "주문 상품 정보가 올바르지 않습니다.", false);
         }
 
-        // 포인트 잔액은 서버에서 본다. 예전엔 프론트(OrderSheet)에서만 확인했다.
+        // 포인트는 서버에서 본다. 예전엔 프론트(OrderSheet)에서만 확인했다.
+        //
+        // 예전 검사는 잔액 하나뿐이었다. 그래서 가맹점이 설정해 둔 조건
+        // ('일정 금액 이상 주문할 때만' / '일정 포인트 이상 모였을 때만' / '한 번에 최대 얼마')이
+        // 서버에서는 전혀 지켜지지 않았다 — 화면을 거치지 않고 들어온 요청은 그냥 통과했다.
+        // 판정은 화면과 같은 규칙(utils.js/point-policy.js)으로 한다.
         if (expected.usedPoint > 0) {
           if (!(user_id > 0)) {
             return response(req, res, -100, "비회원 주문은 포인트를 사용할 수 없습니다.", false);
           }
-          let bal = await readPool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=?`, [user_id]);
+          // 잔액도 이 몰의 것만 센다 — 브랜드를 넘나들면 남의 몰 포인트로 결제된다
+          // (auth.controller 의 같은 쿼리 주석 참고).
+          let bal = await readPool.query(
+            `SELECT SUM(point) AS point FROM points WHERE user_id=? AND brand_id=?`, [user_id, brand_id]);
           const balance = Number(bal[0][0]?.point) || 0;
           if (expected.usedPoint > balance) {
             return response(req, res, -100, "보유 포인트가 부족합니다.", false);
+          }
+          // 포인트를 빼기 전 주문금액으로 조건을 본다(빼고 나면 조건을 스스로 무너뜨린다).
+          const 주문금액 = Number(expected.amount || 0) + Number(expected.usedPoint || 0);
+          const { 상한, 사유 } = 포인트사용상한({
+            dns: decode_dns, 보유: balance, 주문금액,
+          });
+          if (expected.usedPoint > 상한) {
+            return response(req, res, -100, 사유 || "사용 가능한 포인트를 초과했습니다.", false);
           }
         }
 
