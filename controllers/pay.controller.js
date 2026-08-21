@@ -9,15 +9,7 @@ import {
   insertQuery,
   selectQuerySimple,
   updateQuery, hasColumn } from "../utils.js/query-util.js";
-import {
-  canWriteBrand,
-  checkDns,
-  checkLevel,
-  isItemBrandIdSameDnsId,
-  lowLevelException,
-  response,
-  settingFiles,
-} from "../utils.js/util.js";
+import { canWriteBrand, checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
@@ -741,7 +733,7 @@ const payCtrl = {
             mobile_url: pl?.mobile_url,
           });
         } catch (e) {
-          logger.error(JSON.stringify(e?.response?.data || e));
+          logger.error(errText(e));
           return 결제실패응답(trans_id, req, res, -100, e?.response?.data?.message || "페이레터 결제요청 오류", false);
         }
       }
@@ -831,7 +823,7 @@ const payCtrl = {
       });
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       // 예외로 빠져나갈 때도 잡아둔 재고를 놓아준다.
       // 거래가 안 만들어졌으면 trans_id 가 없고, 그때는 원장에도 아무것도 없어 무해하다.
       try { if (trans_id) await 결제실패정리(trans_id); } catch (e) { /* 이미 로그를 남긴다 */ }
@@ -945,7 +937,7 @@ const payCtrl = {
       return response(req, res, 100, "success", {});
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       return response(req, res, -200, "서버 에러 발생", false);
     } finally {
     }
@@ -1004,7 +996,7 @@ const payCtrl = {
           await markCanceled(id);
           return response(req, res, 100, "success", {});
         } catch (e) {
-          logger.error(JSON.stringify(e?.response?.data || e));
+          logger.error(errText(e));
           return response(req, res, -200, e?.response?.data?.message || "포스페이 취소 실패", false);
         }
       }
@@ -1095,7 +1087,7 @@ const payCtrl = {
       }
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       return response(
         req,
         res,
@@ -1135,7 +1127,7 @@ const payCtrl = {
       });
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       return response(req, res, -200, "서버 에러 발생", false);
     }
   },
@@ -1177,7 +1169,7 @@ const payCtrl = {
       return response(req, res, 100, "success", result);
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       return response(req, res, -200, "서버 에러 발생", false);
     }
   },
@@ -1197,7 +1189,7 @@ const payCtrl = {
       return res.status(200).send({ code: 0 });
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       return res.status(200).send({ code: -1, message: "콜백 처리 오류" });
     }
   },
@@ -1225,7 +1217,7 @@ const payCtrl = {
       return res.redirect(302, `${resultBase}?result_cd=9999`);
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       return res.redirect(302, `${resultBase}?result_cd=9999`);
     }
   },
@@ -1257,7 +1249,7 @@ const payCtrl = {
       return res.redirect(302, `${resultBase}?result_cd=9999`);
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       return res.redirect(302, `${resultBase}?result_cd=9999`);
     }
   },
@@ -1291,7 +1283,7 @@ const payCtrl = {
       return res.status(200).send({ ok: true });
     } catch (err) {
       console.log(err);
-      logger.error(JSON.stringify(err?.response?.data || err));
+      logger.error(errText(err));
       return res.status(200).send({ ok: false });
     }
   },

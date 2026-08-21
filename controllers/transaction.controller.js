@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
@@ -186,7 +186,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", data);
         } catch (err) {
             console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
+            logger.error(errText(err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -284,7 +284,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
+            logger.error(errText(err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -311,7 +311,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
+            logger.error(errText(err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -328,7 +328,7 @@ const transactionCtrl = {
             return res.status(200).send("SUCCESS");
         } catch (err) {
             console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
+            logger.error(errText(err))
             return res.status(200).send("FAIL");
         } finally {
 
@@ -377,7 +377,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
+            logger.error(errText(err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -403,7 +403,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
+            logger.error(errText(err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -429,7 +429,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
+            logger.error(errText(err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
@@ -514,7 +514,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
-            logger.error(JSON.stringify(err?.response?.data || err))
+            logger.error(errText(err))
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
