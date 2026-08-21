@@ -1,5 +1,6 @@
 "use strict";
 import axios from "axios";
+import { 포인트사용상한 } from '../utils.js/point-policy.js';
 import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
 import { hashOrderPassword } from "../utils.js/order-password.js";
 import {
@@ -253,6 +254,7 @@ const payCtrl = {
         buyer_phone,
         pay_method,        // 포스페이: 구매자가 고른 결제수단 키(card/bank/kakaopay/…)
         receiver,          // 배송지 받는사람
+        delivery_memo = null,  // 배송 요청사항(고객 입력) — 컬럼이 없으면 저장을 건너뛴다
         addr_phone,        // 배송지 연락처
         zonecode,          // 우편번호
         // 해외배송. 주소록 행은 나중에 수정·삭제될 수 있으므로
@@ -396,15 +398,31 @@ const payCtrl = {
           return response(req, res, -100, "주문 상품 정보가 올바르지 않습니다.", false);
         }
 
-        // 포인트 잔액은 서버에서 본다. 예전엔 프론트(OrderSheet)에서만 확인했다.
+        // 포인트는 서버에서 본다. 예전엔 프론트(OrderSheet)에서만 확인했다.
+        //
+        // 예전 검사는 잔액 하나뿐이었다. 그래서 가맹점이 설정해 둔 조건
+        // ('일정 금액 이상 주문할 때만' / '일정 포인트 이상 모였을 때만' / '한 번에 최대 얼마')이
+        // 서버에서는 전혀 지켜지지 않았다 — 화면을 거치지 않고 들어온 요청은 그냥 통과했다.
+        // 판정은 화면과 같은 규칙(utils.js/point-policy.js)으로 한다.
         if (expected.usedPoint > 0) {
           if (!(user_id > 0)) {
             return response(req, res, -100, "비회원 주문은 포인트를 사용할 수 없습니다.", false);
           }
-          let bal = await readPool.query(`SELECT SUM(point) AS point FROM points WHERE user_id=?`, [user_id]);
+          // 잔액도 이 몰의 것만 센다 — 브랜드를 넘나들면 남의 몰 포인트로 결제된다
+          // (auth.controller 의 같은 쿼리 주석 참고).
+          let bal = await readPool.query(
+            `SELECT SUM(point) AS point FROM points WHERE user_id=? AND brand_id=?`, [user_id, brand_id]);
           const balance = Number(bal[0][0]?.point) || 0;
           if (expected.usedPoint > balance) {
             return response(req, res, -100, "보유 포인트가 부족합니다.", false);
+          }
+          // 포인트를 빼기 전 주문금액으로 조건을 본다(빼고 나면 조건을 스스로 무너뜨린다).
+          const 주문금액 = Number(expected.amount || 0) + Number(expected.usedPoint || 0);
+          const { 상한, 사유 } = 포인트사용상한({
+            dns: decode_dns, 보유: balance, 주문금액,
+          });
+          if (expected.usedPoint > 상한) {
+            return response(req, res, -100, 사유 || "사용 가능한 포인트를 초과했습니다.", false);
           }
         }
 
@@ -451,6 +469,11 @@ const payCtrl = {
         receiver,
         receiver_phone: addr_phone,
         zonecode,
+        // 배송 요청사항. 컬럼이 없으면(마이그레이션 전) 통째로 건너뛴다 —
+        // 없는 컬럼을 넣으면 주문 저장이 실패한다(국가 컬럼과 같은 방식).
+        ...(await hasColumn('transactions', 'delivery_memo')
+            ? { delivery_memo: delivery_memo ? String(delivery_memo).slice(0, 255) : null }
+            : {}),
         ...(hasCountryColumn ? {
             country_code: overseasCountry,
             // 나라 이름은 고객이 직접 적는다 — 저장하지 않으면 주문서에서 받은 국가가 버려진다.
@@ -790,7 +813,15 @@ const payCtrl = {
             launch_page_url,
           });
         } catch (e) {
-          logger.error(JSON.stringify(e?.response?.data || e));
+          // 포스페이가 990 '시스템 에러입니다' 만 돌려주는 일이 있다(2026-08-21 mbc01).
+          // 그 한 줄만 남기면 우리가 무엇을 보냈는지 알 수 없어 PG 에 문의할 근거가 없다.
+          // 보낸 값을 함께 남긴다 — App key 는 절대 남기지 않는다(길이만).
+          logger.error('[forspay] 세션 생성 실패'
+            + ` brand_id=${brand_id} trans_id=${trans_id} ord_num=${order_no}`
+            + ` amount=${amount} method=${fsMethod?.key} pg_method_id=${fsMethod?.pg_method_id}`
+            + ` route=${fsMethod?.route ?? '-'} pg_provider_id=${fsProvider ?? '(자동)'}`
+            + ` app_key_len=${String(creds?.app_key ?? '').length}`
+            + ` http=${e?.response?.status ?? '-'} resp=${JSON.stringify(e?.response?.data || e?.message || e)}`);
           return 결제실패응답(trans_id, req, res, -100, e?.response?.data?.message || "포스페이 세션 생성 오류", false);
         }
       }
@@ -1234,6 +1265,8 @@ const payCtrl = {
     // 포스페이 웹훅(noti_url). 승인/취소 통지 — 공식 기록. 응답은 200.
     try {
       const body = { ...req.query, ...req.body };
+      // [진단·임시] 포스페이 웹훅 payload 에 할부 필드가 실리는지 확인용 — 키 이름만 기록(값 없음). 확인 후 제거.
+      try { logger.info('[forspay-diag] webhook body keys: ' + Object.keys(body || {}).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
       const ord = body.ord_num;
       const trx = (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
       if (!trx) return res.status(200).send({ ok: true });
@@ -1344,6 +1377,9 @@ async function settleForspayTransaction(transId, data = {}) {
   let rows = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [transId]);
   let trx = rows[0][0];
   if (!trx) return false;
+  // [진단·임시] 포스페이 응답(거래조회 txn 또는 웹훅 body 병합)에 할부 필드가 오는지 확인용.
+  // 값이 아니라 '키 이름'만 기록한다(개인정보 노출 없음). 필드명 확인 후 이 줄을 제거할 것.
+  try { logger.info('[forspay-diag] settle data keys: ' + Object.keys(data || {}).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
   if (trx.trx_status == 5) {
     // 이미 확정됨(중복 return/webhook 방지). 단, 카드번호는 거래조회 응답엔 없고 웹훅에만 있으므로
     // 리턴 경로가 먼저 확정해 카드번호가 비어있으면, 뒤늦게 온 웹훅 데이터로 1회 보강한다.

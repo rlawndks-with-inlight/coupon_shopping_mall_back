@@ -455,12 +455,20 @@ const transactionCtrl = {
             // 취소 요청이 가능한 상태만. 출고 이후(15·20·25)는 취소가 아니라 반품 절차로 가야 하고,
             // 이미 취소요청(1)이거나 취소완료된 건은 중복 요청을 막는다.
             // 0=결제대기, 1=취소요청, 5=결제완료, 10=입고, 15=출고, 20=배송중, 25=배송완료
-            const CANCELABLE_STATUS = [0, 5, 10];
+            // 결제대기(0)는 뺀다 — 아직 승인되지 않은 주문이라 돌려줄 돈이 없다.
+            // 예전엔 여기 0 이 있어서, 결제도 안 된 주문에 취소요청이 쌓이고
+            // 가맹점은 환불할 것도 없는 건을 처리해야 했다(2026-08-21 지적).
+            const CANCELABLE_STATUS = [5, 10];
             if (data?.is_cancel == 1 || data?.is_cancel_trans == 1) {
                 return response(req, res, -100, "이미 취소 처리된 주문입니다.", false)
             }
             if (data?.trx_status == 1) {
                 return response(req, res, -100, "이미 취소 요청된 주문입니다.", false)
+            }
+            // 왜 안 되는지는 상태마다 다르다. 한 문장으로 뭉뚱그리면 결제도 안 한 주문에까지
+            // "출고된 주문" 이라고 답하게 된다.
+            if (Number(data?.trx_status) === 0) {
+                return response(req, res, -100, "아직 결제가 완료되지 않은 주문입니다. 결제하지 않으시면 주문이 진행되지 않습니다.", false)
             }
             if (!CANCELABLE_STATUS.includes(Number(data?.trx_status))) {
                 return response(req, res, -100, "출고된 주문은 취소할 수 없습니다. 반품/환불은 판매자에게 문의해 주세요.", false)
