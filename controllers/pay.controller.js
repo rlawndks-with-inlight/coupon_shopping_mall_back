@@ -744,8 +744,12 @@ const payCtrl = {
       //  - 확정은 return/callback 에서 거래조회(GET /transactions)로 재검증
       // ─────────────────────────────
       if (trx_method == 41) {
+        // 실패했을 때 '무엇을 보냈는지' 를 남기려면 catch 에서도 값이 보여야 한다.
+        // try 안의 const 는 catch 에서 안 보인다(블록 스코프) — 여기 담아 두고 catch 는 이것만 읽는다.
+        const 진단 = { ord_num: '(미정)', method: '(미정)', pg_method_id: '-', route: '-', provider: '(자동)', app_key_len: 0 };
         try {
           const creds = await getForspayCreds(brand_id);
+          진단.app_key_len = String(creds?.app_key ?? '').length;
           if (!creds?.app_key) {
             return 결제실패응답(trans_id, req, res, -100, "포스페이 결제모듈 설정이 필요합니다. (결제모듈 '결제키'에 App key 입력)", false);
           }
@@ -754,6 +758,9 @@ const payCtrl = {
           }
           // 구매자가 고른 결제수단 → 포스페이 파라미터 매핑 (미지정 시 신용카드)
           const fsMethod = getForspayMethod(pay_method) || getForspayMethod('card');
+          진단.method = fsMethod?.key ?? '(없음)';
+          진단.pg_method_id = fsMethod?.pg_method_id ?? '-';
+          진단.route = fsMethod?.route ?? '-';
           if (fsMethod?.pending) {
             return 결제실패응답(trans_id, req, res, -100, `'${fsMethod.label}'은(는) 아직 준비 중인 결제수단입니다. (협력사 확인 필요)`, false);
           }
@@ -762,9 +769,11 @@ const payCtrl = {
           const fsProvider = (routedProvider !== undefined && routedProvider !== null && String(routedProvider).trim() !== '')
             ? routedProvider
             : creds.pg_provider_id;
+          진단.provider = fsProvider ?? '(자동)';
           const front_url = (req.body.front_url || "").toString().trim();
           const backBase = `${req.protocol}://${req.get('host')}`;
           const order_no = String(ord_num || `FS${trans_id}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 64);
+          진단.ord_num = order_no;
           const return_url = `${backBase}/api/pays/forspay/return?front=${encodeURIComponent(front_url)}&trans=${trans_id}&ord=${encodeURIComponent(order_no)}`;
 
           const session = await forspayCreateSession({
@@ -809,11 +818,11 @@ const payCtrl = {
           // 그 한 줄만 남기면 우리가 무엇을 보냈는지 알 수 없어 PG 에 문의할 근거가 없다.
           // 보낸 값을 함께 남긴다 — App key 는 절대 남기지 않는다(길이만).
           logger.error('[forspay] 세션 생성 실패'
-            + ` brand_id=${brand_id} trans_id=${trans_id} ord_num=${order_no}`
-            + ` amount=${amount} method=${fsMethod?.key} pg_method_id=${fsMethod?.pg_method_id}`
-            + ` route=${fsMethod?.route ?? '-'} pg_provider_id=${fsProvider ?? '(자동)'}`
-            + ` app_key_len=${String(creds?.app_key ?? '').length}`
-            + ` http=${e?.response?.status ?? '-'} resp=${JSON.stringify(e?.response?.data || e?.message || e)}`);
+            + ` brand_id=${brand_id} trans_id=${trans_id} ord_num=${진단.ord_num}`
+            + ` amount=${amount} method=${진단.method} pg_method_id=${진단.pg_method_id}`
+            + ` route=${진단.route} pg_provider_id=${진단.provider}`
+            + ` app_key_len=${진단.app_key_len}`
+            + ` ${errText(e)}`);
           return 결제실패응답(trans_id, req, res, -100, e?.response?.data?.message || "포스페이 세션 생성 오류", false);
         }
       }
