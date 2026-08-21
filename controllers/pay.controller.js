@@ -813,7 +813,15 @@ const payCtrl = {
             launch_page_url,
           });
         } catch (e) {
-          logger.error(JSON.stringify(e?.response?.data || e));
+          // 포스페이가 990 '시스템 에러입니다' 만 돌려주는 일이 있다(2026-08-21 mbc01).
+          // 그 한 줄만 남기면 우리가 무엇을 보냈는지 알 수 없어 PG 에 문의할 근거가 없다.
+          // 보낸 값을 함께 남긴다 — App key 는 절대 남기지 않는다(길이만).
+          logger.error('[forspay] 세션 생성 실패'
+            + ` brand_id=${brand_id} trans_id=${trans_id} ord_num=${order_no}`
+            + ` amount=${amount} method=${fsMethod?.key} pg_method_id=${fsMethod?.pg_method_id}`
+            + ` route=${fsMethod?.route ?? '-'} pg_provider_id=${fsProvider ?? '(자동)'}`
+            + ` app_key_len=${String(creds?.app_key ?? '').length}`
+            + ` http=${e?.response?.status ?? '-'} resp=${JSON.stringify(e?.response?.data || e?.message || e)}`);
           return 결제실패응답(trans_id, req, res, -100, e?.response?.data?.message || "포스페이 세션 생성 오류", false);
         }
       }
