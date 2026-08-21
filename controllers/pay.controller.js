@@ -254,6 +254,7 @@ const payCtrl = {
         buyer_phone,
         pay_method,        // 포스페이: 구매자가 고른 결제수단 키(card/bank/kakaopay/…)
         receiver,          // 배송지 받는사람
+        delivery_memo = null,  // 배송 요청사항(고객 입력) — 컬럼이 없으면 저장을 건너뛴다
         addr_phone,        // 배송지 연락처
         zonecode,          // 우편번호
         // 해외배송. 주소록 행은 나중에 수정·삭제될 수 있으므로
@@ -468,6 +469,11 @@ const payCtrl = {
         receiver,
         receiver_phone: addr_phone,
         zonecode,
+        // 배송 요청사항. 컬럼이 없으면(마이그레이션 전) 통째로 건너뛴다 —
+        // 없는 컬럼을 넣으면 주문 저장이 실패한다(국가 컬럼과 같은 방식).
+        ...(await hasColumn('transactions', 'delivery_memo')
+            ? { delivery_memo: delivery_memo ? String(delivery_memo).slice(0, 255) : null }
+            : {}),
         ...(hasCountryColumn ? {
             country_code: overseasCountry,
             // 나라 이름은 고객이 직접 적는다 — 저장하지 않으면 주문서에서 받은 국가가 버려진다.
