@@ -131,6 +131,31 @@ export const response = async (req, res, code, message, data) => { //응답 포�
         }
     }
 }
+// 예외를 사람이 읽을 수 있는 한 줄로 만든다.
+//
+// 예전엔 여기저기서 JSON.stringify(err?.response?.data || err) 를 썼다.
+// axios 오류(응답 본문이 있는 것)는 잘 남지만, 그냥 Error 는 '{}' 로 찍힌다 —
+// Error 의 message·stack 이 열거 가능한 속성이 아니기 때문이다.
+// 실제로 결제 실패 하나가 로그에 '{}' 한 줄만 남겨서 원인을 못 찾았다(2026-08-21).
+//
+// 순서: PG 응답 본문 > SQL 메시지 > message + stack > 통째로 문자열화.
+export const errText = (err) => {
+    if (!err) return '(빈 오류)';
+    try {
+        if (err?.response?.data) {
+            const 상태 = err?.response?.status ? `HTTP ${err.response.status} ` : '';
+            return 상태 + (typeof err.response.data === 'string'
+                ? err.response.data
+                : JSON.stringify(err.response.data));
+        }
+        if (err?.sqlMessage) return `SQL ${err.code ?? ''} ${err.sqlMessage}`;
+        if (err?.message) return err.message + (err.stack ? ' | ' + String(err.stack).split('\n').slice(1, 4).join(' ').trim() : '');
+        return typeof err === 'string' ? err : JSON.stringify(err);
+    } catch (e) {
+        return String(err);
+    }
+};
+
 export const lowLevelException = (req, res) => {
     return response(req, res, -150, "권한이 없습니다.", false);
 }
