@@ -49,4 +49,20 @@ export const orderPasswordCandidates = (password) => {
     return hashed === plain ? [plain] : [hashed, plain];
 };
 
-export default { hashOrderPassword, isHashedOrderPassword, orderPasswordCandidates };
+/**
+ * 입력한 주문비밀번호가 저장된 값과 맞는가 — 비회원 본인 확인.
+ *
+ * 조회(get)는 SQL 의 `password IN (?, ?)` 로 걸러서 이 함수가 필요 없지만,
+ * 취소요청은 주문을 id 로 먼저 집어 온 뒤 앱에서 대조해야 한다.
+ *
+ * 빈 값은 절대 통과시키지 않는다. 회원 주문은 password 가 '' 로 저장되므로,
+ * 빈 값끼리 맞아떨어지게 두면 비밀번호 없이 남의 회원 주문을 취소할 수 있게 된다.
+ */
+export const matchesOrderPassword = (input, stored) => {
+    if (!stored) return false;
+    const 후보 = orderPasswordCandidates(input);
+    if (!후보.length) return false;
+    return 후보.includes(String(stored));
+};
+
+export default { hashOrderPassword, isHashedOrderPassword, orderPasswordCandidates, matchesOrderPassword };
