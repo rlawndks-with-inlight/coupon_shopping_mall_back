@@ -86,7 +86,10 @@ const transactionCtrl = {
             }
             if (cancel_status) {
                 if (cancel_status == 1) {
-                    sql += ` AND trx_status=1 AND is_cancel=0  `;
+                    // ⚠ is_cancel_trans=0 이 빠지면 '취소요청' 탭에서 영영 안 사라진다.
+                    // 취소를 실행해도 trx_status 는 1 그대로고 is_cancel 도 0 이라
+                    // 이 조건에 계속 맞는다. 실제로 취소된 6건 중 4건이 여기 박혀 있었다.
+                    sql += ` AND trx_status=1 AND is_cancel=0 AND is_cancel_trans=0 `;
                 } else if (cancel_status == 2) {
                     sql += ` AND is_cancel=1 `;
                 } else if (cancel_status == 5) {

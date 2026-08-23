@@ -551,7 +551,9 @@ const merchantApplicationCtrl = {
             if (!master) {
                 return response(req, res, 100, "success", { merchants: [], summary: { merchant_count: 0, total_sales: 0, order_count: 0 } });
             }
-            // 매출 = 결제완료 이후 단계(trx_status>=5) & 미취소(is_cancel=0) 합계.
+            // 매출 = 결제완료 이후 단계(trx_status>=5) & 미취소 합계.
+            // is_cancel=0 만으로는 부족하다 — 그건 취소 원장 행(음수)만 걸러낸다.
+            // 취소된 원주문은 is_cancel_trans=1 이고 금액이 양수라 그대로 매출에 남았다.
             // 집계를 마스터의 하위 가맹점으로만 스코프(transactions 전체 스캔 방지).
             let joinDate = '';
             const params = [];
@@ -572,7 +574,7 @@ const merchantApplicationCtrl = {
                        (SELECT u.user_name FROM users u WHERE u.brand_id=b.id AND u.level=40 AND u.is_delete=0 ORDER BY u.id ASC LIMIT 1) AS admin_user_name
                 FROM brands b
                 LEFT JOIN transactions t
-                  ON t.brand_id = b.id AND t.trx_status >= 5 AND t.is_cancel = 0${joinDate}
+                  ON t.brand_id = b.id AND t.trx_status >= 5 AND t.is_cancel = 0 AND t.is_cancel_trans = 0${joinDate}
                 WHERE b.parent_id = ? AND b.is_delete = 0
                 GROUP BY b.id, b.name, b.dns, b.created_at, b.logo_img
                 ORDER BY sales DESC, b.created_at DESC`;
@@ -673,7 +675,7 @@ const merchantApplicationCtrl = {
 
             // 상태별 집계(미취소)
             const statusRows = (await readPool.query(
-                `SELECT trx_status, COUNT(*) AS cnt, SUM(amount) AS amt FROM transactions WHERE brand_id=? AND is_cancel=0 AND is_delete=0${dateWhere} GROUP BY trx_status`,
+                `SELECT trx_status, COUNT(*) AS cnt, SUM(amount) AS amt FROM transactions WHERE brand_id=? AND is_cancel=0 AND is_cancel_trans=0 AND is_delete=0${dateWhere} GROUP BY trx_status`,
                 [brand.id, ...dateParams]
             ))[0];
             const status = {};
@@ -685,7 +687,7 @@ const merchantApplicationCtrl = {
             ))[0][0];
             // 총 매출/주문(결제완료 이후, 미취소)
             const totalRow = (await readPool.query(
-                `SELECT COALESCE(SUM(amount),0) AS sales, COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND trx_status>=5 AND is_cancel=0 AND is_delete=0${dateWhere}`,
+                `SELECT COALESCE(SUM(amount),0) AS sales, COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND trx_status>=5 AND is_cancel=0 AND is_cancel_trans=0 AND is_delete=0${dateWhere}`,
                 [brand.id, ...dateParams]
             ))[0][0];
             // 최근 주문 30건
