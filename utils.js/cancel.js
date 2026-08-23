@@ -398,6 +398,28 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
         logger.error(`[부분취소] 요청 마감 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
     }
 
+    if (!전체취소) {
+        // 일부만 취소한 경우 주문은 살아 있다 — 남은 상품은 계속 배송해야 한다.
+        // 그런데 trx_status 는 손님이 취소요청할 때 1 로 바뀐 채 그대로다.
+        // 그러면 관리자가 이미 처리했는데도 '취소요청' 탭에 영영 남아,
+        // 같은 건을 또 취소하려 들게 된다.
+        //
+        // 남은 대기 요청이 없을 때만 되돌린다 — 손님이 여러 줄을 요청했는데 그중 하나만
+        // 처리한 상태라면 아직 취소요청 중인 게 맞다.
+        //
+        // 되돌릴 값은 5(결제완료)다. 원래 상태를 따로 저장해 두는 칸이 없다.
+        // 입고완료(10)였던 주문은 5 로 내려가지만, shopgo 하위 가맹점은 입고 단계를
+        // 아예 쓰지 않으므로(메뉴에서 숨김) 실제로 걸리는 경우가 없다.
+        try {
+            const [[남음]] = await readPool.query(
+                `SELECT COUNT(*) AS n FROM transaction_cancel_requests WHERE trans_id=? AND status=0`, [tid]);
+            if (!(Number(남음?.n) > 0)) {
+                await writePool.query(`UPDATE transactions SET trx_status=5 WHERE id=? AND trx_status=1`, [tid]);
+            }
+        } catch (e) {
+            logger.error(`[부분취소] 상태 되돌리기 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
+        }
+    }
     if (전체취소) {
         await writePool.query(`UPDATE transactions SET is_cancel_trans=1 WHERE id=?`, [tid]);
         // 부분취소를 거듭해 결국 전부 취소된 경우도 관리자 '취소완료' 탭에 잡혀야 한다.

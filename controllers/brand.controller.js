@@ -304,6 +304,12 @@ const brandCtrl = {
       if (obj.shop_obj !== undefined && lang_setting?.shop_obj !== undefined) {
         obj.shop_obj = lang_setting.shop_obj;
       }
+      // 홈 화면 섹션 문구(setting_obj.home_texts)의 번역도 같은 방식으로 되받는다.
+      // shop_obj 와 마찬가지로 '실제로 보내온 경우'에만 덮어쓴다 — 부분 업데이트에서
+      // setting_obj 를 통째로 날리면 안 된다.
+      if (obj.setting_obj !== undefined && lang_setting?.setting_obj !== undefined) {
+        obj.setting_obj = lang_setting.setting_obj;
+      }
 
       if (Object.keys(obj).length === 0) {
         return response(req, res, 100, "success", {});

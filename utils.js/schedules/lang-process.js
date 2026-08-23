@@ -255,7 +255,46 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
             }
         }
         new_brand_data.shop_obj = JSON.stringify(new_brand_data.shop_obj);
+
+        // ── 홈 화면 섹션 문구(setting_obj.home_texts) ───────────────────────────
+        //
+        // 가맹점이 디자인관리 › 홈 문구에서 직접 넣는 값이다(브랜드 소개, 특징 제목·설명,
+        // 스토리 본문 등). 상품·게시글과 달리 이건 번역 대상에 아예 없어서, 한국어로 넣으면
+        // 영어·중국어 화면에도 그 한국어가 그대로 나왔다. 다국어를 켠 몰에서는 메인 첫 화면이
+        // 통째로 안 맞는 셈이라 사실상 필수다(가맹점 요청 2026-08-23).
+        //
+        // 대기열(lang_processes)은 '테이블+컬럼' 단위라 JSON 안의 값을 담을 수 없다.
+        // 그래서 바로 위 shop_obj 와 같은 방식으로 저장 시점에 번역해 JSON 안에 함께 넣는다.
+        //
+        // 키를 목록으로 박지 않고 '문자열인 값 전부' 를 돈다 — 화면에 필드가 추가돼도
+        // (data/home-texts.js 의 HOME_TEXT_SCHEMA) 여기를 같이 고칠 필요가 없다.
+        const 홈문구 = new_brand_data?.setting_obj?.home_texts;
+        if (홈문구 && typeof 홈문구 === 'object') {
+            for (const 데모키 of Object.keys(홈문구)) {
+                const 묶음 = 홈문구[데모키];
+                if (!묶음 || typeof 묶음 !== 'object') continue;
+                const 대상 = Object.keys(묶음).filter(
+                    (k) => k !== 'lang_obj' && typeof 묶음[k] === 'string' && 묶음[k].trim() !== '');
+                if (대상.length === 0) continue;
+                try {
+                    const 결과 = await settingLangs(대상, 묶음, new_brand_data, 'brands', new_brand_data?.id, true);
+                    // 언어팩이 꺼져 있으면 settingLangs 는 undefined 를 준다.
+                    if (!결과) continue;
+                    묶음.lang_obj = {
+                        ...(묶음.lang_obj ?? {}),
+                        ...JSON.parse(결과?.lang_obj ?? '{}'),
+                    };
+                } catch (e) {
+                    // 번역이 실패해도 저장 자체는 되어야 한다. 화면은 원문으로 폴백한다.
+                    logger.error(`[lang] 홈 문구 번역 실패 brand=${new_brand_data?.id} ${데모키}: ${e?.message || e}`);
+                }
+            }
+        }
     }
+    // 호출부(brand.controller)가 번역이 채워진 setting_obj 를 그대로 저장할 수 있게 문자열로 돌려준다.
+    // (들어올 때 JSON.parse 했으므로 여기서 되돌리지 않으면 객체가 그대로 UPDATE 로 들어간다)
+    const 저장용_setting_obj = JSON.stringify(new_brand_data.setting_obj ?? {});
+
     if (ago_brand?.setting_obj?.is_use_lang != 1 && new_brand_data?.setting_obj?.is_use_lang == 1) {
         let insert_lang_process_list = [];
         for (var i = 0; i < Object.keys(lang_obj_columns).length; i++) {
@@ -368,5 +407,8 @@ export const brandSettingLang = async (new_brand_data_ = {}) => {
     }
 
     delete new_brand_data.id;
+    // setting_obj 는 들어올 때 JSON.parse 했다. 객체 그대로 돌려주면 호출부가 UPDATE 에
+    // 넣었을 때 [object Object] 가 저장된다 — 문자열로 되돌려서 준다.
+    new_brand_data.setting_obj = 저장용_setting_obj;
     return new_brand_data;
 }
