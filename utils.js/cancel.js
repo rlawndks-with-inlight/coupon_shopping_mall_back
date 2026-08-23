@@ -400,6 +400,15 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
 
     if (전체취소) {
         await writePool.query(`UPDATE transactions SET is_cancel_trans=1 WHERE id=?`, [tid]);
+        // 부분취소를 거듭해 결국 전부 취소된 경우도 관리자 '취소완료' 탭에 잡혀야 한다.
+        // 이 자리는 markCanceled 를 거치지 않으므로 원장 행이 안 생겨,
+        // 취소요청 탭에서도 빠지고 취소완료 탭에도 없어 주문이 통째로 사라졌다.
+        //
+        // ⚠ 여기서 markCanceled 를 부르면 안 된다.
+        //   그쪽은 applyCancelEffects 를 restock:true 로 부르는데, 부분취소는 이미 줄 단위로
+        //   (restoreStockPartial) 재고를 되돌려 놨다. 재고를 두 번 되돌릴 위험이 있다.
+        //   포인트 정산도 바로 위에서 비율 1 로 끝냈다. 그래서 원장 행만 남긴다.
+        await 취소원장행쓰기(tid);
     }
     return { ok: true, cancel_id, amount: 환불액, delivery_adjust: 배송비조정, all_canceled: 전체취소 };
 };
