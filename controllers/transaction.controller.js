@@ -97,7 +97,11 @@ const transactionCtrl = {
                     // 프론트(shop demo-4·5·9 history.js)가 예전부터 5를 보내왔는데 여기 분기가 없었다.
                     // if(cancel_status)가 참이라 아래 else의 기본 필터도 건너뛰어, 결과적으로
                     // 필터가 통째로 사라져 '주문/배송조회'와 똑같이 전체 주문이 나오고 있었다.
-                    sql += ` AND (trx_status=1 OR is_cancel=1 OR is_cancel_trans=1) `;
+                    // ⚠ is_cancel=0 을 함께 걸어야 한다.
+                    // 취소가 확정되면 원주문(is_cancel_trans=1)과 취소 원장 행(is_cancel=1)이
+                    // 둘 다 생긴다. 조건에 둘 다 넣으면 손님에게 **같은 취소가 두 줄로** 보인다.
+                    // 손님에게 뜻이 있는 것은 원주문 쪽이다(금액이 양수고 주문 정보가 그대로 있다).
+                    sql += ` AND (trx_status=1 OR is_cancel_trans=1) AND is_cancel=0 `;
                 } else if (cancel_status == 0) {
                     sql += ` AND is_cancel=0 AND is_cancel_trans=0 `;
                 } else {
