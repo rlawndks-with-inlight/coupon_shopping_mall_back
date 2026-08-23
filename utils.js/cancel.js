@@ -202,6 +202,49 @@ export const calcDeliveryAdjust = ({ 전체취소, 취소후남은상품가, 총
 // is_cancel_trans 는 '이 원거래가 취소됐다'는 표시다.
 // 페이베리 기본경로는 이것조차 안 세우고 있었다 — PG 에는 취소가 나갔는데
 // 화면에는 정상 주문으로 남고, 매출 집계도 취소분을 그대로 안고 갔다.
+// 관리자 '취소완료' 탭에 잡히게 하는 취소 원장 행.
+//
+// 그 탭은 is_cancel=1 인 행을 본다. 그런데 그 행을 만드는 곳이 헥토 콜백 하나뿐이었다.
+// 포스페이·페이레터·위루트로 취소하면 원주문에 is_cancel_trans=1 만 찍혀서
+//   · '취소요청' 탭 조건(trx_status=1 AND is_cancel=0)에 여전히 맞아 거기 그대로 남고
+//   · '취소완료' 탭에는 영영 안 나타나고
+//   · 주문관리에서 바로 취소한 건은 결제완료 탭에서도 빠져 **아예 사라졌다**
+// 실제로 취소 처리된 6건 중 4건이 아직 취소요청 탭에 박혀 있다(2026-08-23 확인).
+//
+// 헥토가 만들던 것과 같은 모양으로 맞춘다 — 원거래를 복사하고 금액만 음수로.
+// 그래야 이미 쌓인 81만 건과 같은 화면에서 같은 방식으로 읽힌다.
+const 취소원장행쓰기 = async (tid) => {
+    try {
+        // 이미 있으면 만들지 않는다. 웹훅이 두 번 오거나 관리자가 두 번 눌러도
+        // 취소가 두 건으로 보이면 안 된다. (transaction_id 에 인덱스가 있어 싸다)
+        const [있나] = await readPool.query(
+            `SELECT id FROM transactions WHERE is_cancel=1 AND transaction_id=? LIMIT 1`, [tid]);
+        if (있나.length) return;
+        const [rows] = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [tid]);
+        const 원거래 = rows[0];
+        if (!원거래) return;
+        const 이제 = new Date();
+        const 두자리 = (n) => String(n).padStart(2, '0');
+        const obj = {
+            ...원거래,
+            ori_trx_id: 원거래.trx_id,
+            cxl_dt: `${이제.getFullYear()}-${두자리(이제.getMonth() + 1)}-${두자리(이제.getDate())}`,
+            cxl_tm: `${두자리(이제.getHours())}:${두자리(이제.getMinutes())}:${두자리(이제.getSeconds())}`,
+            is_cancel: 1,
+            // 금액은 음수다. 이 부호가 '취소분'이라는 표시이자 상계 근거다.
+            amount: -Math.abs(Number(원거래.amount) || 0),
+            transaction_id: 원거래.id,
+        };
+        // 새 행이므로 원본의 키·시각은 물려받지 않는다.
+        delete obj.id; delete obj.created_at; delete obj.updated_at; delete obj.is_delete;
+        await insertQuery('transactions', obj);
+    } catch (e) {
+        // 원장 행을 못 남겨도 취소 자체는 이미 끝났다(PG 에서 돈이 나갔다).
+        // 여기서 던지면 '돈은 돌려줬는데 화면은 실패'가 된다.
+        logger.error(`[취소] 원장 행 기록 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
+    }
+};
+
 export const markCanceled = async (trans_id, { column = 'is_cancel_trans' } = {}) => {
     const tid = Number(trans_id) || 0;
     if (!tid) return false;
@@ -210,6 +253,9 @@ export const markCanceled = async (trans_id, { column = 'is_cancel_trans' } = {}
     } catch (e) {
         logger.error(`[취소] 상태 표시 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
     }
+    // 핀트리는 원주문 자체에 is_cancel=1 을 찍는다(column 을 바꿔 부른다).
+    // 그 행이 곧 취소완료 행이므로 따로 만들면 같은 취소가 두 줄로 보인다.
+    if (column === 'is_cancel_trans') await 취소원장행쓰기(tid);
     await applyCancelEffects(tid);
     return true;
 };
@@ -352,8 +398,39 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
         logger.error(`[부분취소] 요청 마감 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
     }
 
+    if (!전체취소) {
+        // 일부만 취소한 경우 주문은 살아 있다 — 남은 상품은 계속 배송해야 한다.
+        // 그런데 trx_status 는 손님이 취소요청할 때 1 로 바뀐 채 그대로다.
+        // 그러면 관리자가 이미 처리했는데도 '취소요청' 탭에 영영 남아,
+        // 같은 건을 또 취소하려 들게 된다.
+        //
+        // 남은 대기 요청이 없을 때만 되돌린다 — 손님이 여러 줄을 요청했는데 그중 하나만
+        // 처리한 상태라면 아직 취소요청 중인 게 맞다.
+        //
+        // 되돌릴 값은 5(결제완료)다. 원래 상태를 따로 저장해 두는 칸이 없다.
+        // 입고완료(10)였던 주문은 5 로 내려가지만, shopgo 하위 가맹점은 입고 단계를
+        // 아예 쓰지 않으므로(메뉴에서 숨김) 실제로 걸리는 경우가 없다.
+        try {
+            const [[남음]] = await readPool.query(
+                `SELECT COUNT(*) AS n FROM transaction_cancel_requests WHERE trans_id=? AND status=0`, [tid]);
+            if (!(Number(남음?.n) > 0)) {
+                await writePool.query(`UPDATE transactions SET trx_status=5 WHERE id=? AND trx_status=1`, [tid]);
+            }
+        } catch (e) {
+            logger.error(`[부분취소] 상태 되돌리기 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
+        }
+    }
     if (전체취소) {
         await writePool.query(`UPDATE transactions SET is_cancel_trans=1 WHERE id=?`, [tid]);
+        // 부분취소를 거듭해 결국 전부 취소된 경우도 관리자 '취소완료' 탭에 잡혀야 한다.
+        // 이 자리는 markCanceled 를 거치지 않으므로 원장 행이 안 생겨,
+        // 취소요청 탭에서도 빠지고 취소완료 탭에도 없어 주문이 통째로 사라졌다.
+        //
+        // ⚠ 여기서 markCanceled 를 부르면 안 된다.
+        //   그쪽은 applyCancelEffects 를 restock:true 로 부르는데, 부분취소는 이미 줄 단위로
+        //   (restoreStockPartial) 재고를 되돌려 놨다. 재고를 두 번 되돌릴 위험이 있다.
+        //   포인트 정산도 바로 위에서 비율 1 로 끝냈다. 그래서 원장 행만 남긴다.
+        await 취소원장행쓰기(tid);
     }
     return { ok: true, cancel_id, amount: 환불액, delivery_adjust: 배송비조정, all_canceled: 전체취소 };
 };

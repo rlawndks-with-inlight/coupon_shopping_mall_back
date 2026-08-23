@@ -24,7 +24,9 @@ const dashboardCtrl = {
             // 목록은 query-util 이 is_delete=0 을 자동으로 붙이는데(query-util.js:194-195)
             // 이 집계 3종에는 없었다. 삭제(soft delete)한 주문이 대시보드 건수·매출에만
             // 계속 잡혀서 목록 건수와 어긋났다.
-            trx_counts_sql += ` WHERE is_cancel=0 AND is_delete=0 AND brand_id=? `;
+            // 취소된 주문은 매출이 아니다. is_cancel=0 만 걸면 취소 원장 행(음수)만 빠지고,
+            // 정작 취소된 원주문(is_cancel_trans=1, 금액 양수)은 그대로 잡혀 매출이 부풀었다.
+            trx_counts_sql += ` WHERE is_cancel=0 AND is_cancel_trans=0 AND is_delete=0 AND brand_id=? `;
             let trx_counts_params = [decode_dns?.id];
 
             let trx_cancel_counts_sql = `SELECT COUNT(*) AS cnt FROM ${table_name} `;
@@ -32,12 +34,12 @@ const dashboardCtrl = {
             let trx_cancel_counts_params = [decode_dns?.id];
 
             let trx_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(amount) AS total_amount FROM ${table_name} `;
-            trx_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND is_delete=0 AND brand_id=? `;
+            trx_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND is_cancel_trans=0 AND is_delete=0 AND brand_id=? `;
             let trx_amounts_params = [decode_dns?.id];
 
             if (decode_user?.level == 10) { //셀러의 경우 영업자를 거친 차익을 계산해야 함
                 let trx_agent_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(agent_amount) AS total_agent_amount FROM ${table_name} `;
-                trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND brand_id=? `;
+                trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND is_cancel_trans=0 AND brand_id=? `;
                 let trx_agent_amounts_params = [decode_dns?.id];
                 trx_agent_amounts_sql += ` AND seller_id = ? `;
                 trx_agent_amounts_params.push(decode_user?.id);
@@ -68,7 +70,7 @@ const dashboardCtrl = {
             if (decode_user?.level == 15) { // 영업자 (총판이 아닌 영업자의 경우에도 총판을 거친 차익을 계산해야 함)
 
                 let trx_agent_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(agent_amount) AS total_agent_amount FROM ${table_name} `;
-                trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND brand_id=? `;
+                trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND is_cancel_trans=0 AND brand_id=? `;
                 let trx_agent_amounts_params = [decode_dns?.id];
                 trx_agent_amounts_sql += ` AND seller_id IN (SELECT id FROM users WHERE oper_id=?) `;
                 trx_agent_amounts_params.push(decode_user?.id);

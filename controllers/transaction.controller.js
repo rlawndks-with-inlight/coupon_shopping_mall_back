@@ -9,7 +9,7 @@ import fs from 'fs';
 import { readPool, writePool } from "../config/db-pool.js";
 import { decRow, decRows, decListContent, blindIndex, encForSave, decField } from "../utils.js/pii.js";
 import { PII_FIELD_TYPES } from "../utils.js/order-form.js";
-import { orderPasswordCandidates } from "../utils.js/order-password.js";
+import { orderPasswordCandidates, matchesOrderPassword } from "../utils.js/order-password.js";
 const table_name = 'transactions';
 
 const transactionCtrl = {
@@ -86,7 +86,10 @@ const transactionCtrl = {
             }
             if (cancel_status) {
                 if (cancel_status == 1) {
-                    sql += ` AND trx_status=1 AND is_cancel=0  `;
+                    // ⚠ is_cancel_trans=0 이 빠지면 '취소요청' 탭에서 영영 안 사라진다.
+                    // 취소를 실행해도 trx_status 는 1 그대로고 is_cancel 도 0 이라
+                    // 이 조건에 계속 맞는다. 실제로 취소된 6건 중 4건이 여기 박혀 있었다.
+                    sql += ` AND trx_status=1 AND is_cancel=0 AND is_cancel_trans=0 `;
                 } else if (cancel_status == 2) {
                     sql += ` AND is_cancel=1 `;
                 } else if (cancel_status == 5) {
@@ -94,7 +97,11 @@ const transactionCtrl = {
                     // 프론트(shop demo-4·5·9 history.js)가 예전부터 5를 보내왔는데 여기 분기가 없었다.
                     // if(cancel_status)가 참이라 아래 else의 기본 필터도 건너뛰어, 결과적으로
                     // 필터가 통째로 사라져 '주문/배송조회'와 똑같이 전체 주문이 나오고 있었다.
-                    sql += ` AND (trx_status=1 OR is_cancel=1 OR is_cancel_trans=1) `;
+                    // ⚠ is_cancel=0 을 함께 걸어야 한다.
+                    // 취소가 확정되면 원주문(is_cancel_trans=1)과 취소 원장 행(is_cancel=1)이
+                    // 둘 다 생긴다. 조건에 둘 다 넣으면 손님에게 **같은 취소가 두 줄로** 보인다.
+                    // 손님에게 뜻이 있는 것은 원주문 쪽이다(금액이 양수고 주문 정보가 그대로 있다).
+                    sql += ` AND (trx_status=1 OR is_cancel_trans=1) AND is_cancel=0 `;
                 } else if (cancel_status == 0) {
                     sql += ` AND is_cancel=0 AND is_cancel_trans=0 `;
                 } else {
@@ -445,11 +452,29 @@ const transactionCtrl = {
             if (!data) {
                 return response(req, res, -100, "주문을 찾을 수 없습니다.", false)
             }
-            // 로그인 사용자 본인 주문 + 같은 브랜드에서만. (기존엔 브랜드 확인이 없었다)
-            if (!decode_user?.id || data?.user_id != decode_user?.id) {
+            // 브랜드 스코프가 먼저다 — 다른 몰의 주문은 비밀번호가 맞아도 건드릴 수 없다.
+            if (decode_dns?.id && data?.brand_id != decode_dns?.id) {
                 return lowLevelException(req, res);
             }
-            if (decode_dns?.id && data?.brand_id != decode_dns?.id) {
+            // 본인 확인은 두 갈래다.
+            //   (a) 회원   : 로그인 user_id 가 주문의 user_id 와 같을 때
+            //   (b) 비회원 : 주문비밀번호가 맞을 때 — 조회(get)가 쓰는 것과 똑같은 확인이다
+            //
+            // 예전엔 (a) 뿐이었다. 그런데 비회원 주문은 user_id 가 0 으로 저장되므로
+            // (pay.controller.js: "비회원 주문은 user_id=0 이 정상") 어떤 값과도 맞지 않아
+            // 취소요청이 늘 "권한이 없습니다" 로 막혔다. 전체 주문의 99.98% 가 이 경우라
+            // 대부분의 손님은 스스로 취소할 길이 아예 없었고 그 부담이 가맹점 전화로 갔다.
+            // (2026-08-21 가맹점이 겪은 「권한없음」이 이것이다)
+            const 회원본인 = Number(decode_user?.id) > 0 && data?.user_id == decode_user?.id;
+            // 판정은 order-password.js 에 둔다 — 검사(guest-cancel.mjs)가 그 함수를
+            // 그대로 불러 빈 값·해시·평문 경우를 실제로 돌려 본다.
+            const 비회원본인 = matchesOrderPassword(req.body?.password, data?.password);
+            if (!회원본인 && !비회원본인) {
+                // 왜 막혔는지 알려준다. 예전엔 회원·비회원 가리지 않고 "권한이 없습니다" 뿐이라
+                // 손님은 무엇을 해야 하는지 알 수 없었다.
+                if (!(Number(decode_user?.id) > 0) && !req.body?.password) {
+                    return response(req, res, -100, "주문 비밀번호를 입력해 주세요.", false)
+                }
                 return lowLevelException(req, res);
             }
             // 취소 요청이 가능한 상태만. 출고 이후(15·20·25)는 취소가 아니라 반품 절차로 가야 하고,
