@@ -24,6 +24,7 @@ import axios from "axios";
 import _ from "lodash";
 import { readPool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js"; // ✅ Redis 추가
+import { deleteKeys } from "../utils.js/redis-scan.js";
 import { decField } from "../utils.js/crypto-util.js";
 
 const table_name = 'product_reviews';
@@ -38,19 +39,14 @@ const invalidateReviewCache = async (brandId, productId = null, reviewId = null)
             ? `product_reviews:list:${brandId}:${productId}:*`
             : `product_reviews:list:${brandId}:*`;
 
-        for await (const key of redisClient.scanIterator({ MATCH: listPattern })) {
-            await redisClient.del(key);
-        }
+        await deleteKeys(redisClient, listPattern);
 
         // 상세 캐시 삭제
         if (reviewId) {
             const detailKey = `product_reviews:get:${brandId}:${reviewId}`;
             await redisClient.del(detailKey);
         } else {
-            const detailPattern = `product_reviews:get:${brandId}:*`;
-            for await (const key of redisClient.scanIterator({ MATCH: detailPattern })) {
-                await redisClient.del(key);
-            }
+            await deleteKeys(redisClient, `product_reviews:get:${brandId}:*`);
         }
     } catch (e) {
         console.error("Redis invalidateReviewCache error:", e);
