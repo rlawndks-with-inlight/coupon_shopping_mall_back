@@ -7,6 +7,7 @@ import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
 import { readPool, writePool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
+import { deleteKeys } from "../utils.js/redis-scan.js";
 import axios from "axios";
 import * as cheerio from "cheerio";
 
@@ -65,19 +66,12 @@ const invalidateStatusCache = async (table, id, brandId) => {
     if (!redisClient?.isOpen) return;
     try {
         if (table === 'products') {
-            for await (const key of redisClient.scanIterator({ MATCH: `product:detail:${brandId}:*`, COUNT: 100 })) {
-                if (key.endsWith(`:${id}`)) await redisClient.del(key);
-            }
-            for await (const key of redisClient.scanIterator({ MATCH: `product:list:*`, COUNT: 100 })) {
-                if (key.includes(`"brandId":${brandId}`) || key.includes(`"brandId": ${brandId}`)) {
-                    await redisClient.del(key);
-                }
-            }
+            await deleteKeys(redisClient, `product:detail:${brandId}:*`, (key) => key.endsWith(`:${id}`));
+            await deleteKeys(redisClient, `product:list:*`,
+                (key) => key.includes(`"brandId":${brandId}`) || key.includes(`"brandId": ${brandId}`));
         } else if (table === 'brands') {
             // 브랜드 노출/상태가 바뀌면 스토어프론트 설정 캐시도 낡는다.
-            for await (const key of redisClient.scanIterator({ MATCH: `shop:setting:${id}:*`, COUNT: 100 })) {
-                await redisClient.del(key);
-            }
+            await deleteKeys(redisClient, `shop:setting:${id}:*`);
         }
     } catch (e) {
         console.error('Redis cache invalidation error (changeStatus):', e);

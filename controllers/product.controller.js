@@ -6,6 +6,7 @@ import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
+import { deleteKeys } from "../utils.js/redis-scan.js";
 import { saveOptionGroups, saveCombinations } from "../utils.js/product-options.js";
 import { saveProductOrderFormFields } from "../utils.js/order-form.js";
 
@@ -1131,18 +1132,14 @@ const productCtrl = {
                     // 상세 캐시 패턴 삭제 (product:detail:brandId:*:*:*:*:productId)
                     const detailPattern = `product:detail:${brand_id}:*`;
 
-                    // SCAN으로 패턴 매칭 키 찾아서 삭제
-                    for await (const key of redisClient.scanIterator({ MATCH: detailPattern, COUNT: 100 })) {
-                        if (key.includes(`:${id}`) || key.includes(`:id:${id}`)) {
-                            await redisClient.del(key);
-                        }
-                    }
+                    // SCAN으로 패턴 매칭 키 찾아서 삭제.
+                    // deleteKeys 를 쓰는 이유는 utils.js/redis-scan.js 주석 참고 —
+                    // redis v5 의 scanIterator 는 키를 하나씩이 아니라 묶음으로 내놓는다.
+                    await deleteKeys(redisClient, detailPattern,
+                        (key) => key.includes(`:${id}`) || key.includes(`:id:${id}`));
                     // 목록 캐시는 브랜드별로 전체 삭제 (필터 조합이 많아서)
-                    for await (const key of redisClient.scanIterator({ MATCH: `product:list:*`, COUNT: 100 })) {
-                        if (key.includes(`"brandId":${brand_id}`) || key.includes(`"brandId": ${brand_id}`)) {
-                            await redisClient.del(key);
-                        }
-                    }
+                    await deleteKeys(redisClient, `product:list:*`,
+                        (key) => key.includes(`"brandId":${brand_id}`) || key.includes(`"brandId": ${brand_id}`));
                     console.log(`[Cache] Product ${id} cache invalidated (brand: ${brand_id})`);
                 } catch (e) {
                     console.error("Redis cache invalidation error:", e);
@@ -1193,16 +1190,10 @@ const productCtrl = {
                 try {
                     const detailPattern = `product:detail:${brand_id}:*`;
 
-                    for await (const key of redisClient.scanIterator({ MATCH: detailPattern, COUNT: 100 })) {
-                        if (key.includes(`:${id}`) || key.includes(`:id:${id}`)) {
-                            await redisClient.del(key);
-                        }
-                    }
-                    for await (const key of redisClient.scanIterator({ MATCH: `product:list:*`, COUNT: 100 })) {
-                        if (key.includes(`"brandId":${brand_id}`) || key.includes(`"brandId": ${brand_id}`)) {
-                            await redisClient.del(key);
-                        }
-                    }
+                    await deleteKeys(redisClient, detailPattern,
+                        (key) => key.includes(`:${id}`) || key.includes(`:id:${id}`));
+                    await deleteKeys(redisClient, `product:list:*`,
+                        (key) => key.includes(`"brandId":${brand_id}`) || key.includes(`"brandId": ${brand_id}`));
                     console.log(`[Cache] Product ${id} cache invalidated on remove (brand: ${brand_id})`);
                 } catch (e) {
                     console.error("Redis cache invalidation error:", e);

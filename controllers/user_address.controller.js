@@ -19,6 +19,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
+import { deleteKeys } from "../utils.js/redis-scan.js";
 import { encForSave, decRow, decListContent } from "../utils.js/pii.js";
 
 const table_name = 'user_addresses';
@@ -28,18 +29,12 @@ const invalidateUserAddressCache = async (brandId, userId) => {
     try {
         if (!redisClient?.isOpen || !brandId || !userId) return;
 
-        const pattern = `user_addresses:list:${brandId}:${userId}:*`;
-
-        // redis v4의 scanIterator 사용
-        for await (const key of redisClient.scanIterator({ MATCH: pattern })) {
-            await redisClient.del(key);
-        }
+        // scanIterator 를 직접 부르지 않는다 — 라이브러리가 v5 로 올라가면서
+        // 키를 하나씩이 아니라 묶음으로 내놓게 바뀌었다(utils.js/redis-scan.js 주석 참고).
+        await deleteKeys(redisClient, `user_addresses:list:${brandId}:${userId}:*`);
 
         // 단건 조회 캐시도 제거
-        const detailPattern = `user_addresses:get:${brandId}:*`;
-        for await (const key of redisClient.scanIterator({ MATCH: detailPattern })) {
-            await redisClient.del(key);
-        }
+        await deleteKeys(redisClient, `user_addresses:get:${brandId}:*`);
     } catch (e) {
         console.error("Redis invalidateUserAddressCache error:", e);
     }

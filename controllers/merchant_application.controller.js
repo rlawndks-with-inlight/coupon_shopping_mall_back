@@ -95,6 +95,47 @@ const buildApprovalHtml = ({ businessName, adminId, adminUrl, shopUrl, manualUrl
 
 const table_name = 'merchant_applications';
 
+// 신청자(대표자·담당자)에게 보내는 메일.
+//
+// ⚠ 한 통에 두 명을 묶어 보내면 안 된다.
+//   Resend 는 수신자 목록에 잘못된 주소가 하나라도 있으면 **요청 전체를 422 로 거절**한다.
+//   실제로 로그에 남아 있다(2026-08-13 15:41, "Invalid `to` field").
+//   묶어 보내면 담당자 주소 오타 하나로 대표자까지 한 통도 못 받는다.
+//   그래서 각자에게 따로 보낸다 — 한쪽이 튕겨도 다른 쪽은 간다.
+//
+// 그리고 결과를 반드시 로그에 남긴다. 예전에는 승인 메일에 로그가 한 줄도 없어서
+// '담당자가 못 받았다'는 제보가 들어와도 보냈는지 안 보냈는지조차 확인할 수 없었다.
+// 주소는 통째로 남기지 않고 가린다(로그도 개인정보다).
+const maskMail = (e) => {
+    const s = String(e ?? '').trim();
+    if (!s) return '(빈값)';
+    const [a, b] = s.split('@');
+    return b ? `${a.slice(0, 2)}***@${b}` : `${s.slice(0, 2)}***`;
+};
+const sendToApplicants = async (받는이들, { subject, html, tag }) => {
+    // 대표자와 담당자가 같은 주소면 한 번만 보낸다. 비교는 대소문자를 무시하되,
+    // 실제 발송은 입력된 원본 주소로 한다(로컬파트는 규격상 대소문자를 구분한다).
+    const 목록 = [];
+    const 본것 = new Set();
+    for (const [역할, 주소] of 받는이들) {
+        const s = String(주소 ?? '').trim();
+        if (!s) continue;
+        const key = s.toLowerCase();
+        if (본것.has(key)) continue;
+        본것.add(key);
+        목록.push([역할, s]);
+    }
+    if (!목록.length) {
+        logger.warn(`[${tag}] 받는 주소가 없어 발송하지 않음`);
+        return;
+    }
+    for (const [역할, to] of 목록) {
+        // sendMail 은 실패해도 예외를 안 던지고 false 를 준다(호출측 흐름을 막지 않는다).
+        const ok = await sendMail({ to, subject, html });
+        logger[ok ? 'info' : 'error'](`[${tag}] ${역할} ${maskMail(to)} → ${ok ? '발송' : '실패'}`);
+    }
+};
+
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 const BIZNO_RE = /^[0-9]{10}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -461,15 +502,15 @@ const merchantApplicationCtrl = {
                 html: buildApplicationMailHtml(obj),
             }).catch(() => { });
 
-            // 신청자(대표자+담당자)에게 접수 확인 메일 (실패해도 접수는 성공 처리)
-            const applicantTo = [...new Set([obj.ceo_email, obj.manager_email].filter(Boolean))].join(',');
-            if (applicantTo) {
+            // 신청자(대표자·담당자)에게 접수 확인 메일. 각자 따로 보낸다(위 sendToApplicants 주석 참고).
+            // 실패해도 접수 자체는 성공 처리한다 — 메일이 안 갔다고 신청을 무르면 더 나쁘다.
+            {
                 const rootDomain = getRootDomain();
                 const shopUrl = rootDomain ? `${obj.desired_slug}.${rootDomain}` : obj.desired_slug;
-                sendMail({
-                    to: applicantTo,
+                sendToApplicants([['대표자', obj.ceo_email], ['담당자', obj.manager_email]], {
                     subject: `[ShopGo] 무료쇼핑몰 신청이 접수되었습니다 - ${obj.business_name}`,
                     html: buildApplicantReceiptHtml(obj, shopUrl),
+                    tag: '가맹점신청-접수',
                 }).catch(() => { });
             }
 
@@ -889,23 +930,26 @@ const merchantApplicationCtrl = {
 
             await updateQuery(`${table_name}`, obj, id);
 
-            // 신규 개설된 경우 신청자(대표자+담당자)에게 승인/계정 안내 메일 (실패해도 승인은 성공)
+            // 신규 개설된 경우 신청자(대표자·담당자)에게 승인/계정 안내 메일 (실패해도 승인은 성공)
             if (approval?.created && app) {
                 const rootDomain = getRootDomain();
-                const applicantTo = [...new Set([app.ceo_email, app.manager_email].filter(Boolean))].join(',');
-                if (applicantTo) {
-                    sendMail({
-                        to: applicantTo,
-                        subject: `[ShopGo] 가맹점 개설이 완료되었습니다 - ${app.business_name}`,
-                        html: buildApprovalHtml({
-                            businessName: app.business_name,
-                            adminId: approval.adminId,
-                            adminUrl: `${approval.subDns}/manager`,
-                            shopUrl: approval.subDns,
-                            manualUrl: rootDomain ? `https://${rootDomain}/manual` : '/manual',
-                        }),
-                    }).catch(() => { });
-                }
+                sendToApplicants([['대표자', app.ceo_email], ['담당자', app.manager_email]], {
+                    subject: `[ShopGo] 가맹점 개설이 완료되었습니다 - ${app.business_name}`,
+                    html: buildApprovalHtml({
+                        businessName: app.business_name,
+                        adminId: approval.adminId,
+                        adminUrl: `${approval.subDns}/manager`,
+                        shopUrl: approval.subDns,
+                        manualUrl: rootDomain ? `https://${rootDomain}/manual` : '/manual',
+                    }),
+                    tag: '가맹점신청-승인',
+                }).catch(() => { });
+            } else if (status === 'approved') {
+                // 여기로 오는 대표적인 경우: **이미 몰이 만들어진 건을 반려했다가 다시 승인**.
+                // 브랜드도 계정도 그대로라 '개설이 완료되었습니다'를 또 보내면 아이디가 바뀐 줄 안다.
+                // 그래서 안 보내는 것이 맞는데, 아무 흔적이 없으면 '메일이 왜 안 왔냐'를 확인할 길이 없다.
+                logger.info(`[가맹점신청-승인] 신청 ${id}: 새로 개설된 것이 아니라 안내메일 생략`
+                    + ` (brand_id=${obj.brand_id ?? app?.brand_id ?? '-'})`);
             }
 
             return response(req, res, 100, "success", { brand_id: obj.brand_id });
