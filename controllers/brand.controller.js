@@ -6,6 +6,7 @@ import {
   updateQuery,
 } from "../utils.js/query-util.js";
 import { redisClient } from "../config/redis-client.js";
+import { seedDefaultBoards } from "../utils.js/seed-boards.js";
 import {
   checkDns,
   checkLevel,
@@ -223,6 +224,21 @@ const brandCtrl = {
       if (parent_brand_id > 0) obj.parent_id = parent_brand_id;
 
       let result = await insertQuery(`${table_name}`, obj);
+      // 신규 몰: 기본 게시판(공지사항 · 1:1문의).
+      //
+      // 이 경로에는 없었다. 그래서 '브랜드설정 → 브랜드 추가'로 만든 몰은 게시판이
+      // 통째로 없는 채로 시작했다 — 게시판 생성은 레벨50 전용이라 가맹점이 스스로
+      // 만들 수도 없고, 대시보드 '문의관리' 카드도 빈 채로 남는다.
+      // 신청 승인 경로(merchant_application.controller)에만 있던 것을 여기에도 맞춘다.
+      // (자체 도메인 가맹점은 신청 화면을 안 거치고 이 경로로 들어온다)
+      //
+      // 실패해도 몰 생성 자체는 성공으로 둔다 — 게시판은 나중에 심을 수 있지만
+      // 여기서 에러를 내면 이미 만들어진 브랜드 행과 관리자 계정이 붕 뜬다.
+      try {
+        await seedDefaultBoards(result?.insertId);
+      } catch (e) {
+        logger.error('기본 게시판 생성 실패(brand_id=' + result?.insertId + '): ' + (e?.message || e));
+      }
       // 신규 몰: 기본 '카테고리' 그룹 1개 생성(단일 트리의 컨테이너 그룹). is_category_migrated=1 과 짝.
       //   스토어는 단일 합성 트리로 노출되지만, 카테고리 생성 시 유효한 group_id 컨테이너가 필요.
       await insertQuery('product_category_groups', {

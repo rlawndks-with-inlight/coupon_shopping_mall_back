@@ -5,6 +5,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { sendMail } from "../utils.js/mail.js";
+import { seedDefaultBoards } from "../utils.js/seed-boards.js";
 import { encForSave, decRow, decRows } from "../utils.js/pii.js";
 import { defaultShopObj, defaultBlogObj } from "../utils.js/default-home.js";
 
@@ -247,27 +248,9 @@ const frameToDemo = (frame) => {
     return { shop_demo_num: String(n), blog_demo_num: '0' };
 };
 
-// 신규 가맹점에 기본 게시판(공지사항 / 1:1문의) 자동 생성.
-// 1:1문의 = 볼수있는대상 '자신 및 관리자만'(read_type=1) + 회원 글쓰기 허용(is_able_user_add=1)
-//   → 고객이 남긴 문의에 관리자가 답변하는 문의함으로 동작하며, 대시보드 '문의관리' 카드에도 집계됨.
-// 가맹점은 게시판 생성 권한이 없으므로(레벨50 전용) 개설 단계에서 우리가 미리 심어준다.
-// 이미 같은 이름의 게시판이 있으면 중복 생성하지 않는다(멱등).
-const seedDefaultBoards = async (brandId) => {
-    if (!brandId) return;
-    const boards = [
-        { post_category_title: '공지사항', parent_id: -1, is_able_user_add: 0, post_category_type: 0, post_category_read_type: 0 },
-        { post_category_title: '1:1문의', parent_id: -1, is_able_user_add: 1, post_category_type: 0, post_category_read_type: 1 },
-    ];
-    const exist = await readPool.query(
-        `SELECT post_category_title FROM post_categories WHERE brand_id=? AND is_delete=0`,
-        [brandId]
-    );
-    const existTitles = (exist[0] || []).map((r) => r.post_category_title);
-    for (const b of boards) {
-        if (existTitles.includes(b.post_category_title)) continue;
-        await insertQuery('post_categories', { ...b, brand_id: brandId });
-    }
-};
+// 기본 게시판 시드는 utils.js/seed-boards.js 로 옮겼다.
+// 몰을 만드는 길이 둘(신청 승인 · 브랜드설정 직접 생성)인데 여기에만 있어서
+// 브랜드설정으로 만든 몰은 게시판이 통째로 없었다. 두 곳이 같은 것을 쓰게 한다.
 
 // 마스터 하위 가맹점 중 기본 게시판이 없는 곳에 일괄 시드(멱등). 개설된 가맹점 수 반환.
 export const backfillDefaultBoards = async () => {
