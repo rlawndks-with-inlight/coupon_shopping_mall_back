@@ -27,6 +27,37 @@ const 안전조회 = async (sql, params = []) => {
     }
 };
 
+// 상품 특성(스펙 표)을 번역 대기열에 싣는다. create/update 공용.
+//
+// 특성도 옵션과 같은 처지였다 — 번역 대상 목록(lang_obj_columns)에는 있고 화면도
+// formatLang 을 거치는데, **저장할 때 대기열에 넣는 고리가 없었다.**
+// 그래서 브랜드 언어 설정을 다시 저장해 백필이 돌 때 말고는 영영 한국어로 남았다.
+//
+// 담는 기준 둘:
+//   ① 아직 번역이 없는 것(새로 넣은 특성)
+//   ② 이번에 고친 것(고친ids) — 이름이 바뀌었으니 옛 번역은 못 쓴다
+// 안 바뀐 것은 건드리지 않는다. 매번 전부 담으면 고치지도 않은 값을 계속 번역기에 보내게 되고,
+// 번역 API 는 호출이 몰리면 막힌다(lang-process 에 429 처리가 따로 있을 만큼 겪은 일이다).
+const 특성번역대기 = async (product_id, brand, 고친ids = []) => {
+    if (!brand?.id || !product_id) return;
+    try {
+        const [rows] = await readPool.query(
+            `SELECT id, character_name, character_value, lang_obj
+               FROM product_characters WHERE product_id=?`, [product_id]);
+        const 고침 = new Set((고친ids ?? []).map(Number).filter(Boolean));
+        const 비었나 = (v) => !v || v === '{}' || String(v).trim() === '';
+        for (const r of rows) {
+            if (!비었나(r.lang_obj) && !고침.has(Number(r.id))) continue;
+            await settingLangs(lang_obj_columns['product_characters'],
+                { character_name: r.character_name, character_value: r.character_value },
+                brand, 'product_characters', r.id);
+        }
+    } catch (e) {
+        // 저장은 이미 끝났다. 번역만 못 실을 뿐이라 여기서 던지지 않는다.
+        logger.error('특성 번역 대기열 적재 실패(저장은 완료됨): ' + (e?.sqlMessage || e?.message || e));
+    }
+};
+
 // 옵션·조합·입력항목을 한 번에 저장한다. create/update 공용.
 //
 // ⚠ 저장은 조회와 달리 조용히 넘어가면 안 된다 — 가맹점이 입력한 것이 사라졌는데
@@ -34,7 +65,8 @@ const 안전조회 = async (sql, params = []) => {
 //   다만 조합·입력항목은 새 테이블이라, 마이그레이션 전이면 옵션 저장까지는 살리고
 //   새 기능만 실패시킨다(옛 화면에서 저장하는 가맹점을 막지 않기 위해).
 const 옵션일체저장 = async (product_id, groups, combinations, order_form_fields, brand = null) => {
-    const 이름표 = await saveOptionGroups(product_id, groups);
+    // brand 를 넘겨야 옵션 이름이 번역 대기열에 실린다(언어팩 켠 몰만).
+    const 이름표 = await saveOptionGroups(product_id, groups, brand);
     try {
         await saveCombinations(product_id, combinations, 이름표);
         // brand 를 넘겨야 라벨·도움말이 번역 대기열에 실린다(언어팩 켠 몰만).
@@ -919,6 +951,8 @@ const productCtrl = {
             }
 
             let when = await getMultipleQueryByWhen(sql_list);
+            // 특성 INSERT 가 방금 sql_list 안에서 돌았다 — 그 뒤라야 id 를 읽을 수 있다.
+            await 특성번역대기(product_id, dns_data);
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
@@ -1021,6 +1055,7 @@ const productCtrl = {
             //character
             let insert_character_list = [];
             let delete_character_list = [];
+            let update_character_ids = [];
             for (var i = 0; i < characters.length; i++) {
                 let character = characters[i];
                 if (character?.is_delete == 1) {
@@ -1031,6 +1066,8 @@ const productCtrl = {
                             character_name: character?.character_name,
                             character_value: character?.character_value,
                         }, character?.id);
+                        // 고친 것은 옛 번역을 못 쓴다 — 아래에서 다시 번역 대기열에 싣는다.
+                        update_character_ids.push(character?.id);
                     } else { // insert
                         insert_character_list.push([
                             product_id,
@@ -1046,6 +1083,7 @@ const productCtrl = {
             if (delete_character_list.length > 0) {
                 let option_result = await writePool.query(`DELETE FROM product_characters WHERE id IN (${delete_character_list.map(() => '?').join(',')})`, delete_character_list);
             }
+            await 특성번역대기(product_id, dns_data, update_character_ids);
             //sub image
             let insert_sub_image_list = [];
             let delete_sub_image_list = [];
