@@ -1,5 +1,5 @@
 import { readPool, writePool } from "../config/db-pool.js";
-import { isTruthyFlag } from "./util.js";
+import { isTruthyFlag, settingLangs } from "./util.js";
 
 // 상품 옵션 — 선택옵션 / 추가상품 / 조합형 / 재고 공용 로직.
 //
@@ -106,10 +106,36 @@ const 켜짐 = (v) => (isTruthyFlag(v) ? 1 : 0);
 
 // 옵션그룹 + 옵션 저장. 화면이 보낸 is_delete=1 을 소프트 삭제로 처리한다.
 // 돌려주는 값: { [group_name]: { id, options: { [option_name]: id } } } — 조합 해석에 쓴다.
-export const saveOptionGroups = async (product_id, groups = []) => {
+//
+// brand 를 넘겨야 옵션 이름이 번역 대기열에 실린다(언어팩 켠 몰만).
+// 안 넘기면 외국어 화면에서 '장판 : 블랙' 처럼 옵션만 한국어로 남는다 —
+// 표시 쪽은 이미 formatLang 을 거치고 product_options·product_option_groups 도
+// 번역 대상 목록에 있는데, **저장할 때 대기열에 넣는 고리만 없었다.**
+// 주문서 입력항목(saveProductOrderFormFields)이 쓰는 방식과 같다.
+export const saveOptionGroups = async (product_id, groups = [], brand = null) => {
     const pid = Number(product_id) || 0;
     const 이름표 = {};
     if (!pid) return 이름표;
+
+    // 번역 대기열에 넣을 것. 스케줄러가 1분마다 비운다.
+    const 번역대상 = [];
+    // 이름이 그대로면 다시 번역하지 않는다.
+    //
+    // 상품 하나에 옵션이 수십 개인 몰이 있다. 저장할 때마다 전부 다시 담으면
+    // 고치지도 않은 이름을 매번 번역기에 보내게 되고, 번역 API 는 호출이 몰리면 막힌다
+    // (lang-process 에 429 차단 처리가 따로 있을 만큼 겪은 일이다).
+    const 옛그룹이름 = {};
+    const 옛옵션이름 = {};
+    if (brand?.id) {
+        const [gs] = await readPool.query(
+            `SELECT id, group_name FROM product_option_groups WHERE product_id=?`, [pid]);
+        for (const g of gs) 옛그룹이름[g.id] = g.group_name;
+        const [os] = await readPool.query(
+            `SELECT o.id, o.option_name FROM product_options o
+               LEFT JOIN product_option_groups g ON o.group_id = g.id
+              WHERE g.product_id=?`, [pid]);
+        for (const o of os) 옛옵션이름[o.id] = o.option_name;
+    }
 
     for (let i = 0; i < (Array.isArray(groups) ? groups.length : 0); i++) {
         const g = groups[i];
@@ -146,6 +172,9 @@ export const saveOptionGroups = async (product_id, groups = []) => {
             group_id = r?.insertId;
         }
         if (!group_id) continue;
+        if (옛그룹이름[group_id] !== 그룹값.group_name) {
+            번역대상.push({ 표: 'product_option_groups', id: group_id, 값: { group_name: 그룹값.group_name } });
+        }
 
         이름표[그룹값.group_name] = { id: group_id, type: 그룹값.group_type, options: {} };
 
@@ -180,7 +209,24 @@ export const saveOptionGroups = async (product_id, groups = []) => {
                      옵션값.stock_qty, 옵션값.is_soldout, 옵션값.sort]);
                 option_id = r?.insertId;
             }
-            if (option_id) 이름표[그룹값.group_name].options[옵션값.option_name] = option_id;
+            if (!option_id) continue;
+            if (옛옵션이름[option_id] !== 옵션값.option_name) {
+                번역대상.push({ 표: 'product_options', id: option_id, 값: { option_name: 옵션값.option_name } });
+            }
+            이름표[그룹값.group_name].options[옵션값.option_name] = option_id;
+        }
+    }
+
+    // 번역은 큐에 담고 스케줄러가 처리한다 — 여기서 번역기를 부르면 저장이 수 초 멈춘다.
+    // 언어팩이 꺼진 브랜드면 settingLangs 가 알아서 아무것도 안 한다.
+    // 실패해도 저장은 이미 끝났으므로 던지지 않는다(번역만 안 될 뿐이다).
+    if (brand?.id && 번역대상.length) {
+        try {
+            for (const t of 번역대상) {
+                await settingLangs(Object.keys(t.값), t.값, brand, t.표, t.id);
+            }
+        } catch (e) {
+            console.error('옵션 번역 대기열 적재 실패(저장은 완료됨):', e?.sqlMessage || e?.message || e);
         }
     }
     return 이름표;

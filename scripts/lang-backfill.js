@@ -116,6 +116,32 @@ const selectFor = (table, cols) => {
                  WHERE products.brand_id = ?
                    AND ${NO_TRANSLATION('product_characters', cols)}`;
     }
+    if (table === 'benefit_notice_tabs') {
+        // brand_id 컬럼이 없다 — 부모(benefit_notices)로 조인한다.
+        return `SELECT benefit_notice_tabs.id, ${c} FROM benefit_notice_tabs
+                  LEFT JOIN benefit_notices ON benefit_notice_tabs.notice_id = benefit_notices.id
+                 WHERE benefit_notices.brand_id = ?
+                   AND ${NO_TRANSLATION('benefit_notice_tabs', cols)}`;
+    }
+    if (table === 'product_order_form_fields') {
+        // brand_id 컬럼이 없다 — 상품(products)으로 조인한다.
+        return `SELECT product_order_form_fields.id, ${c} FROM product_order_form_fields
+                  LEFT JOIN products ON product_order_form_fields.product_id = products.id
+                 WHERE products.brand_id = ?
+                   AND ${NO_TRANSLATION('product_order_form_fields', cols)}`;
+    }
+    if (table === 'order_form_fields') {
+        // brand_id 컬럼이 없다 — 부모(order_form_templates)로 조인한다.
+        return `SELECT order_form_fields.id, ${c} FROM order_form_fields
+                  LEFT JOIN order_form_templates ON order_form_fields.template_id = order_form_templates.id
+                 WHERE order_form_templates.brand_id = ?
+                   AND ${NO_TRANSLATION('order_form_fields', cols)}`;
+    }
+    // ⚠ 여기로 떨어지는 테이블은 brand_id 컬럼이 **반드시** 있어야 한다.
+    //   없으면 MySQL 이 Unknown column 으로 던지고, 이 스크립트는 그 순간 통째로 멈춘다
+    //   (한 테이블만 건너뛰는 게 아니라 백필 전체가 실패한다 — 실제로 그렇게 멈춰 있었다).
+    //   lang_obj_columns 에 테이블을 추가할 때 brand_id 가 없다면 위에 분기를 하나 더 둘 것.
+    //   같은 규칙이 utils.js/schedules/lang-process.js 의 brandSettingLang 에도 있다.
     return `SELECT id, ${cols.join()} FROM ${table}
              WHERE brand_id = ?
                AND ${NO_TRANSLATION(table, cols)}`;
