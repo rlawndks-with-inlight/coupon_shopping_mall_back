@@ -344,9 +344,19 @@ export const gtransText = async (text, target) => {
 };
 
 // HTML 번역 — 태그·속성은 그대로 두고 텍스트 노드만 바꾼다.
-// 텍스트 노드를 줄바꿈으로 이어 한 번에 번역한 뒤 다시 나눠 넣는다.
-// 조각 수가 안 맞으면 본문이 깨지므로 그 언어는 통째로 포기한다(null 반환 → 원문 유지).
-// 깨진 번역보다 번역이 없는 편이 낫다.
+//
+// 먼저 텍스트 노드를 줄바꿈으로 이어 **한 번에** 번역한다(호출을 아끼려는 것이다).
+// 그런데 번역기는 줄을 합치거나 더 쪼개기도 해서 조각 수가 어긋날 때가 있다.
+// 어긋난 채로 밀어 넣으면 글이 엉뚱한 자리에 박히므로 그럴 수는 없다.
+//
+// [예전] 어긋나면 그 언어를 통째로 포기했다(null → 원문 유지).
+//   그 결과 **문단이 여러 개인 글은 조용히 원문으로 남았다.** 언어마다 결과가 달라서
+//   같은 팝업이 일본어는 되고 영어·중국어·스페인어만 빠지는 일이 실제로 있었다
+//   (mbc01·테스트01 팝업 본문). 게시글 본문·상품 상세설명·혜택안내 탭도 같은 규칙을 탄다.
+// [지금] 어긋나면 포기하지 않고 **조각을 하나씩 따로 번역한다.**
+//   조각과 번역이 1:1 로 맞아떨어지므로 자리가 섞일 여지가 없다.
+//   대신 그 글에 한해 호출이 조각 수만큼 늘어난다 — 그래서 '한 번에' 를 먼저 시도한다.
+//   하나라도 실패하면 그때는 포기한다(반쪽짜리 번역을 남기지 않는다).
 export const gtransHtml = async (html, target) => {
     const src = String(html ?? '');
     if (!src.trim()) return src;
@@ -366,12 +376,26 @@ export const gtransHtml = async (html, target) => {
 
     const texts = nodes.map((n) => String(n.data).replace(/\s+/g, ' ').trim());
     const translated = await gtransText(texts.join('\n'), target);
-    const parts = String(translated).split('\n');
+    let parts = String(translated).split('\n');
+
     if (parts.length !== texts.length) {
-        LANG_STATS.htmlGiveUps++;
-        logger.info(`[lang] html 조각수 불일치로 번역 생략 target=${target} 원본=${texts.length} 번역=${parts.length}`);
-        return null;
+        // 한 번에 보낸 결과가 어긋났다. 조각별로 다시 번역한다.
+        logger.info(`[lang] html 조각수 불일치 — 조각별로 다시 번역 target=${target} 원본=${texts.length} 번역=${parts.length}`);
+        const 하나씩 = [];
+        for (const t of texts) {
+            const r = String(await gtransText(t, target) ?? '').trim();
+            // 빈 결과는 실패로 본다. 그 자리를 비우면 글이 사라지고, 원문을 그대로 두면
+            // 한 문단만 한국어로 남아 더 이상해 보인다 — 그럴 바엔 이 언어를 포기한다.
+            if (!r) {
+                LANG_STATS.htmlGiveUps++;
+                logger.info(`[lang] html 조각 번역 실패로 포기 target=${target}`);
+                return null;
+            }
+            하나씩.push(r);
+        }
+        parts = 하나씩;
     }
+
     nodes.forEach((n, i) => { n.data = parts[i]; });
     return $.html();
 };
