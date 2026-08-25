@@ -1,7 +1,8 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
+import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { invalidateShopSettingCache } from "../utils.js/cache.js";
@@ -80,6 +81,11 @@ const popupCtrl = {
 
             let result = await insertQuery(`${table_name}`, obj);
 
+            // 팝업 제목·내용을 번역 대기열에 싣는다(언어팩 켠 몰만 — settingLangs 가 알아서 판정한다).
+            // 안 실으면 외국어 화면에 팝업만 한국어로 뜬다.
+            // ⚠ popups.lang_obj 컬럼이 있어야 한다(migrations/2026-08-26_popups_lang_obj.sql).
+            await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, result?.insertId);
+
             // 팝업은 shop:setting 응답에 함께 실리고 그 캐시 TTL 이 180초다.
             // 지우지 않으면 새 팝업이 고객 화면에 최대 3분간 안 뜬다.
             await invalidateShopSettingCache(obj.brand_id);
@@ -113,6 +119,10 @@ const popupCtrl = {
             };
 
             let result = await updateQuery(`${table_name}`, obj, id);
+
+            // 고친 내용은 옛 번역을 못 쓴다 — 다시 대기열에 싣는다.
+            // 큐의 적재 분기가 같은 (table_name, item_id) 행을 먼저 지우므로 중복으로 쌓이지 않는다.
+            await settingLangs(lang_obj_columns[table_name], obj, decode_dns, table_name, id);
 
             await invalidateShopSettingCache(target?.brand_id);
             return response(req, res, 100, "success", {})

@@ -168,7 +168,26 @@ const run = async () => {
         console.log('⚠ 범위를 지정하지 않아 언어팩 켠 브랜드 전부를 대상으로 합니다.');
         console.log('  대형몰이 섞여 있으면 번역 요청이 폭주해 차단당할 수 있습니다 — --shopgo 또는 --brand= 를 권장합니다.\n');
     }
-    const tables = ONLY ?? Object.keys(lang_obj_columns);
+    let tables = ONLY ?? Object.keys(lang_obj_columns);
+
+    // lang_obj 컬럼이 아직 없는 표는 뺀다.
+    //
+    // 번역 대상 목록에 표를 새로 넣으려면 마이그레이션(ALTER TABLE ... ADD lang_obj)이 선행돼야 하는데,
+    // 코드가 먼저 배포되는 순간이 생긴다(마이그레이션은 사람이 손으로 돌린다).
+    // 그때 이 스크립트는 한 표를 건너뛰는 게 아니라 **Unknown column 으로 통째로 멈춘다** —
+    // 조인 분기가 빠져 있어 실제로 그렇게 멈춰 있었다. 같은 사고를 컬럼 쪽에서도 막는다.
+    {
+        const [cols] = await readPool.query(
+            `SELECT TABLE_NAME t FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'lang_obj'`);
+        const 있는표 = new Set(cols.map((r) => r.t));
+        const 없는것 = tables.filter((t) => !있는표.has(t));
+        if (없는것.length) {
+            console.log(`⚠ lang_obj 컬럼이 없어 건너뜁니다: ${없는것.join()}`);
+            console.log('  migrations/ 의 해당 SQL 을 먼저 실행하세요.\n');
+            tables = tables.filter((t) => 있는표.has(t));
+        }
+    }
     console.log(`대상 브랜드 ${brands.length}곳 (범위: ${scope}) / 대상 테이블: ${tables.join()}`);
 
     let grand = 0;

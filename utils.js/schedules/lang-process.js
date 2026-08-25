@@ -48,11 +48,21 @@ export const lang_obj_columns = {
     benefit_notices: [
         'label',
         'summary',
+        // 팝업 머리글. 화면(BenefitNotice.js)은 이 값을 formatLang 으로 부르는데
+        // 목록에 없어서 늘 원문으로 폴백했다 — '카드사 무이자 할부 안내' 가 그대로 남았다.
+        'popup_title',
     ],
     // 탭 본문은 Quill 이 만든 HTML 이라 HTML_LANG_COLUMNS 에도 등록돼 있다(태그 보존).
     benefit_notice_tabs: [
         'tab_title',
         'tab_content',
+    ],
+    // 팝업관리에서 만든 팝업. 제목·내용이 고객 화면에 그대로 뜬다.
+    // 본문은 Quill 이 만든 HTML 이라 HTML_LANG_COLUMNS 에도 등록돼 있다(태그 보존).
+    // ⚠ migrations/2026-08-26_popups_lang_obj.sql 실행이 선행돼야 한다.
+    popups: [
+        'popup_title',
+        'popup_content',
     ],
     // 주문서 추가 입력항목의 라벨·도움말. 고객 주문서에 그대로 보이므로 번역 대상이다.
     // (선택지 option_list 는 줄바꿈으로 묶인 목록이라 번역기에 통째로 넣으면 줄이 어긋난다 — 뺐다)
