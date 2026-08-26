@@ -76,75 +76,79 @@ const ONLY = (() => {
 //   전부 '번역됨' 으로 걸러져 상세설명만 원문으로 남았다(백필을 돌려도 0건 적재).
 //   → 컬럼마다 'lang_obj 안에 그 컬럼 키가 있는지' 를 따로 본다.
 //     원문이 비어 있는 컬럼은 번역할 것이 없으므로 대상에서 뺀다.
-const NO_TRANSLATION = (t, cols = []) => {
-    const perColumn = cols.map((col) =>
-        `(${t}.${col} IS NOT NULL AND ${t}.${col} <> '' AND (${t}.lang_obj IS NULL OR ${t}.lang_obj NOT LIKE '%"${col}"%'))`
-    );
-    return `(
-    ${t}.lang_obj IS NULL OR ${t}.lang_obj = '' OR ${t}.lang_obj = '{}'
-    OR (${t}.lang_obj NOT LIKE '%"en"%' AND ${t}.lang_obj NOT LIKE '%"ja"%'
-        AND ${t}.lang_obj NOT LIKE '%"cn"%' AND ${t}.lang_obj NOT LIKE '%"es"%')
-    ${perColumn.length ? 'OR ' + perColumn.join('\n    OR ') : ''}
-)`;
+// 네 번째 보완(2026-08-27): 판정을 SQL 에서 JS 로 옮겼다.
+//   앞의 조건들은 전부 '컬럼 열쇠가 lang_obj 안에 있는가' 만 봤다. 그런데 번역은 **언어별로**
+//   실패한다 — HTML 본문이 일본어만 되고 영어·중국어·스페인어는 빠지는 일이 실제로 있었다.
+//   그러면 popup_content 열쇠는 있으므로 '번역됨'으로 걸러져, 고쳐 놓고 백필을 돌려도 0건이었다.
+//   어느 언어가 채워졌는지는 LIKE 로 볼 수 없다. lang_obj 를 읽어와 JS 에서 본다.
+//
+// ⚠ 대신 브랜드 범위의 행을 전부 읽는다. --shopgo · --brand= 로 좁혀 쓰는 도구라 괜찮지만,
+//   상품이 수만 건인 대형몰을 지정하면 메모리를 많이 쓴다(그 경우 --only= 로 나눠 돌릴 것).
+const 목표언어 = ['en', 'ja', 'cn', 'es'];
+const 번역이빠졌나 = (item, cols = []) => {
+    let lang = {};
+    try { lang = JSON.parse(item?.lang_obj ?? '{}') ?? {}; } catch (e) { return true; }
+    for (const col of cols) {
+        // 원문이 비어 있는 컬럼은 번역할 것이 없다.
+        if (!String(item?.[col] ?? '').trim()) continue;
+        const slot = lang?.[col] ?? {};
+        // 한 언어라도 비었으면 다시 담는다. settingLangs 가 빠진 언어를 채워 준다.
+        if (목표언어.some((L) => !String(slot?.[L] ?? '').trim())) return true;
+    }
+    return false;
 };
 
 const selectFor = (table, cols) => {
-    const c = cols.map((x) => `${table}.${x}`).join();
+    // lang_obj 도 함께 읽는다 — '어느 언어가 채워졌는지' 는 SQL 의 LIKE 로 볼 수 없어
+    // 아래 번역이빠졌나() 가 JS 에서 판정한다.
+    const c = [...cols.map((x) => `${table}.${x}`), `${table}.lang_obj`].join();
     if (table === 'posts') {
         return `SELECT posts.id, ${c} FROM posts
                   LEFT JOIN post_categories ON posts.category_id = post_categories.id
-                 WHERE post_categories.brand_id = ?
-                   AND ${NO_TRANSLATION('posts', cols)}`;
+                 WHERE post_categories.brand_id = ?`;
     }
     if (table === 'product_option_groups') {
         return `SELECT product_option_groups.id, ${c} FROM product_option_groups
                   LEFT JOIN products ON product_option_groups.product_id = products.id
-                 WHERE products.brand_id = ?
-                   AND ${NO_TRANSLATION('product_option_groups', cols)}`;
+                 WHERE products.brand_id = ?`;
     }
     if (table === 'product_options') {
         return `SELECT product_options.id, ${c} FROM product_options
                   LEFT JOIN product_option_groups ON product_options.group_id = product_option_groups.id
                   LEFT JOIN products ON product_option_groups.product_id = products.id
-                 WHERE products.brand_id = ?
-                   AND ${NO_TRANSLATION('product_options', cols)}`;
+                 WHERE products.brand_id = ?`;
     }
     if (table === 'product_characters') {
         // 특성도 brand_id 컬럼이 없다 — 부모(products)로 조인해 브랜드를 판정한다.
         return `SELECT product_characters.id, ${c} FROM product_characters
                   LEFT JOIN products ON product_characters.product_id = products.id
-                 WHERE products.brand_id = ?
-                   AND ${NO_TRANSLATION('product_characters', cols)}`;
+                 WHERE products.brand_id = ?`;
     }
     if (table === 'benefit_notice_tabs') {
         // brand_id 컬럼이 없다 — 부모(benefit_notices)로 조인한다.
         return `SELECT benefit_notice_tabs.id, ${c} FROM benefit_notice_tabs
                   LEFT JOIN benefit_notices ON benefit_notice_tabs.notice_id = benefit_notices.id
-                 WHERE benefit_notices.brand_id = ?
-                   AND ${NO_TRANSLATION('benefit_notice_tabs', cols)}`;
+                 WHERE benefit_notices.brand_id = ?`;
     }
     if (table === 'product_order_form_fields') {
         // brand_id 컬럼이 없다 — 상품(products)으로 조인한다.
         return `SELECT product_order_form_fields.id, ${c} FROM product_order_form_fields
                   LEFT JOIN products ON product_order_form_fields.product_id = products.id
-                 WHERE products.brand_id = ?
-                   AND ${NO_TRANSLATION('product_order_form_fields', cols)}`;
+                 WHERE products.brand_id = ?`;
     }
     if (table === 'order_form_fields') {
         // brand_id 컬럼이 없다 — 부모(order_form_templates)로 조인한다.
         return `SELECT order_form_fields.id, ${c} FROM order_form_fields
                   LEFT JOIN order_form_templates ON order_form_fields.template_id = order_form_templates.id
-                 WHERE order_form_templates.brand_id = ?
-                   AND ${NO_TRANSLATION('order_form_fields', cols)}`;
+                 WHERE order_form_templates.brand_id = ?`;
     }
     // ⚠ 여기로 떨어지는 테이블은 brand_id 컬럼이 **반드시** 있어야 한다.
     //   없으면 MySQL 이 Unknown column 으로 던지고, 이 스크립트는 그 순간 통째로 멈춘다
     //   (한 테이블만 건너뛰는 게 아니라 백필 전체가 실패한다 — 실제로 그렇게 멈춰 있었다).
     //   lang_obj_columns 에 테이블을 추가할 때 brand_id 가 없다면 위에 분기를 하나 더 둘 것.
     //   같은 규칙이 utils.js/schedules/lang-process.js 의 brandSettingLang 에도 있다.
-    return `SELECT id, ${cols.join()} FROM ${table}
-             WHERE brand_id = ?
-               AND ${NO_TRANSLATION(table, cols)}`;
+    return `SELECT id, ${c} FROM ${table}
+             WHERE brand_id = ?`;
 };
 
 const run = async () => {
@@ -202,7 +206,13 @@ const run = async () => {
                 // 원문이 하나도 없는 행은 번역할 것이 없다 — 대기열만 늘어난다.
                 const has_text = cols.some((c) => String(item?.[c] ?? '').trim().length > 0);
                 if (!has_text) continue;
-                rows_to_insert.push([table, item.id, brand.id, JSON.stringify(item)]);
+                // 이미 다섯 언어가 다 찬 행은 건드리지 않는다.
+                if (!번역이빠졌나(item, cols)) continue;
+                // 대기열에는 원문만 싣는다. lang_obj 까지 넣으면 큐 행이 몇 배로 커지고,
+                // 스케줄러는 어차피 columns 만 읽는다.
+                const 원문 = { id: item.id };
+                for (const col of cols) 원문[col] = item[col];
+                rows_to_insert.push([table, item.id, brand.id, JSON.stringify(원문)]);
             }
         }
         // 이미 대기 중(is_confirm=0)인 건 다시 넣지 않는다 — 멱등하게 만든다.
