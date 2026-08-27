@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { searchColumns, fulltextColumns, likeOnlyColumns, blindIndexColumns } from './search-columns.js';
 import { blindIndex } from './crypto-util.js';
 import { readPool, writePool } from '../config/db-pool.js';
+import logger from './winston/index.js';
 
 export const insertQuery = async (table, obj) => {
     try {
@@ -12,6 +13,9 @@ export const insertQuery = async (table, obj) => {
         })
         let keys = Object.keys(obj);
         if (keys.length == 0) {
+            // 넣을 값이 하나도 없다. 오류는 아니지만 아무것도 저장되지 않는다 —
+            // 호출부가 객체를 잘못 만든 것이므로 조용히 넘어가면 원인을 못 찾는다.
+            logger.error(`[insertQuery] ${table} 저장할 값이 없다 — 호출부가 빈 객체를 넘겼다`);
             return false;
         }
         let question_list = keys.map(key => {
@@ -30,6 +34,17 @@ export const insertQuery = async (table, obj) => {
         }
         return result[0];
     } catch (err) {
+        // 저장이 실패했다. 여기서 오류를 삼키므로 호출부는 대개 그대로 '성공' 을 응답한다
+        // (저장 호출 125곳 중 반환값을 보는 곳이 3곳뿐이다). 그건 따로 다룰 문제고,
+        // 최소한 **기록은 남긴다.**
+        //
+        // 예전에는 console.log 였다. 그건 pm2 출력 로그로만 가는데 그 로그는 회전본이 없어
+        // 지워진다 — 그래서 '저장 실패가 나기는 하는가' 조차 알 수 없었다(2026-08-27 확인).
+        // logger.error 는 logs/error/ 에 30일 남는다.
+        //
+        // ⚠ 값(obj)은 찍지 않는다. 회원 이름·전화·주소가 그대로 로그에 남는다 —
+        //   DB 는 암호화해 두고 로그로 흘리면 암호화한 의미가 없다. 컬럼 이름까지만 남긴다.
+        logger.error(`[insertQuery] ${table} 저장 실패 · 컬럼(${Object.keys(obj ?? {}).join()}) :: ${err?.code ?? ''} ${err?.sqlMessage ?? err?.message ?? err}`);
         console.log(err);
         return false;
     }
