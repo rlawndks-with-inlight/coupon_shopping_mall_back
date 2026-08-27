@@ -217,6 +217,15 @@ const userCtrl = {
             if (seller_point > 1) {
                 return response(req, res, -100, "포인트 적립률이 100%보다 큽니다", false)
             }
+            // 위만 막고 아래는 안 막고 있었다. 음수 수수료·적립률은 뜻이 성립하지 않는다 —
+            // 판매가가 원가 아래로 내려가거나, 팔 때마다 포인트가 깎인다.
+            // 화면에서도 막지만 요청은 화면을 거치지 않고도 들어온다.
+            if (Number(seller_trx_fee) < 0 || Number(oper_trx_fee) < 0) {
+                return response(req, res, -100, "수수료율은 0보다 작을 수 없습니다.", false)
+            }
+            if (Number(seller_point) < 0) {
+                return response(req, res, -100, "포인트 적립률은 0보다 작을 수 없습니다.", false)
+            }
             // 빈 비밀번호를 그대로 해싱하면 hash('') 가 저장된다 → signIn 에 빈값 체크가 없어 아이디만 알면 로그인된다.
             user_pw = typeof user_pw === 'string' ? user_pw.trim() : user_pw;
             if (!user_pw) {
@@ -303,6 +312,15 @@ const userCtrl = {
             }
             if (seller_point > 1) {
                 return response(req, res, -100, "포인트 적립률이 100%보다 큽니다", false)
+            }
+            // 위만 막고 아래는 안 막고 있었다. 음수 수수료·적립률은 뜻이 성립하지 않는다 —
+            // 판매가가 원가 아래로 내려가거나, 팔 때마다 포인트가 깎인다.
+            // 화면에서도 막지만 요청은 화면을 거치지 않고도 들어온다.
+            if (Number(seller_trx_fee) < 0 || Number(oper_trx_fee) < 0) {
+                return response(req, res, -100, "수수료율은 0보다 작을 수 없습니다.", false)
+            }
+            if (Number(seller_point) < 0) {
+                return response(req, res, -100, "포인트 적립률은 0보다 작을 수 없습니다.", false)
             }
             let files = settingFiles(req.files);
 
