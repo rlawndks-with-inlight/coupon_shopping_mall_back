@@ -134,6 +134,33 @@ const cleanOptionGroups = (groups = []) => (Array.isArray(groups) ? groups : [])
     // 단, 삭제 표시된 그룹은 삭제 처리를 해야 하므로 남긴다.
     .filter((g) => g?.is_delete == 1 || (g.options ?? []).some((o) => o?.is_delete != 1));
 
+// 가격을 성립하는 값으로 바로잡는다. create/update 공용.
+//
+// [무엇을 막나]
+//  ① 음수 가격·배송비 — 화면이 안 받아도 요청은 화면을 거치지 않고 보낼 수 있다.
+//  ② 정가 < 판매가 — 할인이 성립하지 않는 짝이다.
+//
+// ②가 왜 생기나(2026-08-27 확인):
+//   관리자 화면에는 '할인 표시' 여부를 저장하는 칸이 없다. 열 때마다 `정가 > 판매가` 로
+//   되짚어 체크 상태를 만든다. 그래서 **할인 중이던 상품은 열자마자 체크가 켜져 있고**,
+//   그 상태에서 판매가만 고치면 정가가 옛 값에 남는다. 사람이 체크를 누른 적이 없어도 그렇다.
+//   결과가 둘로 갈린다.
+//     · 새 판매가가 옛 정가보다 높으면 → 주문서에 '할인 -20,000원' 같은 음수 할인이 뜬다
+//     · 새 판매가가 옛 정가보다 낮으면 → 가맹점이 설정한 적 없는 할인율이 고객 화면에 뜬다
+//   실측으로 295건이 이 상태였다.
+//
+//   화면도 함께 고치지만, 최종 판정은 여기서 한다 —
+//   정가가 판매가보다 낮으면 할인이 아니므로 정가를 판매가에 맞춘다(=할인 없음).
+//   정가를 일부러 낮게 두려는 뜻은 성립할 수 없다.
+const 가격정리 = (obj) => {
+    const 음수없이 = (v) => Math.max(0, isNaN(parseInt(v)) ? 0 : parseInt(v));
+    obj.product_sale_price = 음수없이(obj.product_sale_price);
+    obj.product_price = 음수없이(obj.product_price);
+    if (obj.delivery_fee !== undefined) obj.delivery_fee = 음수없이(obj.delivery_fee);
+    if (obj.product_price < obj.product_sale_price) obj.product_price = obj.product_sale_price;
+    return obj;
+};
+
 const cleanCharacters = (characters = []) => (Array.isArray(characters) ? characters : [])
     .filter((c) => c?.is_delete == 1
         || (String(c?.character_name ?? '').trim() !== '' && String(c?.character_value ?? '').trim() !== ''));
@@ -785,6 +812,7 @@ const productCtrl = {
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
             }
+            가격정리(obj);
             if (typeof description_images == 'string') {
                 description_images = JSON.parse(description_images ?? '[]')
             }
@@ -1027,6 +1055,7 @@ const productCtrl = {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
                 }
             }
+            가격정리(obj);
 
             if (consignment_user_name) {
                 let consignment_user = await readPool.query(`SELECT id FROM users WHERE user_name=? AND brand_id=? `, [consignment_user_name, brand_id]);

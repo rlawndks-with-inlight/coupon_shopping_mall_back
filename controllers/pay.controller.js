@@ -1,6 +1,6 @@
 "use strict";
 import axios from "axios";
-import { 포인트사용상한 } from '../utils.js/point-policy.js';
+import { 포인트사용상한, 적립예정 } from '../utils.js/point-policy.js';
 import { checkIsManagerUrl, returnMoment } from "../utils.js/function.js";
 import { hashOrderPassword } from "../utils.js/order-password.js";
 import {
@@ -931,12 +931,14 @@ const payCtrl = {
           trx_status: 5,
         };
         let result = await updateQuery(`${table_name}`, obj, id);
-        if (amount * ((dns_data?.setting_obj?.point_rate ?? 0) / 100) > 0) {
+        // 적립은 정책 함수 한 곳에서 센다 — 여기서 직접 곱하면 적립률 상한(100%)이 안 걸린다.
+        const 쌓을것 = 적립예정({ dns: dns_data, 결제금액: amount });
+        if (쌓을것 > 0) {
           let result2 = await insertQuery(`points`, {
             brand_id: dns_data?.id,
             user_id: pay_data?.user_id,
             sender_id: 0,
-            point: amount * ((dns_data?.setting_obj?.point_rate ?? 0) / 100),
+            point: 쌓을것,
             type: 0,
             trans_id: id,
           });
@@ -1335,7 +1337,8 @@ async function settlePayletterTransaction(transId, data = {}) {
   let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);
   let brand = brandRows[0][0];
   let setting = JSON.parse(brand?.setting_obj ?? '{}');
-  let point = (trx.amount) * ((setting?.point_rate ?? 0) / 100);
+  // 적립은 정책 함수 한 곳에서 센다(적립률 상한·음수 방어가 거기 있다).
+  let point = 적립예정({ dns: { setting_obj: setting }, 결제금액: trx.amount });
   if (point > 0) {
     await insertQuery('points', {
       brand_id: trx.brand_id,
@@ -1407,7 +1410,8 @@ async function settleForspayTransaction(transId, data = {}) {
   let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);
   let brand = brandRows[0][0];
   let setting = JSON.parse(brand?.setting_obj ?? '{}');
-  let point = (trx.amount) * ((setting?.point_rate ?? 0) / 100);
+  // 적립은 정책 함수 한 곳에서 센다(적립률 상한·음수 방어가 거기 있다).
+  let point = 적립예정({ dns: { setting_obj: setting }, 결제금액: trx.amount });
   if (point > 0) {
     await insertQuery('points', {
       brand_id: trx.brand_id,

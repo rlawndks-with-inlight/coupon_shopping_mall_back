@@ -87,8 +87,26 @@ const safeParse = (v) => { try { return JSON.parse(v ?? '{}'); } catch (e) { ret
 // '새로 만들 땐 되는데 수정하면 사라지는' 종류의 버그가 생겼다.
 
 const 정수 = (v, 기본 = 0) => (isNaN(parseInt(v)) ? 기본 : parseInt(v));
+
+// 돈·수량은 **음수가 될 수 없다.**
+//
+// [왜 서버에서 막나]
+// 관리자 화면이 음수를 안 받게 해도 그건 안내일 뿐이다. 요청은 화면을 거치지 않고도 보낼 수 있다.
+// 옵션 변동가가 음수면 손님이 그 옵션을 고르는 것만으로 결제금액이 깎인다 —
+// 결제 재계산(pay.controller recalcOrderAmount)은 **DB 의 옵션 가격을 그대로 믿기** 때문에
+// 금액 위조를 막는 그 방어를 이 값 하나로 우회할 수 있다.
+// (그 파일 주석에도 '관리자 폼이 음수 변동가를 막지 않는다' 고 적혀 있었다 — 여기서 막는다.)
+//
+// 조합 변동가(add_price)도 같은 경로로 금액에 더해진다.
+const 음수없는정수 = (v, 기본 = 0) => Math.max(0, 정수(v, 기본));
+
 // 재고칸을 비우면 '무제한'이다. 0 으로 접으면 저장하는 순간 품절이 된다.
-const 재고 = (v) => (v === '' || v === null || v === undefined ? null : (isNaN(parseInt(v)) ? null : parseInt(v)));
+// 음수 재고는 뜻이 없다 — 0(품절)으로 접는다.
+const 재고 = (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = parseInt(v);
+    return isNaN(n) ? null : Math.max(0, n);
+};
 
 // 켜짐/꺼짐 값. **그냥 `v ? 1 : 0` 을 쓰면 안 된다.**
 //
@@ -189,7 +207,7 @@ export const saveOptionGroups = async (product_id, groups = [], brand = null) =>
             if (!String(o?.option_name ?? '').trim()) continue;
             const 옵션값 = {
                 option_name: o.option_name,
-                option_price: 정수(o?.option_price, 0),
+                option_price: 음수없는정수(o?.option_price, 0),
                 option_description: o?.option_description ?? '',
                 stock_qty: 재고(o?.stock_qty),
                 is_soldout: 켜짐(o?.is_soldout),
@@ -260,7 +278,7 @@ export const saveCombinations = async (product_id, combinations = [], 이름표 
              VALUES (?,?,?,?,?,0)
              ON DUPLICATE KEY UPDATE add_price=VALUES(add_price), stock_qty=VALUES(stock_qty),
                                      is_soldout=VALUES(is_soldout), is_delete=0`,
-            [pid, key, 정수(c?.add_price, 0), 재고(c?.stock_qty), 켜짐(c?.is_soldout)]);
+            [pid, key, 음수없는정수(c?.add_price, 0), 재고(c?.stock_qty), 켜짐(c?.is_soldout)]);
     }
     // 화면에서 사라진 조합은 내린다. 지우지 않고 내리는 이유는 지난 주문의 재고 복구 때문이다.
     if (살아있는.length) {
