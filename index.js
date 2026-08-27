@@ -90,9 +90,34 @@ const HTTPS_PORT = 8443;
 const SSL_ENABLED = process.env.SSL_ENABLED === 'true';
 const SSL_CERT_DIR = process.env.SSL_CERT_DIR || '/etc/letsencrypt/live/purplevery22.cafe24.com';
 
+
+// 개인정보 암호화 키가 있는지 뜰 때 한 번 크게 확인한다.
+//
+// [왜 필요한가]
+// crypto-util 의 encField 는 키가 없으면 **평문을 그대로 돌려준다**(`if (!key) return plaintext`).
+// 롤아웃 중 깨지지 않게 한 의도된 설계지만, 뒤집어 말하면 .env 에서 그 한 줄이 사라져도
+// 오류도 경고도 없이 회원 이름·전화·주소가 평문으로 쌓인다는 뜻이다. 겉으로는 아무 증상이 없다.
+// 그래서 여기서 소리를 낸다. 서버를 못 뜨게 막지는 않는다 — 그건 더 큰 사고다.
+const 개인정보키확인 = () => {
+    const 키 = process.env.DB_ENCRYPTION_KEY || '';
+    const 길이맞나 = /^[A-Fa-f0-9]{64}$/.test(키)
+        || Buffer.from(키, 'base64').length === 32
+        || Buffer.from(키, 'utf8').length === 32;
+    if (키 && 길이맞나) return;
+    const 이유 = 키 ? '길이가 32바이트가 아니다' : '.env 에 없다';
+    console.error('');
+    console.error('****************************************************************');
+    console.error('*  DB_ENCRYPTION_KEY 를 쓸 수 없다 — ' + 이유);
+    console.error('*  회원 이름·전화·주소가 **평문으로** 저장된다. 지금 .env 를 확인할 것.');
+    console.error('*  (hex 64자 / base64 44자 / 원문 32자 중 하나여야 한다)');
+    console.error('****************************************************************');
+    console.error('');
+};
+
 async function bootstrap() {
   try {
 
+    개인정보키확인();
     await initRedis();
 
     let server;
