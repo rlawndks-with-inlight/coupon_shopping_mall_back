@@ -152,6 +152,20 @@ const cleanOptionGroups = (groups = []) => (Array.isArray(groups) ? groups : [])
 //   화면도 함께 고치지만, 최종 판정은 여기서 한다 —
 //   정가가 판매가보다 낮으면 할인이 아니므로 정가를 판매가에 맞춘다(=할인 없음).
 //   정가를 일부러 낮게 두려는 뜻은 성립할 수 없다.
+// 재고·구매제한은 음수가 될 수 없다.
+//
+// [증상] 재고 칸에 -10 을 넣으면 **그대로 저장됐다**(운영 API 로 확인).
+//   구매할 때는 `stock_qty >= 주문수량` 을 보므로 그 상품은 영영 안 팔린다 —
+//   가맹점 눈에는 '왜 계속 품절이지?' 만 보이고 원인이 화면 어디에도 안 나온다.
+//   옵션 재고는 막고 있었는데(product-options 의 재고()) **상품 자체 재고는 빠져 있었다.**
+//
+// 빈 값은 0 이 아니라 null 로 둔다 — 0 으로 접으면 저장하자마자 품절이 된다.
+// (재고 null = 무제한, 구매제한 null = 제한 없음)
+const 수량 = (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = parseInt(v);
+    return isNaN(n) ? null : Math.max(0, n);
+};
 const 가격정리 = (obj) => {
     const 음수없이 = (v) => Math.max(0, isNaN(parseInt(v)) ? 0 : parseInt(v));
     obj.product_sale_price = 음수없이(obj.product_sale_price);
@@ -805,9 +819,9 @@ const productCtrl = {
                 another_id, price_lang, point_save, point_usable, cash_usable, pg_usable, status, show_status, memo,
                 // 0=단독형 1=조합형. 재고는 비우면 NULL(무제한) — 0 으로 접으면 저장하자마자 품절이 된다.
                 option_mode: parseInt(option_mode) === 1 ? 1 : 0,
-                stock_qty: (stock_qty === '' || stock_qty === null || stock_qty === undefined || isNaN(parseInt(stock_qty))) ? null : parseInt(stock_qty),
+                stock_qty: 수량(stock_qty),
                 // 1인당 최대 구매 수량. 비우면 제한 없음 — 값이 있으면 그 상품은 회원만 산다.
-                purchase_limit: (purchase_limit === '' || purchase_limit === null || purchase_limit === undefined || isNaN(parseInt(purchase_limit))) ? null : parseInt(purchase_limit),
+                purchase_limit: 수량(purchase_limit),
             };
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
@@ -1034,9 +1048,9 @@ const productCtrl = {
                 another_id,
                 price_lang, point_save, memo, /*point_usable, cash_usable, pg_usable, status, show_status*/
                 option_mode: parseInt(option_mode) === 1 ? 1 : 0,
-                stock_qty: (stock_qty === '' || stock_qty === null || stock_qty === undefined || isNaN(parseInt(stock_qty))) ? null : parseInt(stock_qty),
+                stock_qty: 수량(stock_qty),
                 // 1인당 최대 구매 수량. 비우면 제한 없음 — 값이 있으면 그 상품은 회원만 산다.
-                purchase_limit: (purchase_limit === '' || purchase_limit === null || purchase_limit === undefined || isNaN(parseInt(purchase_limit))) ? null : parseInt(purchase_limit),
+                purchase_limit: 수량(purchase_limit),
             };
             /*
             if (brand_id = 5) { //임시
