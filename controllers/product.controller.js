@@ -264,6 +264,16 @@ const 가격정리 = (obj) => {
     obj.product_price = 음수없이(obj.product_price);
     if (obj.delivery_fee !== undefined) obj.delivery_fee = 음수없이(obj.delivery_fee);
     if (obj.product_price < obj.product_sale_price) obj.product_price = obj.product_sale_price;
+
+    // 빈 칸을 DB 까지 흘려보내지 않는다.
+    //
+    // [증상] 적립금 칸을 비우고 저장하면 `Incorrect integer value: '' for column 'point_save'` 로
+    //   저장이 통째로 실패했다. 화면에는 '상품 저장중 에러' 만 떠서 어느 칸 때문인지 알 수 없다.
+    //   가격·배송비는 위에서 이미 0 으로 정리하고 있었는데 이 세 칸만 빠져 있었다.
+    // 이 칸들에서 0 은 '없음' 이라는 뜻이 분명하다(재고의 0 = 품절과 다르다) — 그래서 0 으로 둔다.
+    for (const 키 of ['point_save', 'consignment_fee', 'consignment_fee_type']) {
+        if (obj[키] === '' || obj[키] === null || obj[키] === undefined) obj[키] = 0;
+    }
     return obj;
 };
 
