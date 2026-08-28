@@ -54,6 +54,27 @@ const 결제실패응답 = async (trans_id, req, res, code, msg, data) => {
   return response(req, res, code, msg, data);
 };
 
+// 결제창을 열지 못했을 때 손님에게 보일 문구.
+//
+// [왜 우리가 정하나] 포스페이는 실패 사유를 **자기 서버의 원문 오류**로 돌려준다.
+//   2026-08-28 실제로 온 값:
+//     {"error":"SQLSTATE[HY000] [1045] Access denied for user 'overseer'@'10.0.41.191'
+//               (using password: YES) (SQL: select * from `merchandises` where `user_id`=2 ...)"}
+//   이걸 그대로 message 에 담아 내려보내면 **결제하려던 손님 화면에 SQL 문이 뜬다**
+//   (프론트 utils/api.js 가 서버 message 를 그대로 토스트로 띄운다).
+//   몰이 고장난 것처럼 보이고, 협력사의 DB 계정명·내부 IP·테이블 구조가 아무에게나 새어 나간다.
+//
+// [사유를 안 보여줘도 되는 이유] 이 자리는 **결제창을 열기도 전**이다. 손님은 아직 카드번호를
+//   넣지 않았다 — '한도 초과' 처럼 손님이 손쓸 수 있는 사유가 나올 수가 없다.
+//   여기서 나는 실패는 전부 설정·시스템 문제이고, 손님이 할 수 있는 일은 '나중에 다시' 뿐이다.
+//
+// 사유는 바로 위 logger.error 로 logs/error 에 30일 남는다 — 진단에 필요한 것은 하나도 안 잃는다.
+// 페이레터의 결제요청 실패도 같은 단계라 같은 문구를 쓴다.
+// ⚠ 헥토·핀트리의 result_msg(승인 거절 사유)는 다르다 — 그때는 손님이 카드번호를 이미 넣었고
+//   '한도 초과'처럼 손님이 손쓸 수 있는 사유라서 그대로 보여 준다. 그 자리는 건드리지 말 것.
+// ⚠ 협력사 응답 문자열을 이 자리에 다시 끌어다 쓰지 말 것. 검사 scripts/checks/pg-message.mjs 가 막는다.
+const 결제시작실패문구 = '결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+
 const 결제실패정리 = async (trans_id) => {
   try {
     await applyCancelEffects(trans_id);
@@ -720,7 +741,11 @@ const payCtrl = {
           });
 
           if (!pl?.online_url && !pl?.mobile_url) {
-            return 결제실패응답(trans_id, req, res, -100, pl?.message || "페이레터 결제요청 실패", false);
+            // 이 자리에는 원래 로그가 없었다. 사유가 손님 화면으로만 갔고 어디에도 안 남아서,
+            // '결제가 안 된다'는 문의를 받아도 무엇 때문인지 확인할 방법이 없었다.
+            // ⚠ 응답 본문에 협력사 내부 오류가 실려 오므로 로그에만 남긴다(포스페이와 같은 이유).
+            logger.error(`[payletter] 결제요청 URL 없음 — trans_id=${trans_id} resp=${JSON.stringify(pl)}`);
+            return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
           }
 
           // 상태조회 검증 시 사용할 order_no를 거래에 동기화(원본 ord_num을 정규화한 값)
@@ -734,7 +759,7 @@ const payCtrl = {
           });
         } catch (e) {
           logger.error(errText(e));
-          return 결제실패응답(trans_id, req, res, -100, e?.response?.data?.message || "페이레터 결제요청 오류", false);
+          return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
         }
       }
 
@@ -800,9 +825,11 @@ const payCtrl = {
             launch_page_url = launched?.launch_page_url;
           }
           if (!launch_page_url) {
-            // 포스페이가 201로 오류바디(예: {"error":"No payment module configured..."})를 줄 수 있어, 실제 사유를 로그·노출
+            // 포스페이가 2xx 로 오류바디(예: {"error":"No payment module configured..."})를 줄 수 있다.
+            // HTTP 상태만 보면 성공이라 여기서 걸러야 한다. 사유는 **로그에만** 남긴다 —
+            // 손님에게는 결제시작실패문구 를 보낸다(그 이유는 정의부 주석 참고).
             logger.error(`[forspay] launch_page_url 없음 — resp=${JSON.stringify(session)}`);
-            return 결제실패응답(trans_id, req, res, -100, session?.message || session?.error || "포스페이 세션 생성 실패", false);
+            return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
           }
 
           // return/webhook 매칭용 ord_num을 거래에 동기화(정규화 값)
@@ -823,7 +850,7 @@ const payCtrl = {
             + ` route=${진단.route} pg_provider_id=${진단.provider}`
             + ` app_key_len=${진단.app_key_len}`
             + ` ${errText(e)}`);
-          return 결제실패응답(trans_id, req, res, -100, e?.response?.data?.message || "포스페이 세션 생성 오류", false);
+          return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
         }
       }
 
