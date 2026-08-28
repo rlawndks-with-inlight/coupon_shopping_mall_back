@@ -7,6 +7,28 @@ import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 const table_name = 'points';
 
+// 관리자가 회원에게 직접 주고 빼는 포인트. **여기 넣은 값이 곧 잔액**이다
+// (결제는 `SELECT SUM(point) FROM points WHERE user_id=?` 로 잔액을 본다).
+//
+// [무엇이 뚫려 있었나 — 2026-08-28 운영 API 로 확인]
+//   999,999,999,999 · 1.5 · 0 · 'abc' 가 전부 '성공' 으로 통과했다.
+//   `points.point` 는 **double** 이라 DB 도 범위를 막지 않는다 —
+//   실제로 잔액이 1조 원이 됐다(시험 행은 즉시 지웠다).
+//   오타로 0 하나만 더 붙어도 그 회원은 그만큼을 결제에 그대로 쓴다.
+//   'abc' 는 행이 안 생겼는데도 화면엔 '성공' 이 떴다(insertQuery 가 오류를 삼킨다).
+//
+// ⚠ 문구는 사전에서 글자 그대로 찾으므로 조립하지 말 것.
+const 한번상한 = 10000000;   // 1회 1천만 포인트. 더 필요하면 나눠 준다.
+const 포인트검사 = (point) => {
+    const 원값 = String(point ?? '').replace(/,/g, '').trim();
+    if (원값 === '' || !/^-?\d+$/.test(원값)) return '포인트는 정수로만 입력해 주세요.';
+    const n = parseInt(원값, 10);
+    if (n === 0) return '0 포인트는 지급하거나 차감할 수 없습니다.';
+    if (Math.abs(n) > 한번상한) return '한 번에 주고받을 수 있는 포인트를 넘었습니다. 다시 확인해 주세요.';
+    return null;
+};
+const 포인트값 = (point) => parseInt(String(point).replace(/,/g, '').trim(), 10);
+
 const pointCtrl = {
     list: async (req, res, next) => {
         try {
@@ -90,10 +112,12 @@ const pointCtrl = {
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)
             }
+            const 값잘못 = 포인트검사(point);
+            if (값잘못) { return response(req, res, -100, 값잘못, false); }
             type = point >= 0 ? 15 : 20
             let files = settingFiles(req.files);
             let obj = {
-                point,
+                point: 포인트값(point),
                 note,
                 type,
                 user_id: user?.id,
@@ -134,10 +158,12 @@ const pointCtrl = {
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)
             }
+            const 값잘못 = 포인트검사(point);
+            if (값잘못) { return response(req, res, -100, 값잘못, false); }
             let type = point >= 0 ? 15 : 20
             let files = settingFiles(req.files);
             let obj = {
-                point,
+                point: 포인트값(point),
                 note,
                 user_id: user?.id,
                 type,
