@@ -31,6 +31,30 @@ const tab_table_name = 'benefit_notice_tabs';
 //   그렇다고 레벨 40 만 보면 가맹점 관리자도 통과하므로, **브랜드가 마스터인지**를 함께 본다.
 //   이 DB 는 다른 클라이언트와 공유하는데, 그쪽 마스터는 자기 산하 가맹점에만 영향을 주므로
 //   같은 규칙으로 통과시켜도 서로 침범하지 않는다(읽기가 부모 brand_id 기준이라 격리된다).
+// 라벨 글자수 상한.
+//
+// [왜 필요한가]
+// 상품상세에서 라벨은 왼쪽 칸이고, 그 칸은 **가장 긴 라벨에 맞춰 늘어난다**(DetailNotices 그리드).
+// 라벨이 길어지면 오른쪽 내용 칸이 그만큼 좁아진다. 모바일 375px 에서 실측(2026-08-28):
+//     2자 → 내용 281px   8자 → 236px   14자 → 163px   20자 → 91px(한 줄에 7글자)
+// 화면이 깨지거나 넘치지는 않는다 — 그리드가 조용히 흡수한다. 그래서 더 위험하다:
+// 아무 경고 없이 손님 화면만 나빠지고, 아무도 눈치채지 못한다.
+//
+// DB 는 varchar(50) 이라 50자까지 들어간다. 그건 저장 한계일 뿐 화면이 견디는 값이 아니다.
+// ⚠ 관리자 입력란에도 같은 값을 걸어 두었지만, **여기가 진짜 관문이다** — 입력란은 API 를
+//   직접 부르면 그냥 우회된다(회원가입 아이디 검증에서 같은 일을 이미 겪었다).
+export const 라벨상한 = 8;
+
+const 라벨검사 = (label) => {
+    const 값 = String(label ?? '').trim();
+    if (!값) return null;                      // 비우면 아래에서 '혜택' 으로 채운다
+    // ⚠ 문구를 템플릿으로 만들면 안 된다. 서버 메시지는 프론트 사전에서 **글자 그대로** 찾아
+    //   번역되므로, `라벨은 ${n}자…` 처럼 조립하면 사전에 없어 외국어 화면에 한국어가 나간다.
+    //   숫자를 바꾸면 이 문구와 5개 언어 사전도 함께 고쳐야 한다(검사가 어긋남을 잡는다).
+    return [...값].length > 라벨상한
+        ? '라벨은 8자 이내로 입력해 주세요.'
+        : null;
+};
 const 본사관리자 = (decode_user, decode_dns) => {
     if (!decode_user || Number(decode_user?.level) < 40) return 0;
     if (Number(decode_dns?.is_main_dns) !== 1) return 0;
@@ -113,6 +137,10 @@ const benefitNoticeCtrl = {
                 return lowLevelException(req, res);
             }
             const { label, summary, icon_img, popup_title, sort, is_show, tabs } = req.body;
+            const 라벨오류 = 라벨검사(label);
+            if (라벨오류) {
+                return response(req, res, -100, 라벨오류, false);
+            }
             let obj = {
                 brand_id,
                 label: label || '혜택',
@@ -150,6 +178,10 @@ const benefitNoticeCtrl = {
                 return lowLevelException(req, res);
             }
             const { label, summary, icon_img, popup_title, sort, is_show, tabs } = req.body;
+            const 라벨오류 = 라벨검사(label);
+            if (라벨오류) {
+                return response(req, res, -100, 라벨오류, false);
+            }
             let obj = {
                 label: label || '혜택',
                 summary: summary ?? '',
