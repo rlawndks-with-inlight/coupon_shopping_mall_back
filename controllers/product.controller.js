@@ -201,6 +201,10 @@ const 안적음 = (v) => v === '' || v === null || v === undefined;
 // 진짜 숫자인지만 본다 — 'abc' 를 0 으로 접지 않기 위한 검사다.
 const 숫자인가 = (v) => 안적음(v) || /^-?\d+(\.\d+)?$/.test(String(v).replace(/,/g, '').trim());
 const 수치 = (v) => (안적음(v) ? 0 : parseFloat(String(v).replace(/,/g, '').trim()));
+// 원·개수·상태값에 소수점은 뜻이 없다. 조용히 잘라 넣으면(1000.7 → 1000, 2.9 → 2)
+// 가맹점이 넣은 값과 저장된 값이 달라진다 — 재고 0 사건과 같은 종류의 실수다.
+// 수수료만 예외다(2.5% 처럼 소수가 자연스럽다).
+const 정수인가 = (v) => 안적음(v) || Number.isInteger(수치(v));
 
 const 상품값검사 = (b = {}) => {
     // ① 이름 — NOT NULL 인데 빈 문자열·공백만도 통과하고 있었다
@@ -213,6 +217,8 @@ const 상품값검사 = (b = {}) => {
     for (const 키 of ['product_price', 'product_sale_price', 'delivery_fee', 'point_save', 'consignment_fee']) {
         if (!숫자인가(b[키])) return '금액은 숫자로만 입력해 주세요.';
         if (수치(b[키]) < 0) return '금액은 0 이상으로 입력해 주세요.';
+        // 수수료는 2.5% 처럼 소수가 자연스럽다. 나머지는 원 단위라 소수가 없다.
+        if (키 !== 'consignment_fee' && !정수인가(b[키])) return '금액은 1원 단위로 입력해 주세요.';
     }
     if (수치(b.product_price) > 컬럼한계.INT || 수치(b.product_sale_price) > 컬럼한계.INT) {
         return '금액이 너무 큽니다. 다시 확인해 주세요.';
@@ -231,13 +237,17 @@ const 상품값검사 = (b = {}) => {
         if (!숫자인가(b[키])) return '재고와 1인 구매 수량은 숫자로만 입력해 주세요.';
         if (수치(b[키]) < 0) return '재고와 1인 구매 수량은 0 이상으로 입력해 주세요.';
         if (수치(b[키]) > 컬럼한계.INT) return '재고와 1인 구매 수량이 너무 큽니다. 다시 확인해 주세요.';
+        if (!정수인가(b[키])) return '재고와 1인 구매 수량은 1개 단위로 입력해 주세요.';
     }
 
     // ⑤ 화면이 고르게 하는 값들 — 사람이 손으로 넣을 수 없는 자리라 문구도 그에 맞춘다
+    if (!안적음(b.option_mode) && !['0', '1'].includes(String(b.option_mode))) {
+        return '선택할 수 없는 값이 들어왔습니다. 화면을 새로고침한 뒤 다시 해 주세요.';
+    }
     for (const 키 of ['status', 'show_status', 'product_type', 'consignment_fee_type']) {
         if (안적음(b[키])) continue;
         const n = 수치(b[키]);
-        if (!숫자인가(b[키]) || n < 0 || n > 컬럼한계.TINYINT) {
+        if (!숫자인가(b[키]) || !정수인가(b[키]) || n < 0 || n > 컬럼한계.TINYINT) {
             return '선택할 수 없는 값이 들어왔습니다. 화면을 새로고침한 뒤 다시 해 주세요.';
         }
     }
