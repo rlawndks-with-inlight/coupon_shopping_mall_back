@@ -166,6 +166,25 @@ const 수량 = (v) => {
     const n = parseInt(v);
     return isNaN(n) ? null : Math.max(0, n);
 };
+// 재고·구매제한에 음수가 오면 **되돌려 보낸다**.
+//
+// [왜 바꿨나 — 2026-08-28]
+// 처음에는 수량() 이 음수를 0 으로 접었다. DB 에 -10 이 남지는 않게 됐지만,
+// **0 은 '품절' 이다** (구매는 `stock_qty >= 주문수량` 을 본다).
+// 그래서 가맹점이 -10 을 잘못 넣으면 '저장되었습니다' 만 뜨고 그 상품은 조용히 안 팔린다 —
+// 고치려던 증상('왜 계속 품절이지?')이 원인만 바꿔서 그대로 남아 있었다.
+// 음수는 실수이지 뜻이 아니므로, 짐작해서 고치지 말고 알려 준다.
+//
+// ⚠ 문구는 사전에서 글자 그대로 찾아 번역되므로 조립하지 말 것(템플릿 리터럴 금지).
+const 수량오류문구 = '재고와 1인 구매 수량은 0 이상으로 입력해 주세요.';
+const 수량검사 = (...값들) => {
+    for (const v of 값들) {
+        if (v === '' || v === null || v === undefined) continue;   // 비움 = 무제한
+        const n = parseInt(v);
+        if (!isNaN(n) && n < 0) return 수량오류문구;
+    }
+    return null;
+};
 const 가격정리 = (obj) => {
     const 음수없이 = (v) => Math.max(0, isNaN(parseInt(v)) ? 0 : parseInt(v));
     obj.product_sale_price = 음수없이(obj.product_sale_price);
@@ -826,6 +845,10 @@ const productCtrl = {
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
             }
+            const 수량잘못 = 수량검사(stock_qty, purchase_limit);
+            if (수량잘못) {
+                return response(req, res, -100, 수량잘못, false);
+            }
             가격정리(obj);
             if (typeof description_images == 'string') {
                 description_images = JSON.parse(description_images ?? '[]')
@@ -1068,6 +1091,10 @@ const productCtrl = {
                 if (req.body[`category_id${i}`]) {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
                 }
+            }
+            const 수량잘못 = 수량검사(stock_qty, purchase_limit);
+            if (수량잘못) {
+                return response(req, res, -100, 수량잘못, false);
             }
             가격정리(obj);
 
