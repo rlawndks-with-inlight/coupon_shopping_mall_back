@@ -10,6 +10,15 @@ const table_name = 'product_categories';
 
 
 
+// 카테고리 이름은 varchar(50) 이고 손님 메뉴에 그대로 뜬다.
+// 빈 이름은 메뉴에 빈 칸으로 나가고, 50자를 넘으면 DB 가 막는데 화면엔 사유가 안 보인다.
+// ⚠ 문구는 사전에서 글자 그대로 찾으므로 조립하지 말 것.
+const 이름검사 = (category_name) => {
+    const v = String(category_name ?? '').trim();
+    if (!v) return '카테고리 이름을 입력해 주세요.';
+    if ([...v].length > 50) return '카테고리 이름은 50자 이내로 입력해 주세요.';
+    return null;
+};
 const productCategoryCtrl = {
     list: async (req, res, next) => {
         try {
@@ -116,6 +125,8 @@ const productCategoryCtrl = {
                 brand_id,
                 another_id = 0,
             } = req.body;
+            const 이름잘못 = 이름검사(category_name);
+            if (이름잘못) { return response(req, res, -100, 이름잘못, false); }
             let files = settingFiles(req.files);
             let obj = {
                 category_img,
@@ -175,6 +186,8 @@ const productCategoryCtrl = {
             // 소유 검증이 없으면 id 만 바꿔 남의 가맹점 카테고리를 수정할 수 있었다.
             const target = await loadOwnedRow(readPool, table_name, id, decode_user);
             if (!target) return lowLevelException(req, res);
+            const 이름잘못 = 이름검사(category_name);
+            if (이름잘못) { return response(req, res, -100, 이름잘못, false); }
             let files = settingFiles(req.files);
             let obj = {
                 category_img,

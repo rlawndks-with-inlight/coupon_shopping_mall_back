@@ -53,6 +53,17 @@ const invalidateReviewCache = async (brandId, productId = null, reviewId = null)
     }
 };
 
+// 별점은 1~5 다. 화면은 별 다섯 개라 그 밖의 값이 나올 수 없지만, 요청은 화면을 안 거쳐도 보낼 수 있다.
+// [확인 2026-08-28] 운영 API 로 **-5 가 그대로 저장**됐다(scope 는 tinyint 라 999·문자만 DB 가 막았고
+// 그때도 화면엔 '성공' 이 떴다). 음수 별점은 평균 별점을 끌어내려 상품 평판을 망가뜨린다.
+// ⚠ 문구는 사전에서 글자 그대로 찾으므로 조립하지 말 것.
+const 별점검사 = (scope) => {
+    const v = String(scope ?? '').trim();
+    if (v === '') return null;                       // 안 보냈으면 기존 동작 그대로
+    if (!/^\d+$/.test(v)) return '별점은 1~5 사이로 입력해 주세요.';
+    const n = parseInt(v, 10);
+    return (n < 1 || n > 5) ? '별점은 1~5 사이로 입력해 주세요.' : null;
+};
 const productReviewCtrl = {
 
     list: async (req, res, next) => {
@@ -208,6 +219,8 @@ const productReviewCtrl = {
                 user_id,
             } = req.body;
 
+            const 별점잘못 = 별점검사(scope);
+            if (별점잘못) { return response(req, res, -100, 별점잘못, false); }
             const brandId = brand_id || decode_dns?.id || 0;
             const productIdNum = parseInt(product_id, 10) || 0;
 
@@ -284,6 +297,8 @@ const productReviewCtrl = {
             const loginLevel = decode_user?.level ?? 0;
 
             // 권한: 관리자(레벨>=10) or 리뷰 작성자 본인
+            const 별점잘못2 = 별점검사(scope);
+            if (별점잘못2) { return response(req, res, -100, 별점잘못2, false); }
             if (!(loginLevel >= 10 || ownerUserId === loginUserId)) {
                 return lowLevelException(req, res);
             }

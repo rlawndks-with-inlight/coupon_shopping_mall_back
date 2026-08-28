@@ -23,6 +23,16 @@ const maskGuestName = (name) => {
 };
 
 
+// 글 제목은 비어 있으면 목록에서 아무것도 안 보인다. 운영 API 로 빈 제목이 그대로 저장됐다.
+// (옛 데이터에도 빈 제목 글이 3건 남아 있다 — 그건 건드리지 않았다)
+// varchar(255) 라 그보다 길면 DB 가 막는데, 화면엔 사유가 안 보여 무엇을 고칠지 알 수 없다.
+// ⚠ 문구는 사전에서 글자 그대로 찾으므로 조립하지 말 것.
+const 제목검사 = (post_title) => {
+    const v = String(post_title ?? '').trim();
+    if (!v) return '제목을 입력해 주세요.';
+    if ([...v].length > 255) return '제목은 255자 이내로 입력해 주세요.';
+    return null;
+};
 const postCtrl = {
     list: async (req, res, next) => {
         try {
@@ -248,6 +258,8 @@ const postCtrl = {
                 // 비회원 1:1문의. 회원 글에는 들어오지 않는다.
                 none_user_name, none_user_phone, password,
             } = req.body;
+            const 제목잘못 = 제목검사(post_title);
+            if (제목잘못) { return response(req, res, -100, 제목잘못, false); }
             let files = settingFiles(req.files);
 
             let obj = {
@@ -300,6 +312,8 @@ const postCtrl = {
                 post_title_img,
                 category_id, parent_id = -1, post_title, post_content, is_reply = 0, id
             } = req.body;
+            const 제목잘못 = 제목검사(post_title);
+            if (제목잘못) { return response(req, res, -100, 제목잘못, false); }
             let files = settingFiles(req.files);
             let obj = {
                 post_title_img,
