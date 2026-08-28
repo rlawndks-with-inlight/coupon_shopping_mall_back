@@ -166,25 +166,88 @@ const 수량 = (v) => {
     const n = parseInt(v);
     return isNaN(n) ? null : Math.max(0, n);
 };
-// 재고·구매제한에 음수가 오면 **되돌려 보낸다**.
+// ── 상품 저장값 검사 ────────────────────────────────────────────────────
 //
-// [왜 바꿨나 — 2026-08-28]
-// 처음에는 수량() 이 음수를 0 으로 접었다. DB 에 -10 이 남지는 않게 됐지만,
-// **0 은 '품절' 이다** (구매는 `stock_qty >= 주문수량` 을 본다).
-// 그래서 가맹점이 -10 을 잘못 넣으면 '저장되었습니다' 만 뜨고 그 상품은 조용히 안 팔린다 —
-// 고치려던 증상('왜 계속 품절이지?')이 원인만 바꿔서 그대로 남아 있었다.
-// 음수는 실수이지 뜻이 아니므로, 짐작해서 고치지 말고 알려 준다.
+// [왜 필요한가 — 2026-08-28 운영 API 로 전수 확인]
+// 아래가 **전부 '저장되었습니다' 로 통과**하고 있었다.
+//   · 적립금 -100 · 적립금 999,999,999
+//   · 위탁수수료 -50 · 위탁수수료 1000%
+//   · 배송비 99,999,999,999
+//   · 상품명 빈 값 · 상품명 공백만
+//   · ⚠ 가장 위험 — **가격 칸에 문자를 넣으면 0 원으로 저장됐다**
+//     (`isNaN(parseInt(v)) ? 0 : ...` 이라 'abc' 가 0 이 된다. 10,000원 상품이 0원이 된다)
 //
-// ⚠ 문구는 사전에서 글자 그대로 찾아 번역되므로 조립하지 말 것(템플릿 리터럴 금지).
-const 수량오류문구 = '재고와 1인 구매 수량은 0 이상으로 입력해 주세요.';
-const 수량검사 = (...값들) => {
-    for (const v of 값들) {
-        if (v === '' || v === null || v === undefined) continue;   // 비움 = 무제한
-        const n = parseInt(v);
-        if (!isNaN(n) && n < 0) return 수량오류문구;
+// DB 가 대신 막아 준 것들도 있었다(가격 21억 초과 · 재고 21억 초과 · 상태값 999 · 상품명 150자 초과).
+// 그런데 가맹점 화면에는 **'상품 저장중 에러'** 로만 떠서 무엇을 고쳐야 하는지 알 수 없었다.
+// 그래서 DB 한계와 같은 선을 우리가 먼저 긋고, 무엇이 잘못됐는지 말해 준다.
+//
+// [원칙] 뜻이 성립하지 않는 값은 **짐작해서 고치지 말고 되돌려 보낸다.**
+//   0 으로 접거나 잘라 넣으면 '저장은 됐는데 왜 이러지' 가 된다(재고 0 = 품절 사건과 같은 실수).
+//
+// ⚠ 문구는 사전에서 글자 그대로 찾아 번역된다 — 조립(템플릿 리터럴)하지 말 것.
+const 컬럼한계 = {
+    INT: 2147483647,   // products 의 int 컬럼 (가격·적립·재고·구매제한)
+    TINYINT: 127,      // status · show_status · product_type · consignment_fee_type
+    이름: 150,          // varchar(150) · NOT NULL
+    코드: 50,           // varchar(50)
+};
+// 배송비·위탁수수료는 double 이라 DB 가 범위를 안 막는다 — 우리가 선을 긋는다.
+const 배송비상한 = 10000000;    // 1천만원. 도서산간 실비를 넉넉히 덮는다.
+const 적립상한 = 10000000;      // 1천만원
+
+// 빈 값은 '안 적었다' 이지 '잘못됐다' 가 아니다 — 기존대로 0/무제한으로 본다.
+const 안적음 = (v) => v === '' || v === null || v === undefined;
+// 화면이 FormData 로 보내므로 숫자도 문자열로 온다. 콤마도 붙을 수 있다.
+// 진짜 숫자인지만 본다 — 'abc' 를 0 으로 접지 않기 위한 검사다.
+const 숫자인가 = (v) => 안적음(v) || /^-?\d+(\.\d+)?$/.test(String(v).replace(/,/g, '').trim());
+const 수치 = (v) => (안적음(v) ? 0 : parseFloat(String(v).replace(/,/g, '').trim()));
+
+const 상품값검사 = (b = {}) => {
+    // ① 이름 — NOT NULL 인데 빈 문자열·공백만도 통과하고 있었다
+    const 이름 = String(b.product_name ?? '').trim();
+    if (!이름) return '상품명을 입력해 주세요.';
+    if ([...이름].length > 컬럼한계.이름) return '상품명은 150자 이내로 입력해 주세요.';
+    if ([...String(b.product_code ?? '')].length > 컬럼한계.코드) return '상품코드는 50자 이내로 입력해 주세요.';
+
+    // ② 금액 — 숫자가 아닌 것을 0 으로 접지 않는다
+    for (const 키 of ['product_price', 'product_sale_price', 'delivery_fee', 'point_save', 'consignment_fee']) {
+        if (!숫자인가(b[키])) return '금액은 숫자로만 입력해 주세요.';
+        if (수치(b[키]) < 0) return '금액은 0 이상으로 입력해 주세요.';
+    }
+    if (수치(b.product_price) > 컬럼한계.INT || 수치(b.product_sale_price) > 컬럼한계.INT) {
+        return '금액이 너무 큽니다. 다시 확인해 주세요.';
+    }
+    if (수치(b.delivery_fee) > 배송비상한) return '배송비가 너무 큽니다. 다시 확인해 주세요.';
+    if (수치(b.point_save) > 적립상한) return '적립금이 너무 큽니다. 다시 확인해 주세요.';
+
+    // ③ 위탁 수수료 — 타입 1 은 퍼센트다(화면 표기 '%'). 1000% 가 그대로 저장되고 있었다.
+    if (String(b.consignment_fee_type ?? 0) === '1' && 수치(b.consignment_fee) > 100) {
+        return '수수료를 퍼센트로 쓸 때는 0~100 사이여야 합니다.';
+    }
+
+    // ④ 재고·구매제한
+    for (const 키 of ['stock_qty', 'purchase_limit']) {
+        if (안적음(b[키])) continue;                       // 비움 = 무제한
+        if (!숫자인가(b[키])) return '재고와 1인 구매 수량은 숫자로만 입력해 주세요.';
+        if (수치(b[키]) < 0) return '재고와 1인 구매 수량은 0 이상으로 입력해 주세요.';
+        if (수치(b[키]) > 컬럼한계.INT) return '재고와 1인 구매 수량이 너무 큽니다. 다시 확인해 주세요.';
+    }
+
+    // ⑤ 화면이 고르게 하는 값들 — 사람이 손으로 넣을 수 없는 자리라 문구도 그에 맞춘다
+    for (const 키 of ['status', 'show_status', 'product_type', 'consignment_fee_type']) {
+        if (안적음(b[키])) continue;
+        const n = 수치(b[키]);
+        if (!숫자인가(b[키]) || n < 0 || n > 컬럼한계.TINYINT) {
+            return '선택할 수 없는 값이 들어왔습니다. 화면을 새로고침한 뒤 다시 해 주세요.';
+        }
     }
     return null;
 };
+
+// ⚠ 재고에서 **0 은 '품절'** 이다 (구매가 `stock_qty >= 주문수량` 을 본다).
+//   그래서 음수를 0 으로 접는 것은 고친 게 아니었다 — 가맹점은 '저장되었습니다' 만 보고
+//   그 상품은 조용히 안 팔린다. 고치려던 증상이 원인만 바꿔 남아 있었다.
+//   위 상품값검사() 가 저장 전에 되돌려 보낸다. 아래 접기는 마지막 방어로만 남긴다.
 const 가격정리 = (obj) => {
     const 음수없이 = (v) => Math.max(0, isNaN(parseInt(v)) ? 0 : parseInt(v));
     obj.product_sale_price = 음수없이(obj.product_sale_price);
@@ -845,9 +908,9 @@ const productCtrl = {
             if (typeof sub_images == 'string') {
                 sub_images = JSON.parse(sub_images ?? '[]')
             }
-            const 수량잘못 = 수량검사(stock_qty, purchase_limit);
-            if (수량잘못) {
-                return response(req, res, -100, 수량잘못, false);
+            const 값잘못 = 상품값검사(req.body);
+            if (값잘못) {
+                return response(req, res, -100, 값잘못, false);
             }
             가격정리(obj);
             if (typeof description_images == 'string') {
@@ -1092,9 +1155,9 @@ const productCtrl = {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
                 }
             }
-            const 수량잘못 = 수량검사(stock_qty, purchase_limit);
-            if (수량잘못) {
-                return response(req, res, -100, 수량잘못, false);
+            const 값잘못 = 상품값검사(req.body);
+            if (값잘못) {
+                return response(req, res, -100, 값잘못, false);
             }
             가격정리(obj);
 
