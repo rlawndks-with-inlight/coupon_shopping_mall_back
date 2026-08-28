@@ -311,6 +311,31 @@ const brandCtrl = {
       for (const k of JSON_COLS) {
         if (req.body[k] !== undefined) obj[k] = JSON.stringify(req.body[k]);
       }
+      // 배송비 정책에 말도 안 되는 값이 들어가지 않게 한다.
+      //
+      // [왜] setting_obj 는 JSON 컬럼이라 **DB 가 아무것도 안 막는다.**
+      //   2026-08-28 운영 API 로 확인해 보니 배송비 -5,000원과 99,999,999,999원이
+      //   그대로 저장됐다. 이 값은 상품상세·장바구니 표시와 **서버 결제 재계산**이 함께 읽는다
+      //   (pay.controller 의 recalcOrderAmount). 즉 손님 청구액에 바로 들어간다.
+      //   음수 배송비는 결제 금액을 깎고, 천문학적 값은 주문을 통째로 막는다.
+      // ⚠ 문구는 사전에서 글자 그대로 찾으므로 조립하지 말 것.
+      const 배송비상한 = 10000000;   // 1천만원
+      if (obj.setting_obj !== undefined) {
+        const 수 = (v) => {
+          if (v === '' || v === null || v === undefined) return 0;
+          const t = String(v).replace(/,/g, '').trim();
+          return /^-?\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN;
+        };
+        const 설정 = req.body.setting_obj ?? {};
+        for (const 키 of ['delivery_fee_default', 'free_ship_min']) {
+          if (설정[키] === undefined) continue;
+          const n = 수(설정[키]);
+          if (isNaN(n)) return response(req, res, -100, '배송비 설정은 숫자로만 입력해 주세요.', false);
+          if (n < 0) return response(req, res, -100, '배송비 설정은 0 이상으로 입력해 주세요.', false);
+          if (n > 배송비상한) return response(req, res, -100, '배송비 설정 금액이 너무 큽니다. 다시 확인해 주세요.', false);
+        }
+      }
+
       let files = settingFiles(req.files);
       obj = { ...obj, ...files };
 
