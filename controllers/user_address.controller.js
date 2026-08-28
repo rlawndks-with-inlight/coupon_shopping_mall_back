@@ -40,6 +40,27 @@ const invalidateUserAddressCache = async (brandId, userId) => {
     }
 };
 
+// 배송지는 물건이 실제로 가는 곳이다. 받는사람·연락처가 비면 배송이 막히고,
+// 연락처에 글자가 섞이면 택배사 연동에서 그대로 실패한다.
+// [확인 2026-08-28] 운영 API 로 받는사람 빈 값과 연락처 'abcdefg' 가 그대로 저장됐다.
+// ⚠ 이 값들은 암호화 저장이라 DB 에서 눈으로 찾기 어렵다 — 들어가기 전에 막아야 한다.
+// ⚠ 문구는 사전에서 글자 그대로 찾으므로 조립하지 말 것.
+const 배송지검사 = (b = {}) => {
+    const 주소 = String(b.addr ?? '').trim();
+    if (!주소) return '주소를 입력해 주세요.';
+    if ([...주소].length > 1024) return '주소가 너무 깁니다. 다시 확인해 주세요.';
+    // 받는사람·연락처는 주소록 확장 칸이라 안 보내는 화면도 있다 — 보냈을 때만 본다.
+    if (b.receiver !== undefined) {
+        const 받는사람 = String(b.receiver ?? '').trim();
+        if (!받는사람) return '받는 분 이름을 입력해 주세요.';
+        if ([...받는사람].length > 50) return '받는 분 이름은 50자 이내로 입력해 주세요.';
+    }
+    if (b.phone !== undefined && String(b.phone ?? '').trim() !== '') {
+        const 전화 = String(b.phone).replace(/[-\s]/g, '');
+        if (!/^[0-9+]{7,20}$/.test(전화)) return '연락처를 숫자로 정확히 입력해 주세요.';
+    }
+    return null;
+};
 const userAddressCtrl = {
     list: async (req, res, next) => {
         try {
@@ -219,6 +240,8 @@ const userAddressCtrl = {
                 city,            // 도시(해외배송)
                 state_region,    // 주/지역(해외배송)
             } = req.body;
+            const 배송지잘못 = 배송지검사(req.body);
+            if (배송지잘못) { return response(req, res, -100, 배송지잘못, false); }
 
             const brandId = brand_id || decode_dns?.id || 0;
             const loginUserId = decode_user?.id ?? 0;
@@ -306,6 +329,8 @@ const userAddressCtrl = {
                 city,
                 state_region,
             } = req.body;
+            const 배송지잘못 = 배송지검사(req.body);
+            if (배송지잘못) { return response(req, res, -100, 배송지잘못, false); }
 
             const loginUserId = decode_user?.id ?? 0;
             const loginLevel = decode_user?.level ?? 0;

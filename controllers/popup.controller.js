@@ -9,6 +9,16 @@ import { invalidateShopSettingCache } from "../utils.js/cache.js";
 import { readPool } from "../config/db-pool.js";
 const table_name = 'popups';
 
+// 팝업 제목은 손님 화면에 그대로 뜬다. 비어 있으면 빈 팝업이 나간다.
+// [확인 2026-08-28] 운영 API 로 제목 없는 팝업 3개가 그대로 만들어졌다(popup_title=NULL).
+// varchar(100) 이라 그보다 길면 DB 가 막는데 화면엔 사유가 안 보인다.
+// ⚠ 문구는 사전에서 글자 그대로 찾으므로 조립하지 말 것.
+const 팝업제목검사 = (popup_title) => {
+    const v = String(popup_title ?? '').trim();
+    if (!v) return '팝업 제목을 입력해 주세요.';
+    if ([...v].length > 100) return '팝업 제목은 100자 이내로 입력해 주세요.';
+    return null;
+};
 const popupCtrl = {
     list: async (req, res, next) => {
         try {
@@ -72,6 +82,8 @@ const popupCtrl = {
             const {
                 popup_title, popup_content, open_s_dt, open_e_dt, brand_id
             } = req.body;
+            const 제목잘못 = 팝업제목검사(popup_title);
+            if (제목잘못) { return response(req, res, -100, 제목잘못, false); }
             let obj = {
                 popup_title, popup_content, open_s_dt, open_e_dt,
                 // body 의 brand_id 를 그대로 insert 하면 남의 가맹점 화면에 팝업을 띄울 수 있다.
@@ -111,6 +123,8 @@ const popupCtrl = {
                 popup_title, popup_content, open_s_dt, open_e_dt,
                 id
             } = req.body;
+            const 제목잘못 = 팝업제목검사(popup_title);
+            if (제목잘못) { return response(req, res, -100, 제목잘못, false); }
             // updateQuery 는 WHERE id=? 만 걸어 브랜드 스코프가 없다. 소유 검증을 먼저 한다.
             const target = await loadOwnedRow(readPool, table_name, id, decode_user);
             if (!target) return lowLevelException(req, res);
