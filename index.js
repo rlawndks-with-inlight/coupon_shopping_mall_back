@@ -30,11 +30,25 @@ app.use(bodyParser.json({ limit: '100mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '100mb' }));
 app.use(cookieParser());
 
+// 한 IP 가 분당 300건을 넘기면 막는다. `trust proxy` 를 켜 두었으므로 손님은 각자
+// 자기 IP 로 계산된다 — 사람 한 명이 몰을 둘러보는 정도로는 걸리지 않는다.
+//
+// ⚠ [2026-08-31] 그런데 **프론트 서버만은 예외로 두어야 한다.**
+//   프론트는 페이지를 그릴 때마다 `_app.js` 의 getInitialProps 에서 `/api/domain` 을 한 번 부른다.
+//   그 호출은 손님 한 명이 아니라 **모든 손님의 페이지 요청이 한 IP(13.125.9.31)로 모인 것**이다.
+//   그래서 분당 300건 = **몰 전체가 초당 5페이지**에서 막혔다.
+//   넘으면 API 가 429 를 주고, 프론트는 그 응답을 '없는 몰' 로 읽어 **손님에게 404 를 띄웠다**
+//   (실측: 동시 20명이면 거의 모든 요청이 404). 오픈 후 사람이 몰리면 몰이 통째로 안 보인다.
+//
+//   손님별 보호는 그대로 두고 내부 서버만 뺀다. 주소는 환경변수로 바꿀 수 있게 한다.
+const 제한제외IP = String(process.env.RATE_LIMIT_SKIP_IPS ?? '13.125.9.31,127.0.0.1,::1,::ffff:127.0.0.1')
+    .split(',').map((s) => s.trim()).filter(Boolean);
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 300,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => 제한제외IP.includes(req.ip),
     message: { result: -429, message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', data: false },
 });
 app.use('/api', apiLimiter);
