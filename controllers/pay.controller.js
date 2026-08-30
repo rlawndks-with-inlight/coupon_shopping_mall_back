@@ -69,6 +69,10 @@ const 결제실패응답 = async (trans_id, req, res, code, msg, data) => {
 //   여기서 나는 실패는 전부 설정·시스템 문제이고, 손님이 할 수 있는 일은 '나중에 다시' 뿐이다.
 //
 // 사유는 바로 위 logger.error 로 logs/error 에 30일 남는다 — 진단에 필요한 것은 하나도 안 잃는다.
+// 설정 누락(결제모듈 미입력·Base URL 없음)도 같은 자리다. 예전엔 손님 화면에
+//   'MID=client_id, 결제키=API키 입력' · 'FORSPAY_API_BASE 설정이 필요합니다' 가 그대로 떴다 —
+//   손님은 알 필요도 없고 알아도 할 수 있는 게 없다. 고쳐야 할 사람은 가맹점·본사다.
+//   그래서 **사유는 로그에 brand_id 와 함께** 남기고 화면에는 같은 한 문장을 보낸다.
 // 페이레터의 결제요청 실패도 같은 단계라 같은 문구를 쓴다.
 // ⚠ 헥토·핀트리의 result_msg(승인 거절 사유)는 다르다 — 그때는 손님이 카드번호를 이미 넣었고
 //   '한도 초과'처럼 손님이 손쓸 수 있는 사유라서 그대로 보여 준다. 그 자리는 건드리지 말 것.
@@ -717,7 +721,8 @@ const payCtrl = {
           // 인증정보는 payment_modules 테이블에서 조회 (MID=client_id, 결제키=API키)
           const creds = await getPayletterCreds(brand_id);
           if (!creds?.client_id || !creds?.payment_key) {
-            return 결제실패응답(trans_id, req, res, -100, "페이레터 결제모듈 설정이 필요합니다. (관리자 결제모듈에 MID=client_id, 결제키=API키 입력)", false);
+            logger.error(`[payletter] 결제모듈 설정 누락 — brand_id=${brand_id} (관리자 결제모듈에 MID=client_id, 결제키=API키 입력 필요)`);
+            return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
           }
           // return/callback 주소는 요청에서 유도 (별도 env 불필요)
           const front_url = (req.body.front_url || "").toString().trim();
@@ -776,10 +781,12 @@ const payCtrl = {
           const creds = await getForspayCreds(brand_id);
           진단.app_key_len = String(creds?.app_key ?? '').length;
           if (!creds?.app_key) {
-            return 결제실패응답(trans_id, req, res, -100, "포스페이 결제모듈 설정이 필요합니다. (결제모듈 '결제키'에 App key 입력)", false);
+            logger.error(`[forspay] 결제모듈 설정 누락 — brand_id=${brand_id} (결제모듈 '결제키'에 App key 입력 필요)`);
+            return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
           }
           if (!FORSPAY_API_BASE || FORSPAY_API_BASE.includes('REPLACE')) {
-            return 결제실패응답(trans_id, req, res, -100, "포스페이 Base URL(FORSPAY_API_BASE) 설정이 필요합니다.", false);
+            logger.error(`[forspay] Base URL 미설정 — brand_id=${brand_id} (서버 .env 의 FORSPAY_API_BASE 필요)`);
+            return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
           }
           // 구매자가 고른 결제수단 → 포스페이 파라미터 매핑 (미지정 시 신용카드)
           const fsMethod = getForspayMethod(pay_method) || getForspayMethod('card');
@@ -787,7 +794,8 @@ const payCtrl = {
           진단.pg_method_id = fsMethod?.pg_method_id ?? '-';
           진단.route = fsMethod?.route ?? '-';
           if (fsMethod?.pending) {
-            return 결제실패응답(trans_id, req, res, -100, `'${fsMethod.label}'은(는) 아직 준비 중인 결제수단입니다. (협력사 확인 필요)`, false);
+            logger.error(`[forspay] 준비 중인 결제수단 요청 — brand_id=${brand_id} method=${fsMethod.label}`);
+            return 결제실패응답(trans_id, req, res, -100, '아직 준비 중인 결제수단입니다. 다른 방법으로 결제해 주세요.', false);
           }
           // PG(페이레터/나이스) 라우팅: 수단별 지정 → 모듈 기본(MID) → 미지정 시 포스페이 자동
           const routedProvider = creds?.method_provider?.[fsMethod.key];
