@@ -11,6 +11,11 @@ import { decRow, decRows, decListContent, blindIndex, encForSave, decField } fro
 import { PII_FIELD_TYPES } from "../utils.js/order-form.js";
 import { orderPasswordCandidates, matchesOrderPassword } from "../utils.js/order-password.js";
 const table_name = 'transactions';
+// 결제창(카드·간편·휴대폰)만 열고 승인 안 난 '버려진 결제대기'를 고객 주문조회에서 숨긴다.
+// 결제대기(trx_status 0) 중에서도 무통장(10)·상품권(11)·수기(1,3)·가상계좌 발급건은
+// 정당한 입금/확인 대기라 반드시 남긴다 — 그래서 카드/간편/휴대폰 창 결제수단만 콕 집어 제외한다.
+// (승인번호·가상계좌가 있으면 이미 진행된 것이라 예외로 남긴다. 관리자 목록에는 적용하지 않는다.)
+const HIDE_ABANDONED_PENDING = ` AND NOT (${table_name}.trx_status=0 AND (${table_name}.appr_num IS NULL OR ${table_name}.appr_num='') AND (${table_name}.virtual_acct_num IS NULL OR ${table_name}.virtual_acct_num='') AND ${table_name}.trx_method IN (2,4,21,30,31,40,41)) `;
 
 const transactionCtrl = {
     list: async (req, res, next) => {
@@ -67,6 +72,11 @@ const transactionCtrl = {
             if (type == 'user' || isCustomer) {
                 sql += ` AND user_id=? `;
                 params.push(decode_user?.id ?? -1);
+            }
+            // 고객이 볼 때만 '버려진 결제대기'(결제창만 열고 승인 안 난 카드/간편/휴대폰 결제)를 숨긴다.
+            // 관리자·판매자(level>=10)는 정산·확인을 위해 전부 본다.
+            if (isCustomer) {
+                sql += HIDE_ABANDONED_PENDING;
             }
             if (trx_status) {
                 sql += ` AND trx_status=? `;
@@ -231,10 +241,11 @@ const transactionCtrl = {
                 // 두 형태를 모두 후보로 넣어 기존 주문 조회가 깨지지 않게 한다.
                 const pwCandidates = orderPasswordCandidates(password);
                 const pwPlaceholders = pwCandidates.map(() => '?').join(',');
+                // 비회원 주문조회는 항상 고객 관점 — '버려진 결제대기'(결제창만 열고 승인 안 난 건)를 숨긴다.
                 let list = await readPool.query(
                     `SELECT * FROM ${table_name}
                      WHERE (REPLACE(REPLACE(REPLACE(buyer_phone,'-',''),' ',''),'.','') = ? OR buyer_phone_idx = ?)
-                       AND password IN (${pwPlaceholders}) AND brand_id=? ORDER BY id DESC LIMIT 50`,
+                       AND password IN (${pwPlaceholders}) AND brand_id=? ${HIDE_ABANDONED_PENDING} ORDER BY id DESC LIMIT 50`,
                     [phoneDigits, blindIndex(buyer_phone), ...pwCandidates, brandId]
                 );
                 list = list[0];
