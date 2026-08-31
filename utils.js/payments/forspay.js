@@ -48,9 +48,11 @@ export const createSession = async ({
     pg_method_id = 0, pg_provider_id, route, foreign_method, return_url,
     user_agent = 'WP', buyer_phone, buyer_email, billaddrcity,
     payment_currency = 'KRW', currency, order_currency,
+    // 'direct_pg_ui'(PG 페이지 URL) 또는 'forspay_ui'(포스페이 자체 결제 팝업 + 메시징).
+    checkout_mode = 'direct_pg_ui',
 } = {}) => {
     const body = {
-        checkout_mode: 'direct_pg_ui',
+        checkout_mode,
         amount: parseInt(amount, 10) || 0,
         item_name: (item_name ?? '상품').toString().slice(0, 100),
         buyer_name: (buyer_name ?? '').toString().slice(0, 50),
