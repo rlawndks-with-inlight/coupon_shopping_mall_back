@@ -813,7 +813,7 @@ const payCtrl = {
           // 'direct_pg_ui'(PG 호스팅 페이지 URL). 결제 핵심이라 env 플래그로 켜고 끈다 —
           // 기본은 direct_pg_ui 라 배포만으로 동작이 바뀌지 않는다. 테스트 후 FORSPAY_CHECKOUT_MODE=forspay_ui 로 활성화.
           // 두 방식 모두 정산의 진실원은 noti_url 웹훅(forspayCallback) — 그건 공통으로 이미 처리된다.
-          const checkout_mode = (process.env.FORSPAY_CHECKOUT_MODE === 'forspay_ui') ? 'forspay_ui' : 'direct_pg_ui';
+          const requested_mode = (process.env.FORSPAY_CHECKOUT_MODE === 'forspay_ui') ? 'forspay_ui' : 'direct_pg_ui';
 
           const session = await forspayCreateSession({
             app_key: creds.app_key,
@@ -830,30 +830,29 @@ const payCtrl = {
             buyer_phone,
             buyer_email: req.body.buyer_email,
             billaddrcity: req.body.billaddrcity,
-            checkout_mode,
+            checkout_mode: requested_mode,
           });
 
           // return/webhook 매칭용 ord_num을 거래에 동기화(정규화 값). (두 방식 공통)
           await updateQuery(table_name, { ord_num: order_no }, trans_id);
 
-          if (checkout_mode === 'forspay_ui') {
-            // 포스페이 자체 결제 팝업. 프론트가 embed.popup_url 을 window.open 하고,
-            // 팝업의 FORSPAY_READY 수신 뒤 embed.init_payload 를 postMessage 로 넘긴다(문서 규격).
-            const embed = session?.embed;
-            if (!embed?.popup_url) {
-              logger.error(`[forspay] forspay_ui popup_url 없음 — resp=${JSON.stringify(session)}`);
-              return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
-            }
+          // ⚠ 포스페이가 '실제로 준' 방식으로 분기한다(요청 모드가 아니라).
+          //   forspay_ui 를 요청해도 계정/수단이 미지원이면 포스페이가 direct_pg_ui(launch_page_url)로 강등해 준다
+          //   (2026-09-01 실측: card/pg_method_id=0 은 forspay_ui 요청해도 direct_pg_ui 로 내려옴).
+          //   그래서 embed.popup_url 이 오면 forspay_ui, 아니면 launch_page_url(direct_pg_ui)로 응답한다.
+          if (session?.embed?.popup_url) {
+            // 포스페이 자체 결제 팝업. 프론트가 embed.popup_url 을 window.open,
+            // 팝업 FORSPAY_READY 수신 뒤 embed.init_payload 를 postMessage(문서 규격).
             return response(req, res, 100, "success", {
               id: trans_id,
               checkout_mode: 'forspay_ui',
               order_code: session?.order_code,
-              popup_url: embed.popup_url,
-              init_payload: embed.init_payload,
+              popup_url: session.embed.popup_url,
+              init_payload: session.embed.init_payload,
             });
           }
 
-          // direct_pg_ui (기존): PG 결제창 URL
+          // direct_pg_ui: PG 결제창 URL
           let launch_page_url = session?.launch_page_url;
           if (!launch_page_url && session?.order_code) {
             // create가 launch_page_url을 안 준 경우 /pay 로 조회
