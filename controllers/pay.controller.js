@@ -809,6 +809,12 @@ const payCtrl = {
           진단.ord_num = order_no;
           const return_url = `${backBase}/api/pays/forspay/return?front=${encodeURIComponent(front_url)}&trans=${trans_id}&ord=${encodeURIComponent(order_no)}`;
 
+          // 결제창 방식: 'forspay_ui'(포스페이 자체 결제 팝업 + FORSPAY_READY/RESULT 메시징) 또는
+          // 'direct_pg_ui'(PG 호스팅 페이지 URL). 결제 핵심이라 env 플래그로 켜고 끈다 —
+          // 기본은 direct_pg_ui 라 배포만으로 동작이 바뀌지 않는다. 테스트 후 FORSPAY_CHECKOUT_MODE=forspay_ui 로 활성화.
+          // 두 방식 모두 정산의 진실원은 noti_url 웹훅(forspayCallback) — 그건 공통으로 이미 처리된다.
+          const requested_mode = (process.env.FORSPAY_CHECKOUT_MODE === 'forspay_ui') ? 'forspay_ui' : 'direct_pg_ui';
+
           const session = await forspayCreateSession({
             app_key: creds.app_key,
             amount,
@@ -824,8 +830,29 @@ const payCtrl = {
             buyer_phone,
             buyer_email: req.body.buyer_email,
             billaddrcity: req.body.billaddrcity,
+            checkout_mode: requested_mode,
           });
 
+          // return/webhook 매칭용 ord_num을 거래에 동기화(정규화 값). (두 방식 공통)
+          await updateQuery(table_name, { ord_num: order_no }, trans_id);
+
+          // ⚠ 포스페이가 '실제로 준' 방식으로 분기한다(요청 모드가 아니라).
+          //   forspay_ui 를 요청해도 계정/수단이 미지원이면 포스페이가 direct_pg_ui(launch_page_url)로 강등해 준다
+          //   (2026-09-01 실측: card/pg_method_id=0 은 forspay_ui 요청해도 direct_pg_ui 로 내려옴).
+          //   그래서 embed.popup_url 이 오면 forspay_ui, 아니면 launch_page_url(direct_pg_ui)로 응답한다.
+          if (session?.embed?.popup_url) {
+            // 포스페이 자체 결제 팝업. 프론트가 embed.popup_url 을 window.open,
+            // 팝업 FORSPAY_READY 수신 뒤 embed.init_payload 를 postMessage(문서 규격).
+            return response(req, res, 100, "success", {
+              id: trans_id,
+              checkout_mode: 'forspay_ui',
+              order_code: session?.order_code,
+              popup_url: session.embed.popup_url,
+              init_payload: session.embed.init_payload,
+            });
+          }
+
+          // direct_pg_ui: PG 결제창 URL
           let launch_page_url = session?.launch_page_url;
           if (!launch_page_url && session?.order_code) {
             // create가 launch_page_url을 안 준 경우 /pay 로 조회
@@ -840,11 +867,9 @@ const payCtrl = {
             return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
           }
 
-          // return/webhook 매칭용 ord_num을 거래에 동기화(정규화 값)
-          await updateQuery(table_name, { ord_num: order_no }, trans_id);
-
           return response(req, res, 100, "success", {
             id: trans_id,
+            checkout_mode: 'direct_pg_ui',
             order_code: session?.order_code,
             launch_page_url,
           });
