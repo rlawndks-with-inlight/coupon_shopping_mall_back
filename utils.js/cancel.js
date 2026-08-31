@@ -94,9 +94,15 @@ export const applyCancelEffects = async (trans_id, { ratio = 1, restock = true }
 
 // ── 부분취소 ────────────────────────────────────────────────────────────────
 //
-// 취소 가능 상태는 전체취소와 같다: 출고 전(trx_status 0·5·10)만.
+// 취소(환불) 실행이 가능한 상태: 출고 전 + 취소요청(trx_status 0·1·5·10).
 // 출고 이후는 취소가 아니라 반품 절차다.
-export const CANCELABLE_STATUS = [0, 5, 10];
+//
+// ⚠ 1(취소요청)을 반드시 포함한다 — 고객이 취소요청을 내면 trx_status 가 1 로 바뀌는데,
+//   관리자는 바로 그 요청 건을 이 화면에서 '실행'해야 한다. 예전엔 1 이 빠져 있어
+//   요청 건을 열면 cancelable=false 로 '이미 취소/출고된 주문'이라며 0원만 떴다(실행 불가).
+//   (getCancelState 만 이 상수를 쓴다 = 관리자 실행 경로. 고객의 '재요청 방지'는
+//    transaction.controller 의 cancelRequest 가 자체 [5,10]+trx_status==1 검사로 따로 막는다.)
+export const CANCELABLE_STATUS = [0, 1, 5, 10];
 
 // 줄 하나의 '개당 상품가'. 배송비는 뺀다 — 배송비는 개수로 나눌 성질이 아니다.
 // (order_amount 는 그 줄의 배송비를 포함한 값이다. pay.controller 가 그렇게 넣는다)
