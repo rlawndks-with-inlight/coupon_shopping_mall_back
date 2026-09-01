@@ -90,10 +90,11 @@ export const getLaunch = async ({ app_key, base = FORSPAY_API_BASE, order_code, 
 };
 
 // 거래 조회 (GET /api/v1/transactions/{ord_num}?cxl_seq=0) — status: approved / cancelled
-export const getTransaction = async ({ app_key, base = FORSPAY_API_BASE, ord_num, cxl_seq = 0 } = {}) => {
+//   timeout(ms): 무한대기 방지. 결제 return/webhook 경로는 기본 넉넉히, 대사 배치는 짧게 넘긴다.
+export const getTransaction = async ({ app_key, base = FORSPAY_API_BASE, ord_num, cxl_seq = 0, timeout = 10000 } = {}) => {
     const { data } = await axios.get(
         `${base}/api/v1/transactions/${encodeURIComponent(ord_num)}?cxl_seq=${cxl_seq}`,
-        { headers: authHeaders(app_key) }
+        { headers: authHeaders(app_key), timeout }
     );
     return data;
 };
