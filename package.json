@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "db-audit": "node scripts/db-audit.mjs",
+    "forspay-reconcile": "node scripts/forspay-reconcile.mjs",
     "start": "nodemon --trace-warnings --max-old-space-size=4096 index.js"
   },
   "author": "",
