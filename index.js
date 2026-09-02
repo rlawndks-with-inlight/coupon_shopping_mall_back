@@ -8,7 +8,7 @@ import 'dotenv/config';
 import cookieParser from "cookie-parser";
 import bodyParser from "body-parser";
 import compression from "compression";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import http from 'http';
 import https from 'https';
 import scheduleIndex from "./utils.js/schedules/index.js";
@@ -58,7 +58,7 @@ const 손님IP = (req) => {
 const 리밋공통 = {
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => 손님IP(req) ?? req.ip,
+    keyGenerator: (req) => ipKeyGenerator(손님IP(req) ?? req.ip), // IPv6 는 /56 단위로 묶어 키를 만든다(라이브러리 권장)
     skip: (req) => 손님IP(req) === null,
 };
 const apiLimiter = rateLimit({
