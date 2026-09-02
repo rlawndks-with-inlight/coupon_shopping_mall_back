@@ -242,10 +242,12 @@ const transactionCtrl = {
                 const pwCandidates = orderPasswordCandidates(password);
                 const pwPlaceholders = pwCandidates.map(() => '?').join(',');
                 // 비회원 주문조회는 항상 고객 관점 — '버려진 결제대기'(결제창만 열고 승인 안 난 건)를 숨긴다.
+                // 또한 '취소 원장 행(is_cancel=1, 금액 음수인 별도 행)'도 제외한다 — 안 그러면 취소된 주문이
+                // 원주문(취소완료)+원장행 2줄로 중복돼 보인다. 취소된 원주문(is_cancel_trans=1)은 남긴다.
                 let list = await readPool.query(
                     `SELECT * FROM ${table_name}
                      WHERE (REPLACE(REPLACE(REPLACE(buyer_phone,'-',''),' ',''),'.','') = ? OR buyer_phone_idx = ?)
-                       AND password IN (${pwPlaceholders}) AND brand_id=? ${HIDE_ABANDONED_PENDING} ORDER BY id DESC LIMIT 50`,
+                       AND password IN (${pwPlaceholders}) AND brand_id=? AND is_cancel=0 ${HIDE_ABANDONED_PENDING} ORDER BY id DESC LIMIT 50`,
                     [phoneDigits, blindIndex(buyer_phone), ...pwCandidates, brandId]
                 );
                 list = list[0];
@@ -273,7 +275,9 @@ const transactionCtrl = {
                 // 위와 같은 이유로 해시/평문 두 형태를 후보로 둔다.
                 const pwCandidates2 = orderPasswordCandidates(password);
                 const pwPlaceholders2 = pwCandidates2.map(() => '?').join(',');
-                sql = `SELECT * FROM ${table_name} WHERE ord_num=? AND password IN (${pwPlaceholders2}) AND brand_id=?`;
+                // is_cancel=0 으로 원주문만 집는다 — 취소된 주문은 원장행(is_cancel=1)이 하나 더 있어
+                // 이게 없으면 [0][0] 이 음수·품목없는 원장행을 집어 잘못 보여줄 수 있다.
+                sql = `SELECT * FROM ${table_name} WHERE ord_num=? AND password IN (${pwPlaceholders2}) AND brand_id=? AND is_cancel=0`;
                 queryParams = [ord_num, ...pwCandidates2, brandId];
             } else {
                 if (!id) {
