@@ -26,7 +26,9 @@ const phoneRegistrationCtrl = {
             ]
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
             sql += ` LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id `
-            sql += ` LEFT JOIN users AS registered_user ON (${table_name}.phone_number=registered_user.phone_num OR ${table_name}.phone_idx=registered_user.phone_idx) AND ${table_name}.brand_id=registered_user.brand_id AND registered_user.is_delete=0 `
+            // phone_registration 은 utf8mb4_unicode_ci, users 는 utf8mb4_general_ci 라 그냥 비교하면
+            // 'Illegal mix of collations' 로 목록 전체가 500 이었다(관리자 가입허용 전화번호 화면). 한쪽 콜레이션을 맞춰 비교한다.
+            sql += ` LEFT JOIN users AS registered_user ON (${table_name}.phone_number COLLATE utf8mb4_general_ci = registered_user.phone_num OR ${table_name}.phone_idx COLLATE utf8mb4_general_ci = registered_user.phone_idx) AND ${table_name}.brand_id=registered_user.brand_id AND registered_user.is_delete=0 `
 
             let whereParams = [];
             if (type == 'manager') {
