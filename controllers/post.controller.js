@@ -2,7 +2,7 @@
 import _ from "lodash";
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, findChildIds, findParent, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
+import { canWriteBrand, checkDns, checkLevel, findChildIds, findParent, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
@@ -313,8 +313,13 @@ const postCtrl = {
                 category_id, parent_id = -1, post_title, post_content, is_reply = 0, id
             } = req.body;
             // 관리자 경로는 자기 브랜드 글만(예전엔 레벨10+ 면 id 로 남의 브랜드 글도 수정됐다).
-            if (!req.IS_RETURN && !(await loadOwnedRow(readPool, table_name, id, decode_user))) {
-                return lowLevelException(req, res);
+            // posts 엔 brand_id 가 없고 카테고리(post_categories.brand_id)로 브랜드가 정해진다 — 조인해서 본다.
+            if (!req.IS_RETURN) {
+                const owned = (await readPool.query(
+                    `SELECT p.id, c.brand_id FROM ${table_name} p LEFT JOIN post_categories c ON c.id=p.category_id WHERE p.id=? LIMIT 1`, [id]))[0][0];
+                if (!owned || !canWriteBrand(decode_user, owned.brand_id)) {
+                    return lowLevelException(req, res);
+                }
             }
             const 제목잘못 = 제목검사(post_title);
             if (제목잘못) { return response(req, res, -100, 제목잘못, false); }
@@ -348,8 +353,10 @@ const postCtrl = {
             if (!decode_user || decode_user?.level < 10) {
                 return lowLevelException(req, res);
             }
-            // 자기 브랜드 글만(예전엔 레벨10+ 면 id 로 남의 브랜드 글도 지워졌다).
-            if (!(await loadOwnedRow(readPool, table_name, id, decode_user))) {
+            // 자기 브랜드 글만(예전엔 레벨10+ 면 id 로 남의 브랜드 글도 지워졌다). 브랜드는 카테고리 조인으로 본다.
+            const owned = (await readPool.query(
+                `SELECT p.id, c.brand_id FROM ${table_name} p LEFT JOIN post_categories c ON c.id=p.category_id WHERE p.id=? LIMIT 1`, [id]))[0][0];
+            if (!owned || !canWriteBrand(decode_user, owned.brand_id)) {
                 return lowLevelException(req, res);
             }
             let result = await deleteQuery(`${table_name}`, {

@@ -19,9 +19,16 @@ const sellerProductsCtrl = {
                 `${table_name}.*`,
             ]
             let params = [];
+            // seller_products 엔 brand_id 컬럼이 없다(예전 WHERE seller_products.brand_id 는 항상 SQL 오류 → 관리자 셀러상품 목록이 늘 500).
+            // 셀러(users) 의 brand_id 로 범위를 잡고, 셀러 본인(레벨 15 미만)은 자기 것만 본다.
             let sql = `SELECT ${process.env.SELECT_COLUMN_SECRET} FROM ${table_name} `;
-            sql += ` WHERE ${table_name}.brand_id=? `;
-            params.push(decode_dns?.id ?? 0);
+            sql += ` LEFT JOIN users AS sellers ON sellers.id=${table_name}.seller_id `;
+            sql += ` WHERE sellers.brand_id=? `;
+            params.push(Number(decode_user?.level) >= 50 ? (decode_dns?.id ?? 0) : (decode_user?.brand_id ?? 0));
+            if (decode_user && Number(decode_user?.level) < 15) {
+                sql += ` AND ${table_name}.seller_id=? `;
+                params.push(decode_user?.id ?? 0);
+            }
 
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
 

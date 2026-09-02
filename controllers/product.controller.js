@@ -1122,9 +1122,13 @@ const productCtrl = {
                 return lowLevelException(req, res);
             }
             // 소유 확인: 등급만 보고 id 로 갱신하면 다른 브랜드 상품(상세 URL 에 id 가 노출됨)의 가격·설명을 바꿀 수 있었다.
-            if (!(await loadOwnedRow(readPool, table_name, req.body?.id, decode_user))) {
+            const ownedProduct = await loadOwnedRow(readPool, table_name, req.body?.id, decode_user);
+            if (!ownedProduct) {
                 return lowLevelException(req, res);
             }
+            // brand_id 는 body 를 믿지 않고 그 상품의 것을 쓴다. (body 에 brand_id 가 없으면 아래 brands 조회가
+            // undefined 를 돌려 'setting_obj' TypeError 로 500 이 났다 — 회귀 검증에서 확인)
+            req.body.brand_id = ownedProduct.brand_id;
             let {
                 brand_id,
                 id,
