@@ -23,6 +23,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 app.set('trust proxy', 1);
+app.disable('x-powered-by'); // 프레임워크 노출(X-Powered-By: Express) 제거 — 나머지 보안 헤더는 nginx 가 붙인다
 
 app.use(compression());
 app.use(cors());
