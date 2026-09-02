@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { canWriteBrand, checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, response, settingFiles } from "../utils.js/util.js";
+import { canWriteBrand, checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeObjByList, makeUserChildrenList, makeTree, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
@@ -216,6 +216,10 @@ const sellerCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 셀러 계정 생성은 운영자(레벨10+)만. 예전엔 인증 없이 아무 등급·아무 브랜드 계정을 만들 수 있었다.
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
             let {
                 background_img,
                 passbook_img,
@@ -228,6 +232,9 @@ const sellerCtrl = {
                 addr, acct_num, acct_name, acct_bank_name, acct_bank_code, comment, sns_obj = {}, theme_css = {}, dns,
                 product_ids = [],
             } = req.body;
+            // brand_id 는 body 를 믿지 않는다(마스터만 지정 가능). 등급은 자기 등급을 넘지 못한다.
+            brand_id = resolveWriteBrandId(decode_user, brand_id, decode_dns);
+            level = Math.min(Number(level) || 0, Number(decode_user?.level) || 0);
             let is_exist_user = await readPool.query(`SELECT * FROM ${table_name} WHERE user_name=? AND brand_id=? AND is_delete = 0`, [user_name, brand_id]);
             if (is_exist_user[0].length > 0) {
                 return response(req, res, -100, "유저아이디가 이미 존재합니다.", false)
@@ -311,6 +318,13 @@ const sellerCtrl = {
                 product_ids = [],
                 id
             } = req.body;
+            // 수정은 운영자(레벨10+)가 '자기 브랜드' 계정만. 예전엔 로그인만 하면(dns 쿠키만으로도) 아무 users 행이나 덮어썼다.
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            if (!(await loadOwnedRow(readPool, table_name, id, decode_user))) {
+                return lowLevelException(req, res);
+            }
             // ⚠ user_pw 는 아래 obj 에 그대로 넣지 않는다. 저장 여부·해싱은 encForSave 직전의 가드에서만 처리한다.
             if (seller_trx_fee_type == 0 && seller_trx_fee > 1) {
                 return response(req, res, -100, "수수료율이 100%보다 큽니다.", false)

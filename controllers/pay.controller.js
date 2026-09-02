@@ -469,6 +469,15 @@ const payCtrl = {
       // 컬럼이 없으면(마이그레이션 전) 건너뛴다 — 없는 컬럼을 넣으면 주문 저장이 통째로 실패한다.
       const overseasCountry = String(country_code || 'KR').toUpperCase().slice(0, 2);
       const hasCountryColumn = await hasColumn('transactions', 'country_code');
+      // 주문번호 충돌 방지: 같은 ord_num 의 살아있는 주문이 이미 있으면 거절한다.
+      // 프론트는 시각+난수로 만들어 정상 흐름에선 안 겹친다. 이 검사가 없으면 남의 ord_num 으로 새 주문을 만들어
+      // PG 승인 통지(ord_num 기준 '최신 행' 매칭)를 가로챌 수 있다. (ord_num 인덱스가 있어 조회는 싸다)
+      if (ord_num) {
+        const dup = (await readPool.query(`SELECT id FROM transactions WHERE ord_num=? AND is_cancel=0 LIMIT 1`, [ord_num]))[0][0];
+        if (dup) {
+          return response(req, res, -100, "주문번호가 중복되었습니다. 다시 시도해 주세요.", false);
+        }
+      }
       let obj = {
         brand_id,
         user_id,
@@ -639,10 +648,17 @@ const payCtrl = {
       }
       // 재고 차감. 원장(product_stock_moves)의 UNIQUE 가 중복 차감을 막으므로
       // 결제 콜백이 두 번 들어와도 재고는 한 번만 줄어든다.
+      let stockOk = true;
       try {
-        await decreaseStock(trans_id, products);
+        stockOk = await decreaseStock(trans_id, products);
       } catch (e) {
         logger.error('재고 차감 실패(주문은 그대로 진행): ' + (e?.sqlMessage || e?.message || e));
+      }
+      if (stockOk === false) {
+        // 마지막 재고를 다른 주문이 먼저 가져간 경우(초과 판매). 아직 결제(PG) 전이라 여기서 멈추면 돈은 안 움직인다.
+        // 예전엔 로그만 남기고 주문·결제를 그대로 진행해 재고가 음수/초과판매가 됐다.
+        await 결제실패정리(trans_id);
+        return response(req, res, -100, "재고가 부족하여 주문할 수 없습니다. 수량을 확인해 주세요.", false);
       }
       if (trx_method == 1) {
         let result = await axios.post(
@@ -947,6 +963,31 @@ const payCtrl = {
         ]);
         pay_data = pay_data[0][0];
       }
+      if (!pay_data) {
+        return response(req, res, -100, "거래를 찾을 수 없습니다.", false);
+      }
+      // ── 콜백 검증 ──────────────────────────────────────────────────────────────
+      // 이 엔드포인트는 PG(페이베리/수기) 서버가 서버-서버로 부르는 결제완료·취소 통지라 인증 쿠키가 없다.
+      // 예전엔 temp(거래 id)만 알면 누구나 '결제완료'로 바꾸고 body 의 amount 로 포인트까지 적립시킬 수 있었다.
+      //  ① mid 가 그 브랜드·결제수단 결제모듈의 mid 와 일치해야 한다(PG 가 아니면 모르는 값).
+      //  ② 승인 통지는 결제대기(trx_status=0) 인 PG 결제건에만 — 무통장(10/11)은 사람이 확정한다.
+      //  ③ 금액은 body 가 아니라 DB 의 주문금액을 쓴다.
+      // (최근 60일 거래가 전부 포스페이(41)라 이 경로는 사실상 레거시다 — 정상 통지가 막히면 로그로 드러난다)
+      const pgModule = (await readPool.query(
+        `SELECT mid FROM payment_modules WHERE brand_id=? AND trx_type=? ORDER BY id DESC LIMIT 1`,
+        [pay_data?.brand_id, pay_data?.trx_method]))[0][0];
+      if (!pgModule?.mid || String(mid ?? '') !== String(pgModule.mid)) {
+        logger.error(`[pays/result] mid 불일치 — 거부 (trans=${pay_data?.id}, brand=${pay_data?.brand_id}, method=${pay_data?.trx_method})`);
+        return response(req, res, -100, "잘못된 접근입니다.", false);
+      }
+      if (!is_cancel) {
+        if (Number(pay_data?.trx_status) !== 0 || [10, 11].includes(Number(pay_data?.trx_method))) {
+          return response(req, res, -100, "처리할 수 없는 거래 상태입니다.", false);
+        }
+        amount = pay_data?.amount; // 적립·기록 모두 DB 금액 기준
+      } else if (Number(pay_data?.is_cancel_trans) === 1) {
+        return response(req, res, 100, "success", {}); // 이미 취소 반영됨(멱등)
+      }
       let dns_data = await readPool.query("SELECT * FROM brands WHERE id=?", [
         pay_data?.brand_id,
       ]);
@@ -967,7 +1008,8 @@ const payCtrl = {
         delete obj.updated_at;
         delete obj.id;
         let result = await insertQuery(`${table_name}`, obj);
-        let update_pay_data = updateQuery(table_name, {//이미 결제된건 취소로 판별
+        // await 가 빠져 있었다 — 여기서 DB 오류가 나면 잡히지 않는 rejection 으로 프로세스가 죽는다.
+        let update_pay_data = await updateQuery(table_name, {//이미 결제된건 취소로 판별
           is_cancel_trans: 1,
         }, pay_data?.id);
         // 재고 복구 · 적립 포인트 회수 · 사용 포인트 환불.
@@ -990,7 +1032,15 @@ const payCtrl = {
           trx_tm: trx_dttm.split(" ")[1],
           trx_status: 5,
         };
-        let result = await updateQuery(`${table_name}`, obj, id);
+        // 원자적 확정: 결제대기(<>5) 인 행만 5 로 바꾸고, 실제로 바뀐 경우에만 적립한다(통지 중복·경합 시 이중 적립 방지).
+        const [markRes] = await writePool.query(
+          `UPDATE ${table_name} SET trx_id=?, appr_num=?, acquirer=?, issuer=?, card_num=?, trx_dt=?, trx_tm=?, trx_status=5
+            WHERE id=? AND trx_status<>5`,
+          [obj.trx_id ?? null, obj.appr_num ?? null, obj.acquirer ?? null, obj.issuer ?? null, obj.card_num ?? null, obj.trx_dt, obj.trx_tm, id]
+        );
+        if (!markRes?.affectedRows) {
+          return response(req, res, 100, "success", {}); // 이미 확정됨(멱등)
+        }
         // 적립은 정책 함수 한 곳에서 센다 — 여기서 직접 곱하면 적립률 상한(100%)이 안 걸린다.
         const 쌓을것 = 적립예정({ dns: dns_data, 결제금액: amount });
         if (쌓을것 > 0) {

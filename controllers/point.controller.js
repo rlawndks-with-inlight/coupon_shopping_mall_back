@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -75,11 +75,19 @@ const pointCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 운영자는 자기 브랜드 행만, 회원은 본인 행만. 예전엔 인증 없이 아무 id 나 조회됐다.
+            if (!(decode_user?.id > 0)) return lowLevelException(req, res);
             let sql = `SELECT ${table_name}.*, users.user_name FROM ${table_name} `;
             sql += ` LEFT JOIN users ON ${table_name}.user_id=users.id `;
             sql += ` WHERE ${table_name}.id=? `
             let data = await readPool.query(sql, [id]);
             data = data[0][0];
+            if (!data) return response(req, res, -100, "존재하지 않습니다.", false);
+            const isStaff = Number(decode_user?.level) >= 10;
+            const ownBrand = Number(decode_user?.level) >= 50 || Number(data?.brand_id) === Number(decode_user?.brand_id);
+            if (!((isStaff && ownBrand) || Number(data?.user_id) === Number(decode_user?.id))) {
+                return lowLevelException(req, res);
+            }
             return response(req, res, 100, "success", data)
         } catch (err) {
             console.log(err)
@@ -153,7 +161,13 @@ const pointCtrl = {
                 note,
                 id
             } = req.body;
-            let user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=? `, [user_name, decode_dns?.id ?? 0]);
+            // 브랜드 범위는 '토큰의 brand_id'(서명됨) 기준. dns 쿠키는 누구나 임의 브랜드 것을 받을 수 있다.
+            // 예전엔 A 브랜드 운영자가 임의 id 의 포인트 행을 자기 회원 명의로 바꿔 남의 브랜드 포인트를 옮길 수 있었다.
+            const brandId = resolveWriteBrandId(decode_user, decode_dns?.id, decode_dns);
+            if (!(await loadOwnedRow(readPool, table_name, id, decode_user))) {
+                return lowLevelException(req, res);
+            }
+            let user = await readPool.query(`SELECT * FROM users WHERE user_name=? AND brand_id=? `, [user_name, brandId]);
             user = user[0][0];
             if (!user) {
                 return response(req, res, -100, "유저가 존재하지 않습니다.", false)
@@ -199,6 +213,9 @@ const pointCtrl = {
                 if (!(decode_user?.id > 0 && data?.user_id == decode_user?.id)) {
                     return lowLevelException(req, res);
                 }
+            } else if (!(Number(decode_user?.level) >= 50 || Number(data?.brand_id) === Number(decode_user?.brand_id))) {
+                // 운영자는 자기 브랜드 행만 지운다. 예전엔 A 브랜드 운영자가 임의 id 의 행을 지울 수 있었다.
+                return lowLevelException(req, res);
             }
             let result = await deleteQuery(`${table_name}`, {
                 id

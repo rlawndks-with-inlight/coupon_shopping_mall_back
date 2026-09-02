@@ -489,15 +489,13 @@ export const decreaseStock = async (trans_id, products = []) => {
         if (!r?.affectedRows) continue; // 이미 차감된 주문
         const 뺐다 = await 차감(n);
         if (!뺐다) {
-            // checkStock 을 통과한 뒤 결제가 끝나기 전에 다른 주문이 마지막 재고를 가져간 경우.
-            // 마지막 1개를 두 사람이 동시에 누르면 둘 다 검사를 통과한다(검사와 차감 사이가 벌어져 있다).
-            //
-            // 여기서 결제를 되돌리지는 않는다 — 취소는 관리자가 PG 에 직접 요청하는 절차다.
-            // 대신 '누구의 어느 주문이 초과 판매됐는지'를 남긴다. 안 남기면 재고만 0 으로 멈춰 있고
-            // 업체는 무엇이 잘못됐는지 영영 모른다.
-            console.error(`[재고] 초과 판매 — 주문 ${tid} / 상품 ${n.product_id}`
+            // 차감 실패 = 초과 판매. 이 함수는 결제(PG 호출) '전'에 불리므로 여기서 false 를 돌려 주문을 중단해도
+            // 돈은 움직이지 않는다 — 호출측(pay.ready)이 결제실패정리(재고 원복·주문 정리)를 하고 손님에게 품절을 알린다.
+            // 원장 행은 남겨 두어도 된다: 결제실패정리 → applyCancelEffects 가 원장 기준으로 되돌린다.
+            console.error(`[재고] 초과 판매 차단 — 주문 ${tid} / 상품 ${n.product_id}`
                 + `${n.option_id ? ` / 옵션 ${n.option_id}` : ''}${n.combo_id ? ` / 조합 ${n.combo_id}` : ''}`
-                + ` / 필요 ${n.qty}개. 재고가 모자라 차감하지 못했다 — 업체 확인 필요.`);
+                + ` / 필요 ${n.qty}개. 재고가 모자라 주문을 중단한다.`);
+            return false;
         }
     }
     return true;

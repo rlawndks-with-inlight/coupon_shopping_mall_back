@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
@@ -82,9 +82,15 @@ const phoneRegistrationCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const {
+            let {
                 brand_id, seller_id, phone_number, registrar
             } = req.body;
+            // 가입허용 전화번호 등록은 운영자(레벨10+)만, brand_id 는 body 를 믿지 않는다.
+            // 예전엔 인증 없이 아무 브랜드에 번호를 넣어 '가입 제한 브랜드' 의 전화번호 화이트리스트를 우회할 수 있었다.
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            brand_id = resolveWriteBrandId(decode_user, brand_id, decode_dns);
             let files = settingFiles(req.files);
 
             let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE (phone_number=? OR phone_idx=?) AND brand_id=? AND seller_id=? AND is_delete=0`, [phone_number, blindIndex(phone_number), brand_id, seller_id]);
@@ -116,9 +122,17 @@ const phoneRegistrationCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const {
+            let {
                 id, phone_number, brand_id
             } = req.body;
+            // 운영자만, 자기 브랜드 행만(예전엔 인증 없이 아무 행이나 갱신).
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            if (!(await loadOwnedRow(readPool, table_name, id, decode_user))) {
+                return lowLevelException(req, res);
+            }
+            brand_id = resolveWriteBrandId(decode_user, brand_id, decode_dns);
             let files = settingFiles(req.files);
 
             let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE (phone_number=? OR phone_idx=?) AND brand_id=?`, [phone_number, blindIndex(phone_number), brand_id]);
@@ -146,6 +160,13 @@ const phoneRegistrationCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 운영자만, 자기 브랜드 행만(예전엔 인증 없이 삭제 가능).
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            if (!(await loadOwnedRow(readPool, table_name, id, decode_user))) {
+                return lowLevelException(req, res);
+            }
             let result = await deleteQuery(`${table_name}`, {
                 id
             })

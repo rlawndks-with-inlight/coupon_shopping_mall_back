@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl, differenceTwoDate, generateRandomCode, returnMoment } from "../utils.js/function.js";
 import { insertQuery, updateQuery, hasColumn } from "../utils.js/query-util.js";
-import { createHashedPassword, checkLevel, makeUserToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
+import { createHashedPassword, checkLevel, makeUserToken, makeDnsToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
 import { encForSave, decRow, decRows, blindIndex } from "../utils.js/pii.js";
 import { isShopgoBrand } from "../utils.js/is-shopgo.js";
 import {
@@ -65,6 +65,7 @@ const guardShopgoDns = (req, res) => {
 // 로그인 토큰 payload. signIn 과 setSecurityQuestion 이 '반드시' 같은 모양을 만들도록 한 곳에 모았다.
 // (한쪽만 바뀌면 보안질문 저장 후 재발급된 토큰에서 필드가 사라져 화면이 깨진다.)
 const makeUserTokenPayload = (user, agent) => ({
+    kind: 'user', // checkLevel 이 이 표시가 있는 토큰만 사용자 토큰으로 인정한다(dns 쿠키 바꿔치기 차단)
     id: user.id,
     user_name: user.user_name,
     name: user.name,
@@ -141,7 +142,7 @@ const authCtrl = {
                         }
                         decode_dns = brand;
                         // 다음 요청부터는 쿠키로 풀리도록 다시 구워 준다.
-                        res.cookie("dns", makeUserToken(brand), {
+                        res.cookie("dns", makeDnsToken(brand), {
                             httpOnly: true,
                             maxAge: 60 * 60 * 1000 * 3,
                             sameSite: 'lax',
@@ -365,7 +366,9 @@ const authCtrl = {
                 phone_num,
                 unipass,
                 profile_img,
-                brand_id,
+                // body 의 brand_id 는 쓰지 않는다 — 가입 제한(전화 화이트리스트·승인대기) 검사는 dns 브랜드로 하면서
+                // 저장은 body 브랜드로 하면, 제한이 걸린 다른 브랜드에 계정을 꽂을 수 있었다.
+                brand_id: Number(decode_dns?.id) || 0,
                 user_salt,
                 acct_num, acct_name, acct_bank_name, acct_bank_code,
                 otp_token,
@@ -635,6 +638,11 @@ const authCtrl = {
             if (differenceTwoDate(return_moment, send_log?.created_at).second > 180) {
                 return response(req, res, -100, "인증시간이 지났습니다. 다시 인증해 주세요.", false)
             }
+            // 인증번호를 맞힌 토큰에 '인증 완료' 표시. 비밀번호 찾기는 이 표시가 있는 토큰만 받는다.
+            // (컬럼은 migrations/2026-09-03_phone_check_tokens_verified.sql — 없으면 건너뛰어 배포 순서에 안 깨진다)
+            if (await hasColumn('phone_check_tokens', 'verified')) {
+                await writePool.query(`UPDATE phone_check_tokens SET verified=1 WHERE id=?`, [send_log.id]);
+            }
             let data = {};
             if (find_user_name) {
                 let users = await readPool.query(`SELECT * FROM users WHERE (phone_num=? OR phone_idx=?) AND brand_id=? AND status=0 `, [send_log?.phone_num, blindIndex(send_log?.phone_num), decode_dns?.id]);
@@ -855,6 +863,14 @@ const authCtrl = {
                 }
                 if (differenceTwoDate(return_moment, send_log?.created_at).second > 60 * 60) {
                     return response(req, res, -100, "토큰이 만료되었습니다. 다시 인증해 주세요.", false)
+                }
+                // 인증번호를 실제로 맞힌 토큰(verified=1)만, 그리고 한 번만 쓴다.
+                // 예전엔 /auth/code 가 문자 발송 직후 돌려준 토큰만 있으면(번호 확인 없이) 비밀번호를 바꿀 수 있었다.
+                if (await hasColumn('phone_check_tokens', 'verified')) {
+                    if (Number(send_log?.verified) !== 1 || Number(send_log?.used) === 1) {
+                        return response(req, res, -100, "휴대폰 인증을 먼저 완료해 주세요.", false)
+                    }
+                    await writePool.query(`UPDATE phone_check_tokens SET used=1 WHERE id=?`, [send_log.id]);
                 }
             }
             if (user?.status == 1) {

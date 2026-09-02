@@ -36,6 +36,11 @@ export const makeUserToken = (obj) => {
         });
     return token
 }
+// dns 쿠키 전용 토큰. 사용자 토큰과 같은 비밀키로 서명되므로 'kind' 로 종류를 박아 서로 바꿔 쓰지 못하게 한다.
+// (예전엔 GET /api/domain 이 주는 dns 쿠키(브랜드 payload)를 token 쿠키 자리에 넣으면, level 이 없어
+//  `level > undefined === false` 로 어떤 등급 검사든 통과했다 — 누구나 마스터 권한 API 를 부를 수 있었다.)
+export const makeDnsToken = (brand) => makeUserToken({ ...brand, kind: 'dns' });
+
 export const checkLevel = (token, level, res) => { //유저 정보 뿌려주기
     try {
         if (token == undefined)
@@ -43,11 +48,12 @@ export const checkLevel = (token, level, res) => { //유저 정보 뿌려주기
 
         //const decoded = jwt.decode(token)
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user_level = decoded?.level
-        if (level > user_level)
-            return false
-        else
-            return decoded
+        // 사용자 토큰만 받는다(kind:'user'). dns 쿠키·정체불명 payload 는 무조건 거절.
+        if (decoded?.kind !== 'user') return false
+        // level 은 반드시 숫자여야 하고 요구 등급 이상이어야 한다(undefined 비교로 열리던 구멍 봉합).
+        const user_level = Number(decoded?.level)
+        if (!Number.isFinite(user_level) || user_level < Number(level ?? 0)) return false
+        return decoded
     }
     catch (err) {
         return false
@@ -60,6 +66,10 @@ export const checkDns = (token) => { //dns 정보 뿌려주기
 
         //const decoded = jwt.decode(token)
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // dns 쿠키만 받는다 — 사용자 토큰을 dns 자리에 넣어 브랜드를 바꿔치기하지 못하게.
+        // 배포 직후 최대 3시간은 kind 없는 옛 dns 쿠키가 남아 있으므로 '브랜드 모양'(level·user_name 없음)만 예외로 받는다.
+        const legacyDns = decoded?.kind === undefined && decoded?.level === undefined && decoded?.user_name === undefined
+        if (!(decoded?.kind === 'dns' || legacyDns)) return false
 
         if (decoded?.id)
             return decoded

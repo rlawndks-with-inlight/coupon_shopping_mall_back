@@ -13,6 +13,10 @@ const logCtrl = {
 
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 요청 로그(과거 요청 본문 포함)는 운영자만 본다. 예전엔 dns 쿠키만으로 전 브랜드 로그가 열렸다.
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
             const { response_result_type } = req.query;
             let columns = [
                 `${table_name}.*`,
@@ -22,9 +26,11 @@ const logCtrl = {
             sql += ` LEFT JOIN users ON users.id=${table_name}.user_id `
             let params = [];
             sql += ` WHERE 1=1 `
-            if (decode_dns?.is_main_dns != 1) {
+            // 브랜드 범위: 마스터(50+)만 전체, 그 외는 '토큰의 brand_id'(서명됨)로 고정.
+            // dns 쿠키는 누구나 임의 브랜드 것을 받을 수 있어 범위 기준이 될 수 없다.
+            if (!(Number(decode_user?.level) >= 50)) {
                 sql += ` AND ${table_name}.brand_id=?`
-                params.push(decode_dns?.id ?? 0);
+                params.push(decode_user?.brand_id ?? 0);
             }
             let sql_list = [
                 { table: 'success', sql: (sql + ` ${sql.includes('WHERE') ? 'AND' : 'WHERE'} response_result > 0 `).replaceAll(process.env.SELECT_COLUMN_SECRET, 'COUNT(*) AS success') },
@@ -67,10 +73,13 @@ const logCtrl = {
     remove: async (req, res, next) => {
         try {
 
-            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_user = checkLevel(req.cookies.token, 50, res);
             const decode_dns = checkDns(req.cookies.dns);
+            if (!decode_user) return lowLevelException(req, res);
             const { id } = req.params;
-            let result = await deleteQuery('brands', {
+            // ⚠ 예전엔 여기서 'brands' 를 soft-delete 했다 — 인증 없는 로그 삭제 API 로 몰을 통째로 내릴 수 있었다.
+            //    이 컨트롤러의 대상은 logs 다.
+            let result = await deleteQuery(table_name, {
                 id
             })
             return response(req, res, 100, "success", {})

@@ -91,9 +91,14 @@ function sanitizeSvg(filePath) {
 const upload = multer({
         storage: storage,
         fileFilter: fileFilter,
+        // 이 multer 는 /api 전체에 걸려 있어(index.js) 인증 전 익명 요청도 파일을 디스크에 받는다.
+        // 예전 한도(100MB × 무제한 개수)면 익명 요청 몇 번으로 디스크·메모리를 채울 수 있었다.
+        // 실제 이미지는 Cloudinary 로 가므로(이 경로는 레거시) 넉넉하되 제한된 값으로 내린다.
         limits: {
-                fileSize: 100 * 1024 * 1024,
-                fieldSize: 100 * 1024 * 1024
+                fileSize: 20 * 1024 * 1024,   // 파일 1개 20MB
+                fieldSize: 5 * 1024 * 1024,   // 텍스트 필드 5MB
+                files: 20,                    // 요청당 파일 20개
+                parts: 500,                   // 필드+파일 합계
         }
 });
 

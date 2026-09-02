@@ -1,6 +1,6 @@
 "use strict";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { checkLevel, makeUserToken, response } from "../utils.js/util.js";
+import { checkLevel, makeUserToken, makeDnsToken, response } from "../utils.js/util.js";
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -35,7 +35,7 @@ const domainCtrl = {
           if (cached) {
             const brand = JSON.parse(cached);
 
-            const token = await makeUserToken(brand);
+            const token = makeDnsToken(brand); // dns 전용 토큰(kind:'dns') — 사용자 토큰으로 못 쓰게
             await res.cookie("dns", token, {
               httpOnly: true,
               maxAge: 60 * 60 * 1000 * 3,
@@ -209,7 +209,7 @@ const domainCtrl = {
       }
 
       // 쿠키 세팅
-      const token = await makeUserToken(brand);
+      const token = makeDnsToken(brand); // dns 전용 토큰(kind:'dns') — 사용자 토큰으로 못 쓰게
       await res.cookie("dns", token, {
         httpOnly: true,
         maxAge: 60 * 60 * 1000 * 3,
