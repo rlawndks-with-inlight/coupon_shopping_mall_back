@@ -1,7 +1,7 @@
 'use strict';
 import axios from "axios";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQueryList, insertQuery, updateQuery } from "../utils.js/query-util.js";
+import { deleteQuery, getSelectQueryList, hasColumn, insertQuery, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
@@ -16,6 +16,11 @@ const logCtrl = {
             // 요청 로그(과거 요청 본문 포함)는 운영자만 본다. 예전엔 dns 쿠키만으로 전 브랜드 로그가 열렸다.
             if (!decode_user || Number(decode_user?.level) < 10) {
                 return lowLevelException(req, res);
+            }
+            // logs 테이블은 실제 DB 에 없다(logRequestResponse 가 주석 처리된 죽은 기능). 예전엔 이 화면이 늘 '서버 에러' 였다.
+            // 테이블이 없으면 빈 목록을 돌려 화면이 정상적으로 '없음' 을 보이게 한다.
+            if (!(await hasColumn(table_name, 'id'))) {
+                return response(req, res, 100, "success", { content: [], total: 0, page: 1, page_size: 20, maxPage: 1, success: 0, fail: 0 });
             }
             const { response_result_type } = req.query;
             let columns = [
