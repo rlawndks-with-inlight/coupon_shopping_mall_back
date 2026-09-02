@@ -1358,6 +1358,40 @@ const payCtrl = {
       return res.status(200).send({ ok: false });
     }
   },
+  forspayConfirm: async (req, res, next) => {
+    // 결제결과 페이지에서 호출하는 '거래조회 기반 서버 확정'.
+    //
+    // 왜 필요한가:
+    //   문서상 브라우저 복귀(return_url·FORSPAY_RESULT)는 UX용이라 정산의 근거가 못 된다.
+    //   특히 PC 팝업 흐름은 FORSPAY_RESULT 수신 후 프론트 결과페이지로 바로 가서
+    //   backend /forspay/return(정산)을 건너뛴다 → 승인됐는데 결제대기로 남는다.
+    //   결과페이지가 이 API 로 거래조회해 approved 면 정산(멱등·원자적)하여 그 구멍을 메운다.
+    //   (모바일 리다이렉트는 이미 return 에서 정산되므로 여기선 멱등 no-op)
+    //
+    // 응답 규약: '확정 시도 자체'는 항상 성공(result>0)으로 돌려주고, 실제 정산 여부는
+    //   data.settled 로 알린다. 그래야 프론트가 불필요한 에러 토스트를 안 띄우고, 실패해도
+    //   결과페이지가 URL 파라미터 기준으로 정상 표시된다. 개인정보는 반환하지 않는다.
+    try {
+      const ord = (req.body?.ord_num ?? req.query?.ord_num ?? '').toString();
+      const fail = (extra = {}) => response(req, res, 100, 'success', { settled: false, result_cd: '9999', ...extra });
+      if (!ord) return fail();
+      const trx = (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
+      if (!trx || Number(trx.trx_method) !== 41) return fail(); // 없거나 포스페이 아님 → 손대지 않음
+      if (Number(trx.is_cancel_trans) === 1) return fail();      // 취소된 건은 정산 안 함
+      if (Number(trx.trx_status) === 5) return response(req, res, 100, 'success', { settled: true, result_cd: '0000' }); // 이미 정산됨
+      const creds = await getForspayCreds(trx.brand_id);
+      let txn = {};
+      try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0, timeout: 8000 }); } catch (e) { txn = {}; }
+      if (txn?.status === 'approved') {
+        await settleForspayTransaction(trx.id, txn); // 멱등·원자적
+        return response(req, res, 100, 'success', { settled: true, result_cd: '0000' });
+      }
+      return fail(); // 아직 승인 안 됨 / 조회 실패 → 정산 보류(웹훅·재방문·대사가 나중에)
+    } catch (err) {
+      logger.error(errText(err));
+      return response(req, res, 100, 'success', { settled: false, result_cd: '9999' });
+    }
+  },
 };
 
 // 브랜드별 페이레터 인증정보를 payment_modules(trx_type=40)에서 조회
@@ -1457,16 +1491,28 @@ async function settleForspayTransaction(transId, data = {}) {
   let trx_dt = trx_dttm.includes(' ') ? trx_dttm.split(' ')[0] : trx_dttm;
   let trx_tm = trx_dttm.includes(' ') ? trx_dttm.split(' ')[1] : '';
 
-  await updateQuery('transactions', {
-    trx_id: data.trx_id ?? trx.trx_id,
-    appr_num: (data.appr_num ?? '').toString(),
-    card_num: (data.card_num ?? '').toString(),
-    trx_dt,
-    trx_tm,
-    trx_status: 5,
-  }, transId);
+  // 원자적 정산: trx_status<>5 인 행만 5로 바꾼다. '실제로 우리가 바꾼 행'일 때만 적립한다.
+  // 정산을 부르는 경로가 셋(브라우저 return · noti 웹훅 · 결과페이지 confirm)이라 동시에 와도
+  // 딱 한 번만 정산·적립되게 하는 방어다. (위 fast-path 는 읽고-쓰기라 경합에 새므로 여기서 못박는다)
+  const [settleRes] = await writePool.query(
+    `UPDATE transactions
+        SET trx_id=?, appr_num=?, card_num=?, trx_dt=?, trx_tm=?, trx_status=5
+      WHERE id=? AND trx_status<>5`,
+    [
+      data.trx_id ?? trx.trx_id,
+      (data.appr_num ?? '').toString(),
+      (data.card_num ?? '').toString(),
+      trx_dt,
+      trx_tm,
+      transId,
+    ]
+  );
+  if (!settleRes?.affectedRows) {
+    // 그 사이 다른 경로가 먼저 정산함 → 중복 적립을 막고 여기서 끝낸다.
+    return true;
+  }
 
-  // 포인트 적립 (기존 pays.result 성공 로직과 동일)
+  // 포인트 적립 (우리가 방금 정산을 확정한 경우에만 — 위 affectedRows 로 1회 보장)
   let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);
   let brand = brandRows[0][0];
   let setting = JSON.parse(brand?.setting_obj ?? '{}');

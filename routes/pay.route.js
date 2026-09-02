@@ -32,6 +32,10 @@ router
     .get(payCtrl.forspayReturn)
     .post(payCtrl.forspayReturn);
 router
+    .route('/forspay/confirm')
+    .get(payCtrl.forspayConfirm)
+    .post(payCtrl.forspayConfirm);
+router
     .route('/:trx_type')
     .post(payCtrl.ready);
 
