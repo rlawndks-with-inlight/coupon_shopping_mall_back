@@ -45,7 +45,8 @@ export const insertQuery = async (table, obj) => {
         // ⚠ 값(obj)은 찍지 않는다. 회원 이름·전화·주소가 그대로 로그에 남는다 —
         //   DB 는 암호화해 두고 로그로 흘리면 암호화한 의미가 없다. 컬럼 이름까지만 남긴다.
         logger.error(`[insertQuery] ${table} 저장 실패 · 컬럼(${Object.keys(obj ?? {}).join()}) :: ${err?.code ?? ''} ${err?.sqlMessage ?? err?.message ?? err}`);
-        console.log(err);
+        // ⚠ err 객체를 통째로 찍지 않는다 — mysql2 는 err.sql 에 값이 박힌 완성 SQL 을 실어 준다
+        //   (users/transactions 저장 실패면 비밀번호 해시·암호화 PII·pay_key 가 pm2 로그에 남는다).
         return false;
     }
 }
@@ -71,6 +72,10 @@ export const insertQueryMultiRow = async (table, list) => {// 개발예정
     return result[0];
 }
 export const deleteQuery = async (table, where_obj, delete_true) => {
+    // 숫자/문자 id 를 그대로 넘기는 호출이 있었다(benefit_notice·order_form). Object.keys(123) 은 [] 이라
+    // WHERE 절이 비어 '아무것도 안 지우고 true' 를 돌려줬다 — 지운 줄 알았던 행이 화면에 계속 남았다.
+    if (where_obj === null || where_obj === undefined) return false;
+    if (typeof where_obj !== 'object') where_obj = { id: where_obj };
     let keys = Object.keys(where_obj);
     let where_list = [];
     let where_values = [];
@@ -305,7 +310,9 @@ export const hasColumn = async (table, column) => {
             [table, column]);
         exists = rows.length > 0;
     } catch (e) {
-        exists = false;
+        // 일시적 DB 오류를 '컬럼 없음' 으로 굳혀 두면 프로세스가 살아있는 내내 그 컬럼(배송메모·국가코드)이
+        // 조용히 빠진다. 오류 때는 캐시하지 않고 다음 호출에서 다시 본다.
+        return false;
     }
     columnExistsCache.set(key, exists);
     return exists;

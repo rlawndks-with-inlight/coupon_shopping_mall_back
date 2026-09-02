@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
@@ -65,8 +65,14 @@ const columnCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { table } = req.params;
             const { column, is_not_use = 0 } = req.body;
+            // 브랜드 설정(none_use_column_obj) 변경은 운영자만, 대상 브랜드는 '토큰의 brand_id'(마스터는 dns).
+            // 예전엔 dns 쿠키만으로(누구나 받을 수 있음) 아무 브랜드의 설정을 덮어쓸 수 있었다.
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            const targetBrandId = Number(decode_user?.level) >= 50 ? Number(decode_dns?.id) : Number(decode_user?.brand_id);
 
-            let brand_data = await readPool.query(`SELECT * FROM brands WHERE id=?`, [decode_dns?.id]);
+            let brand_data = await readPool.query(`SELECT * FROM brands WHERE id=?`, [targetBrandId]);
             brand_data = brand_data[0][0];
             brand_data['none_use_column_obj'] = JSON.parse(brand_data?.none_use_column_obj ?? '{}');
             if (!brand_data['none_use_column_obj'][table]) {
@@ -83,7 +89,7 @@ const columnCtrl = {
 
             let result = await writePool.query(`UPDATE brands SET none_use_column_obj=? WHERE id=?`, [
                 JSON.stringify(brand_data?.none_use_column_obj),
-                decode_dns?.id,
+                targetBrandId,
             ])
             return response(req, res, 100, "success", {})
         } catch (err) {

@@ -215,7 +215,7 @@ const benefitNoticeCtrl = {
             if (!before || Number(before.brand_id) !== brand_id) {
                 return lowLevelException(req, res);
             }
-            await deleteQuery(table_name, id);
+            await deleteQuery(table_name, { id }); // 스칼라로 넘기면 WHERE 가 비어 아무것도 안 지워졌다
             // 탭은 따로 지운다 — 남겨 두면 같은 notice_id 로 새 줄을 만들 때 되살아난다.
             await readPool.query(`UPDATE ${tab_table_name} SET is_delete=1 WHERE notice_id=?`, [id]);
             await invalidateAllShopSettingCache();

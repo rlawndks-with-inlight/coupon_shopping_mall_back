@@ -78,6 +78,29 @@ const readDB = mysql.createPool({
 const writePool = writeDB.promise();
 const readPool = readDB.promise();
 
+// mysql2 는 실패한 쿼리 오류(err)에 '값이 박힌 완성 SQL'(err.sql) 을 실어 준다.
+// 컨트롤러 catch 블록 대부분이 JSON.stringify(err) / console.log(err) 로 통째로 찍으므로,
+// users/transactions/payment_modules 저장이 실패하면 비밀번호 해시·암호화 PII·pay_key 가
+// 로그(logs/error 30일 + pm2 out)에 남는다. 풀 단계에서 err.sql 을 떼어 모든 호출처를 한 번에 막는다.
+// (진단에는 err.code / err.sqlMessage 로 충분하다)
+const stripSqlFromError = (pool) => {
+    const origQuery = pool.query.bind(pool);
+    const origExecute = pool.execute.bind(pool);
+    const wrap = (fn) => async (...args) => {
+        try {
+            return await fn(...args);
+        } catch (e) {
+            if (e && typeof e === 'object' && 'sql' in e) { try { delete e.sql; } catch (_) { /* noop */ } }
+            throw e;
+        }
+    };
+    pool.query = wrap(origQuery);
+    pool.execute = wrap(origExecute);
+    return pool;
+};
+stripSqlFromError(writePool);
+stripSqlFromError(readPool);
+
 // 뜰 때 DB 에 한 번 닿아 본다.
 //
 // ⚠ 예전 이 자리는 `readPool.getConnection((err, conn) => ...)` 였다. readPool 은

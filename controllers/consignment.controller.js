@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -118,6 +118,13 @@ const consignmentCtrl = {
             const {
                 id
             } = req.body;
+            // 운영자만, 자기 브랜드 행만(예전엔 인증 없이 갱신 가능).
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            if (!(await loadOwnedRow(readPool, table_name, id, decode_user))) {
+                return lowLevelException(req, res);
+            }
             let files = settingFiles(req.files);
             let obj = {
             };
@@ -139,6 +146,13 @@ const consignmentCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 운영자만, 자기 브랜드 행만(예전엔 인증 없이 삭제 가능).
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            if (!(await loadOwnedRow(readPool, table_name, id, decode_user))) {
+                return lowLevelException(req, res);
+            }
             let result = await deleteQuery(`${table_name}`, {
                 id
             })

@@ -59,9 +59,15 @@ const sellerProductsCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const {
+            let {
                 seller_id, product_id, seller_price, agent_price
             } = req.body;
+            // 인증: 로그인 필수. 셀러(레벨10~14)는 자기 seller_id 만, 운영자(15+)는 지정 가능.
+            // 예전엔 인증 없이 아무 셀러의 판매가를 넣거나 바꿀 수 있었다(결제금액 불일치로 셀러몰 결제 전부 실패 = DoS + 가격 훼손).
+            if (!(decode_user?.id > 0) || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            if (Number(decode_user?.level) < 15) seller_id = decode_user.id;
             let files = settingFiles(req.files);
             if (Number(seller_price) < Number(agent_price)) {
                 return response(req, res, -100, "본사 가격보다 낮게 등록할 수 없습니다.", false);
@@ -86,9 +92,14 @@ const sellerProductsCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
-            const {
+            let {
                 seller_id, type, price_per
             } = req.body;
+            // 일괄 등록/삭제: 로그인 필수, 셀러는 자기 seller_id 만(운영자 15+ 는 지정 가능). 예전엔 인증 없이 가능.
+            if (!(decode_user?.id > 0) || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            if (Number(decode_user?.level) < 15) seller_id = decode_user.id;
 
             let params = [];
             let columns = [
@@ -292,6 +303,14 @@ const sellerProductsCtrl = {
             const {
                 id, seller_price
             } = req.body;
+            // 인증 + 소유: 셀러는 자기 행만, 운영자(15+)는 모두. (예전엔 인증 없이 아무 행이나 갱신)
+            if (!(decode_user?.id > 0) || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            const ownRow = (await readPool.query(`SELECT id, seller_id FROM ${table_name} WHERE id=? LIMIT 1`, [id]))[0][0];
+            if (!ownRow || (Number(decode_user?.level) < 15 && Number(ownRow.seller_id) !== Number(decode_user.id))) {
+                return lowLevelException(req, res);
+            }
             let files = settingFiles(req.files);
             let obj = {
                 seller_price
@@ -314,6 +333,14 @@ const sellerProductsCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 인증 + 소유(셀러는 자기 행만, 운영자 15+ 는 모두). 예전엔 인증 없이 삭제 가능.
+            if (!(decode_user?.id > 0) || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            const ownRow = (await readPool.query(`SELECT id, seller_id FROM ${table_name} WHERE id=? LIMIT 1`, [id]))[0][0];
+            if (!ownRow || (Number(decode_user?.level) < 15 && Number(ownRow.seller_id) !== Number(decode_user.id))) {
+                return lowLevelException(req, res);
+            }
             let result = await deleteQuery(`${table_name}`, {
                 id
             })

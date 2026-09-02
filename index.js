@@ -26,8 +26,10 @@ app.set('trust proxy', 1);
 
 app.use(compression());
 app.use(cors());
-app.use(bodyParser.json({ limit: '100mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '100mb' }));
+// 본문 한도. 예전 100mb 는 모든 API 에 대용량 본문을 허용해 메모리 소진 공격면이었다.
+// 디자인관리 저장(blog_obj/shop_obj JSON, 이미지는 URL) 도 수백 KB 수준이라 5mb 면 충분하다. 파일은 multer 가 따로 받는다.
+app.use(bodyParser.json({ limit: '5mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '5mb' }));
 app.use(cookieParser());
 
 // 한 IP 가 분당 300건을 넘기면 막는다. `trust proxy` 를 켜 두었으므로 손님은 각자
@@ -43,15 +45,48 @@ app.use(cookieParser());
 //   손님별 보호는 그대로 두고 내부 서버만 뺀다. 주소는 환경변수로 바꿀 수 있게 한다.
 const 제한제외IP = String(process.env.RATE_LIMIT_SKIP_IPS ?? '13.125.9.31,127.0.0.1,::1,::ffff:127.0.0.1')
     .split(',').map((s) => s.trim()).filter(Boolean);
-const apiLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 300,
+// 손님의 실제 IP 를 구한다.
+//   브라우저 → 프론트 nginx(XFF 에 손님 IP 추가) → Next 프록시(/api rewrite) → 백엔드 nginx(XFF 에 프론트 IP 추가) → 여기.
+//   그래서 req.ip 는 늘 프론트 서버(13.125.9.31)다. 예전엔 그 IP 를 통째로 제외해 **브라우저 트래픽엔 리밋이 하나도 안 걸렸다**
+//   (실측: 420회 연속 요청 전부 200). 손님 IP 는 XFF 의 '오른쪽에서 두 번째'(프론트 nginx 가 붙인 값)다 —
+//   손님이 XFF 를 위조해도 그건 더 왼쪽에 놓이므로 이 값은 못 바꾼다. 그 값이 없으면(프록시가 XFF 를 안 넘긴 경우) 예전대로 제외한다.
+const 손님IP = (req) => {
+    if (!제한제외IP.includes(req.ip)) return req.ip;
+    const xff = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+    return xff.length >= 2 ? xff[xff.length - 2] : null;
+};
+const 리밋공통 = {
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => 제한제외IP.includes(req.ip),
+    keyGenerator: (req) => 손님IP(req) ?? req.ip,
+    skip: (req) => 손님IP(req) === null,
+};
+const apiLimiter = rateLimit({
+    ...리밋공통,
+    windowMs: 60 * 1000,
+    max: 300,
     message: { result: -429, message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', data: false },
 });
 app.use('/api', apiLimiter);
+// 민감 경로는 더 촘촘히: 로그인·인증문자·비밀번호변경·아이디찾기(무차별 대입), 가맹점 신청(메일 발송 남용).
+const authLimiter = rateLimit({
+    ...리밋공통, windowMs: 10 * 60 * 1000, max: 30,
+    message: { result: -429, message: '시도가 너무 많습니다. 10분 뒤에 다시 시도해주세요.', data: false },
+});
+app.use(['/api/auth/sign-in', '/api/auth/code', '/api/auth/change-password', '/api/auth/find-id'], authLimiter);
+const merchantAppLimiter = rateLimit({
+    ...리밋공통, windowMs: 60 * 60 * 1000, max: 5,
+    skip: (req) => req.method !== 'POST' || 손님IP(req) === null,
+    message: { result: -429, message: '신청이 너무 많습니다. 잠시 후 다시 시도해주세요.', data: false },
+});
+app.use('/api/merchant-application', merchantAppLimiter);
+// 비회원 주문조회(전화번호+주문비밀번호 추측 방지): 조회 파라미터가 있을 때만 센다.
+const guestLookupLimiter = rateLimit({
+    ...리밋공통, windowMs: 10 * 60 * 1000, max: 30,
+    skip: (req) => !(req.query?.buyer_phone || req.query?.ord_num) || 손님IP(req) === null,
+    message: { result: -429, message: '조회 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.', data: false },
+});
+app.use('/api/transactions', guestLookupLimiter);
 // express.json() 제거됨 - bodyParser.json()이 동일 역할 수행
 
 // 한글 자소 분리(NFD) → 조합형(NFC) 정규화 미들웨어

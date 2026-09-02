@@ -180,7 +180,7 @@ const orderFormCtrl = {
             const before = await 서식가져오기(id);
             if (!before || Number(before.brand_id) !== brand_id) return lowLevelException(req, res);
 
-            await deleteQuery(table_name, id);
+            await deleteQuery(table_name, { id }); // 스칼라로 넘기면 WHERE 가 비어 아무것도 안 지워졌다
             // 항목·적용대상도 함께 내린다. 남겨두면 같은 template_id 로 새 서식을 만들 때 되살아난다.
             // ⚠ 이미 접수된 주문의 입력값(transaction_order_forms)은 건드리지 않는다 —
             //   주문 내역은 서식이 없어져도 그대로 남아야 한다.

@@ -168,6 +168,13 @@ const userWishCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
+            // 본인 찜만(운영자는 자기 브랜드). 예전엔 인증 없이 id 로 아무 찜이나 하드삭제됐다.
+            if (!(decode_user?.id > 0)) return lowLevelException(req, res);
+            const row = (await readPool.query(`SELECT id, user_id, brand_id FROM ${table_name} WHERE id=? LIMIT 1`, [id]))[0][0];
+            if (!row) return response(req, res, 100, "success", {}); // 이미 없음(멱등)
+            const isOwner = Number(row.user_id) === Number(decode_user.id);
+            const isStaffOfBrand = Number(decode_user?.level) >= 10 && (Number(decode_user?.level) >= 50 || Number(row.brand_id) === Number(decode_user?.brand_id));
+            if (!isOwner && !isStaffOfBrand) return lowLevelException(req, res);
             let result = await deleteQuery(`${table_name}`, {
                 id
             }, true)

@@ -221,8 +221,18 @@ const productReviewCtrl = {
 
             const 별점잘못 = 별점검사(scope);
             if (별점잘못) { return response(req, res, -100, 별점잘못, false); }
-            const brandId = brand_id || decode_dns?.id || 0;
+            // 리뷰는 로그인한 본인 이름으로만. 예전엔 인증 없이 body 의 brand_id/user_id 로 아무 브랜드·아무 회원 명의 리뷰를 넣을 수 있었다
+            // (평점 집계 product_average_scope 까지 오염).
+            if (!(decode_user?.id > 0)) {
+                return lowLevelException(req, res);
+            }
+            const brandId = Number(decode_dns?.id) || 0;
             const productIdNum = parseInt(product_id, 10) || 0;
+            // 상품이 이 브랜드 것인지 확인(다른 브랜드 상품에 리뷰를 꽂는 것 방지)
+            const productRow = (await readPool.query(`SELECT id FROM products WHERE id=? AND brand_id=? AND is_delete=0 LIMIT 1`, [productIdNum, brandId]))[0][0];
+            if (!productRow) {
+                return response(req, res, -100, "상품을 찾을 수 없습니다.", false);
+            }
 
             if (!brandId || !productIdNum) {
                 return response(req, res, -400, "brand_id 또는 product_id가 올바르지 않습니다.", false);
@@ -240,7 +250,7 @@ const productReviewCtrl = {
                 profile_img,
                 content_img,
                 product_id: productIdNum,
-                user_id,
+                user_id: decode_user.id, // body 의 user_id 는 쓰지 않는다(명의 도용 방지)
             };
 
             obj = { ...obj, ...files };

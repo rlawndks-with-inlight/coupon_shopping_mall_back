@@ -1,6 +1,6 @@
 'use strict';
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeObjByList, response, settingFiles, settingLangs } from "../utils.js/util.js";
+import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeObjByList, resolveWriteBrandId, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
@@ -913,6 +913,8 @@ const productCtrl = {
             } = req.body;
             combinations = 배열로(combinations);
             order_form_fields = 배열로(order_form_fields);
+            // brand_id 는 body 를 믿지 않는다 — 셀러(레벨10)가 남의 브랜드에 상품을 넣을 수 있었다.
+            brand_id = resolveWriteBrandId(decode_user, brand_id, decode_dns);
 
             let obj = {
                 product_img,
@@ -1117,6 +1119,10 @@ const productCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             // 비로그인이면 undefined < 40 이 false 라 이 가드가 열렸다.
             if (!decode_user || decode_user?.level < 40) {
+                return lowLevelException(req, res);
+            }
+            // 소유 확인: 등급만 보고 id 로 갱신하면 다른 브랜드 상품(상세 URL 에 id 가 노출됨)의 가격·설명을 바꿀 수 있었다.
+            if (!(await loadOwnedRow(readPool, table_name, req.body?.id, decode_user))) {
                 return lowLevelException(req, res);
             }
             let {

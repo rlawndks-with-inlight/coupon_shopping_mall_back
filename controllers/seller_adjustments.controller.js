@@ -17,7 +17,8 @@ const sellerAdjustmentsCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
 
             const { trx_status, cancel_status, is_confirm, cancel_type, type, state, s_dt, e_dt, page, page_size } = req.query;
-            if (!decode_user) {
+            // 정산 집계(총판 실명·정산액)는 운영자(레벨10+)만. 예전엔 로그인한 일반 회원(레벨0)도 볼 수 있었다.
+            if (!decode_user || Number(decode_user?.level) < 10) {
                 return lowLevelException(req, res);
             }
 

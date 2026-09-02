@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, makeTree, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelException, makeTree, response, settingFiles } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -13,6 +13,11 @@ const dashboardCtrl = {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
+            // 매출·주문 집계는 운영자만, 브랜드는 '토큰의 brand_id'(마스터는 dns). 예전엔 dns 쿠키만으로 아무 브랜드 매출을 볼 수 있었다.
+            if (!decode_user || Number(decode_user?.level) < 10) {
+                return lowLevelException(req, res);
+            }
+            const dashBrandId = Number(decode_user?.level) >= 50 ? Number(decode_dns?.id) : Number(decode_user?.brand_id);
 
             const { s_dt, e_dt } = req.query;
 
@@ -27,20 +32,20 @@ const dashboardCtrl = {
             // 취소된 주문은 매출이 아니다. is_cancel=0 만 걸면 취소 원장 행(음수)만 빠지고,
             // 정작 취소된 원주문(is_cancel_trans=1, 금액 양수)은 그대로 잡혀 매출이 부풀었다.
             trx_counts_sql += ` WHERE is_cancel=0 AND is_cancel_trans=0 AND is_delete=0 AND brand_id=? `;
-            let trx_counts_params = [decode_dns?.id];
+            let trx_counts_params = [dashBrandId];
 
             let trx_cancel_counts_sql = `SELECT COUNT(*) AS cnt FROM ${table_name} `;
             trx_cancel_counts_sql += ` WHERE is_cancel=1 AND is_delete=0 AND brand_id=? `;
-            let trx_cancel_counts_params = [decode_dns?.id];
+            let trx_cancel_counts_params = [dashBrandId];
 
             let trx_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(amount) AS total_amount FROM ${table_name} `;
             trx_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND is_cancel_trans=0 AND is_delete=0 AND brand_id=? `;
-            let trx_amounts_params = [decode_dns?.id];
+            let trx_amounts_params = [dashBrandId];
 
             if (decode_user?.level == 10) { //셀러의 경우 영업자를 거친 차익을 계산해야 함
                 let trx_agent_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(agent_amount) AS total_agent_amount FROM ${table_name} `;
                 trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND is_cancel_trans=0 AND brand_id=? `;
-                let trx_agent_amounts_params = [decode_dns?.id];
+                let trx_agent_amounts_params = [dashBrandId];
                 trx_agent_amounts_sql += ` AND seller_id = ? `;
                 trx_agent_amounts_params.push(decode_user?.id);
                 if (s_dt) {
@@ -71,7 +76,7 @@ const dashboardCtrl = {
 
                 let trx_agent_amounts_sql = ` SELECT DATE(created_at) AS date, SUM(agent_amount) AS total_agent_amount FROM ${table_name} `;
                 trx_agent_amounts_sql += ` WHERE trx_status=5 AND is_cancel=0 AND is_cancel_trans=0 AND brand_id=? `;
-                let trx_agent_amounts_params = [decode_dns?.id];
+                let trx_agent_amounts_params = [dashBrandId];
                 trx_agent_amounts_sql += ` AND seller_id IN (SELECT id FROM users WHERE oper_id=?) `;
                 trx_agent_amounts_params.push(decode_user?.id);
                 if (s_dt) {
@@ -146,7 +151,7 @@ const dashboardCtrl = {
             let post_category_sql = `SELECT ${post_category_columns.join()} FROM post_categories `;
             post_category_sql += ` WHERE post_categories.brand_id=? `;
             post_category_sql += ` AND post_categories.is_delete=0 ORDER BY sort_idx DESC`;
-            let post_categories = await readPool.query(post_category_sql, [decode_dns?.id ?? 0]);
+            let post_categories = await readPool.query(post_category_sql, [dashBrandId]);
             post_categories = post_categories[0];
             let post_categories_tree = makeTree(post_categories);
             let request_post_categories = post_categories_tree.filter(el => el?.post_category_read_type == 1 && el?.is_able_user_add == 1)
