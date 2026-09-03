@@ -467,6 +467,7 @@ export const checkStock = async (products = []) => {
 // ⚠ 결제를 막지 않는다. 여기서 던지면 카드는 승인됐는데 주문이 안 만들어진다.
 //   재고가 안 줄어든 것은 사람이 고칠 수 있지만, 결제 실패는 되돌리기 어렵다.
 //   재고 검사는 결제 **전에** checkStock 으로 이미 한 번 한다.
+import logger from "./winston/index.js"; // ESM import 는 끌어올려지므로 여기 둬도 최상단과 같다 — 초과판매 차단을 logs/error 에 남기기 위함
 export const decreaseStock = async (trans_id, products = []) => {
     const tid = Number(trans_id) || 0;
     if (!tid) return false;
@@ -492,7 +493,7 @@ export const decreaseStock = async (trans_id, products = []) => {
             // 차감 실패 = 초과 판매. 이 함수는 결제(PG 호출) '전'에 불리므로 여기서 false 를 돌려 주문을 중단해도
             // 돈은 움직이지 않는다 — 호출측(pay.ready)이 결제실패정리(재고 원복·주문 정리)를 하고 손님에게 품절을 알린다.
             // 원장 행은 남겨 두어도 된다: 결제실패정리 → applyCancelEffects 가 원장 기준으로 되돌린다.
-            console.error(`[재고] 초과 판매 차단 — 주문 ${tid} / 상품 ${n.product_id}`
+            logger.error(`[재고] 초과 판매 차단 — 주문 ${tid} / 상품 ${n.product_id}`
                 + `${n.option_id ? ` / 옵션 ${n.option_id}` : ''}${n.combo_id ? ` / 조합 ${n.combo_id}` : ''}`
                 + ` / 필요 ${n.qty}개. 재고가 모자라 주문을 중단한다.`);
             return false;
