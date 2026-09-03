@@ -17,7 +17,7 @@ import { readPool, writePool } from "../config/db-pool.js";
 import crypto from 'crypto';
 import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
-import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
+import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, getCancelRecords as forspayGetCancelRecords, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
@@ -1384,15 +1384,37 @@ const payCtrl = {
       const trx = (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
       if (!trx) return res.status(200).send({ ok: true });
       const creds = await getForspayCreds(trx.brand_id);
-      // sign_key 설정 시 서명 검증(불일치면 무시)
-      if (creds?.sign_key && body.signature) {
-        const ok = forspayVerifySig({ sign_key: creds.sign_key, timestamp: body.timestamp, mid: body.mid, signature: body.signature });
+      // 서명 검증. sign_key 는 포스페이 쪽에서 '결제모듈(MID) 단위'로 관리된다(2026-09-03 답변) —
+      // payload 의 mid 로 그 MID 의 키(forspay_config.sign_keys[mid])를 고르고, 없으면 모듈 공통 키(tid)를 쓴다.
+      // 키가 없으면 포스페이는 timestamp·signature 를 빈 문자열로 보낸다 → 검증을 건너뛴다.
+      const signKey = creds?.sign_keys?.[String(body.mid ?? '')] || creds?.sign_key;
+      if (signKey && body.signature) {
+        const ok = forspayVerifySig({ sign_key: signKey, timestamp: body.timestamp, mid: body.mid, signature: body.signature });
         if (!ok) { logger.error('forspay webhook signature mismatch'); return res.status(200).send({ ok: false }); }
       }
       if (String(body.is_cancel) === '1') {
-        // 웹훅으로 들어온 취소도 관리자 취소와 똑같이 처리한다.
-        // (부수처리는 멱등이라 관리자 취소와 웹훅이 겹쳐도 두 번 움직이지 않는다)
-        await markCanceled(trx.id);
+        // 취소 통지. 부분취소도 같은 모양(is_cancel=1, amount 음수)으로 오므로 금액을 봐야 한다 —
+        // 예전엔 무조건 markCanceled(전체취소) 라, 우리가 부분취소한 뒤 되돌아온 웹훅이 주문 전체를 취소시켰을 것이다.
+        // 서명키가 없는 동안엔 위조가 가능하므로, 포스페이 취소 레코드(cxl_seq≥1)로 실제 취소 합계를 확인한 뒤에만 반영한다.
+        let cancelledTotal = null;
+        try {
+          const r = await forspayGetCancelRecords({ app_key: creds?.app_key, ord_num: ord });
+          cancelledTotal = r.cancelledTotal;
+        } catch (e) {
+          logger.error(`[forspay webhook] 취소 레코드 조회 실패 — 반영 보류 ord=${ord}: ${errText(e)}`);
+          return res.status(200).send({ ok: true }); // 대사 배치가 다시 본다
+        }
+        const orderAmount = Math.abs(Number(trx.amount) || 0);
+        if (cancelledTotal >= orderAmount && orderAmount > 0) {
+          // 전액 취소 확인 → 관리자 취소와 똑같이 처리(부수처리는 멱등이라 겹쳐도 두 번 움직이지 않는다)
+          await markCanceled(trx.id);
+        } else if (cancelledTotal > 0) {
+          // 부분취소: 우리 쪽에서 실행한 것이면 이미 cancelLines 가 반영했다(멱등). 상위(OMS)에서 한 부분취소는
+          // 어느 줄인지 알 수 없으므로 자동 반영하지 않고 기록만 남긴다 — 사람이 확인해 처리한다.
+          logger.error(`[forspay webhook] 부분취소 통지 ord=${ord} trans=${trx.id} 취소합계=${cancelledTotal}/${orderAmount} — 자동 반영 안 함, 확인 필요`);
+        } else {
+          logger.error(`[forspay webhook] 취소 통지인데 포스페이에 취소 레코드가 없음 — 무시 ord=${ord}`);
+        }
         return res.status(200).send({ ok: true });
       }
       // 승인: 거래조회로 재확인 후 확정(멱등)
@@ -1516,7 +1538,10 @@ async function getForspayCreds(brand_id) {
       if (p !== undefined && p !== null && String(p).trim() !== '') method_provider[k] = p;
     }
   } catch (e) { method_provider = {}; }
-  return { app_key: m.pay_key, pg_provider_id: m.mid, sign_key: m.tid, method_provider };
+  // MID별 웹훅 서명키: forspay_config.sign_keys = { "<mid>": "<sign_key>", ... } (포스페이가 결제모듈 단위로 관리)
+  let sign_keys = {};
+  try { sign_keys = (m.forspay_config ? JSON.parse(m.forspay_config) : {})?.sign_keys || {}; } catch (e) { sign_keys = {}; }
+  return { app_key: m.pay_key, pg_provider_id: m.mid, sign_key: m.tid, sign_keys, method_provider };
 }
 
 // 포스페이 거래 확정(멱등): 거래조회로 승인 확인된 건을 결제완료 처리 + 포인트 적립

@@ -27,7 +27,7 @@
 
 import { readPool } from '../config/db-pool.js';
 import { markCanceled } from '../utils.js/cancel.js';
-import { getTransaction as forspayGetTransaction } from '../utils.js/payments/forspay.js';
+import { getCancelRecords as forspayGetCancelRecords } from '../utils.js/payments/forspay.js';
 
 const 최근일수   = parseInt(process.env.FORSPAY_RECONCILE_DAYS  ?? '21')  || 21;
 const 최대건수   = parseInt(process.env.FORSPAY_RECONCILE_LIMIT ?? '300') || 300;
@@ -77,9 +77,11 @@ for (const t of candidates) {
             continue;
         }
 
-        let txn;
+        // 포스페이는 취소를 cxl_seq=1,2,… 별도 레코드로 넣는다(원승인 cxl_seq=0 은 취소돼도 approved 그대로 —
+        // 2026-09-03 협력사 답변). 그래서 취소 레코드를 1부터 읽어 합계로 판단한다.
+        let cancelledTotal;
         try {
-            txn = await forspayGetTransaction({ app_key, ord_num: t.ord_num, cxl_seq: 0, timeout: 건당타임아웃ms });
+            ({ cancelledTotal } = await forspayGetCancelRecords({ app_key, ord_num: t.ord_num, timeout: 건당타임아웃ms }));
         } catch (e) {
             // 조회 실패는 '취소'가 아니다. 절대 취소로 처리하지 않는다(fail-closed). 다음 회차 재시도.
             스킵++;
@@ -88,11 +90,14 @@ for (const t of candidates) {
             continue;
         }
 
-        const cancelled = txn?.status === 'cancelled' || String(txn?.is_cancel) === '1';
-        if (cancelled) {
+        const orderAmount = Math.abs(Number(t.amount) || 0);
+        if (orderAmount > 0 && cancelledTotal >= orderAmount) {
             await markCanceled(t.id); // 웹훅과 동일 경로: 취소표시 + 원장 + 재고/포인트(멱등, PG 재호출 없음)
             취소반영++;
-            log(`★ 상위취소 반영 id=${t.id} ord=${t.ord_num} brand=${t.brand_id} amount=${t.amount} status=${txn?.status} is_cancel=${txn?.is_cancel}`);
+            log(`★ 상위 전액취소 반영 id=${t.id} ord=${t.ord_num} brand=${t.brand_id} amount=${orderAmount} 취소합계=${cancelledTotal}`);
+        } else if (cancelledTotal > 0) {
+            // 부분취소: 우리가 실행한 것이면 이미 원장에 있다. 상위(OMS)에서 한 것이면 어느 줄인지 알 수 없어 자동 반영하지 않는다.
+            log(`△ 부분취소 존재 id=${t.id} ord=${t.ord_num} 취소합계=${cancelledTotal}/${orderAmount} — 자동 반영 안 함(확인 필요)`);
         }
     } catch (e) {
         // 한 건의 예외가 배치 전체를 멈추게 두지 않는다.
