@@ -99,6 +99,29 @@ export const getTransaction = async ({ app_key, base = FORSPAY_API_BASE, ord_num
     return data;
 };
 
+// 취소 레코드 조회 — 포스페이는 취소를 '원승인(cxl_seq=0)의 is_cancel 변경' 이 아니라
+// cxl_seq=1,2,… 에 별도 레코드(status=cancelled, amount 음수)로 INSERT 한다(2026-09-03 협력사 답변).
+// 그래서 cxl_seq=0 만 봐서는 취소를 절대 알 수 없다. 1부터 차례로 읽고 없으면(409 not_found) 멈춘다.
+//   반환: { records: [...], cancelledTotal: 취소 합계(양수) }
+export const getCancelRecords = async ({ app_key, base = FORSPAY_API_BASE, ord_num, max = 20, timeout = 8000 } = {}) => {
+    const records = [];
+    for (let seq = 1; seq <= max; seq++) {
+        let rec;
+        try {
+            rec = await getTransaction({ app_key, base, ord_num, cxl_seq: seq, timeout });
+        } catch (e) {
+            const status = e?.response?.status;
+            const code = e?.response?.data?.code;
+            if (status === 409 || status === 404 || code === 1000) break; // 더 이상 취소 레코드 없음
+            throw e; // 네트워크/인증 오류는 '취소 없음' 으로 오판하면 안 된다
+        }
+        if (!rec || !(rec.is_cancel === true || String(rec.is_cancel) === '1' || rec.status === 'cancelled')) break;
+        records.push(rec);
+    }
+    const cancelledTotal = records.reduce((s, r) => s + Math.abs(parseInt(r.amount, 10) || 0), 0);
+    return { records, cancelledTotal };
+};
+
 // 거래 취소 (POST /api/v1/transactions/{ord_num}/cancel). amount 생략 시 전액취소.
 export const cancelTransaction = async ({ app_key, base = FORSPAY_API_BASE, ord_num, amount } = {}) => {
     const body = {};
@@ -153,6 +176,7 @@ export default {
     createSession,
     getLaunch,
     getTransaction,
+    getCancelRecords,
     cancelTransaction,
     getPing,
     getAvailableMethodIds,
