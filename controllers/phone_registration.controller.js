@@ -85,7 +85,7 @@ const phoneRegistrationCtrl = {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
             let {
-                brand_id, seller_id, phone_number, registrar
+                brand_id, seller_id, phone_number
             } = req.body;
             // 가입허용 전화번호 등록은 운영자(레벨10+)만, brand_id 는 body 를 믿지 않는다.
             // 예전엔 인증 없이 아무 브랜드에 번호를 넣어 '가입 제한 브랜드' 의 전화번호 화이트리스트를 우회할 수 있었다.
@@ -93,6 +93,15 @@ const phoneRegistrationCtrl = {
                 return lowLevelException(req, res);
             }
             brand_id = resolveWriteBrandId(decode_user, brand_id, decode_dns);
+            // 등록자(registrar)도 body 를 믿지 않는다 — 바로 윗줄 brand_id 와 같은 이유다.
+            //
+            // [왜 고쳤나 — 2026-09-03]
+            // registrar 는 '누가 등록했는지' 를 남기는 int 칸(회원 id)인데 body 값을 그대로 저장했다.
+            //   · 등록 기록을 남의 id 로 남길 수 있었다 — 기록을 남기는 칸이 기록을 못 믿게 된다.
+            //   · 숫자가 아닌 값이 오면 DB 가 거절해 500 이 났다(점검에서 '__점검__73218' 로 실제로 터짐).
+            // 로그인한 사람은 바로 위에서 이미 확인했으므로 그 id 를 쓰면 둘 다 사라진다.
+            // 관리자 화면도 registrar: user?.id 를 보내고 있었다 — 화면 동작은 그대로다.
+            const registrar = Number(decode_user?.id) || 0;
             let files = settingFiles(req.files);
 
             let is_exist_number = await readPool.query(`SELECT * FROM ${table_name} WHERE (phone_number=? OR phone_idx=?) AND brand_id=? AND seller_id=? AND is_delete=0`, [phone_number, blindIndex(phone_number), brand_id, seller_id]);
