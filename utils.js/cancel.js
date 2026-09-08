@@ -373,14 +373,17 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
               WHERE id=?`,
             [c.qty, c.amount, c.line.id]);
         // 재고는 그 줄이 고른 옵션만, 취소한 수량만큼만 되돌린다.
+        // 추가상품 줄(order_groups 안 addon_line=1)은 옵션 재고만 — 본상품 재고는 본상품 줄이 되돌린다.
         let option_ids = [];
+        let 추가상품줄 = false;
         try {
             const groups = JSON.parse(c.line.order_groups ?? '[]');
             option_ids = (Array.isArray(groups) ? groups : [])
                 .flatMap((g) => (g?.options ?? []).map((o) => Number(o?.id) || 0)).filter(Boolean);
+            추가상품줄 = (Array.isArray(groups) ? groups : []).some((g) => Number(g?.addon_line) === 1);
         } catch (e) { option_ids = []; }
         try {
-            await restoreStockPartial(tid, { product_id: c.line.product_id, option_ids, qty: c.qty, cancel_id });
+            await restoreStockPartial(tid, { product_id: c.line.product_id, option_ids, qty: c.qty, cancel_id, only_options: 추가상품줄 });
         } catch (e) {
             logger.error(`[부분취소] 재고 복구 실패 trans_id=${tid} order_id=${c.line.id}: ${e?.sqlMessage || e?.message || e}`);
         }

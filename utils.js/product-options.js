@@ -298,8 +298,12 @@ export const saveCombinations = async (product_id, combinations = [], 이름표 
 //   단독형 옵션   옵션(product_options.stock_qty)
 //   옵션 없는 상품 상품(products.stock_qty)
 //
-// 추가상품 수량은 **상품 수량과 같다**. 돌상 2세트를 시키면 한복도 2벌이다.
-// (수량을 따로 받게 하면 화면과 검증이 배로 늘고, 이 업종에서 쓸 일이 거의 없다)
+// 추가상품은 **제 줄, 제 수량**이다(2026-09-09, 네이버·카페24 방식). 갈비 1개에 소스 3개.
+// 예전엔 본상품 수량에 묶여 있었다 — 가맹점 제보(8/24) "추가옵션 1개만 구매가능" 이 그것이었다.
+// 추가상품 줄은 요청 본문의 addon_line=1 또는 저장된 order_groups 안의 addon_line=1 로 안다.
+export const isAddonLine = (line) =>
+    Number(line?.addon_line) === 1
+    || (Array.isArray(line?.groups) ? line.groups : []).some((g) => Number(g?.addon_line) === 1);
 
 // 주문 한 줄이 재고를 얼마나 쓰는지 계산한다. 실제 차감은 하지 않는다.
 const 줄별차감 = async (line) => {
@@ -312,6 +316,20 @@ const 줄별차감 = async (line) => {
     if (!product) return [];
 
     const ids = pickedOptionIds(line?.groups);
+
+    // 추가상품 줄은 **그 추가상품 옵션의 재고만** 쓴다. 상품 재고·조합 재고는 본상품 줄이 쓴다 —
+    // 여기서 상품 재고까지 세면 소스 3개가 갈비 재고 3개를 먹는다.
+    if (isAddonLine(line)) {
+        if (!ids.length) return [];
+        const ph = ids.map(() => '?').join(',');
+        const [rows] = await readPool.query(
+            `SELECT id, option_name, stock_qty, is_soldout FROM product_options
+              WHERE id IN (${ph}) AND is_delete=0`, ids);
+        return rows.map((o) => ({
+            product_id, option_id: o.id, combo_id: 0, qty: count,
+            stock: o.stock_qty, soldout: o.is_soldout, label: o.option_name,
+        }));
+    }
 
     // 조합형 — 고른 옵션 조합 하나가 재고 단위다.
     if (Number(product.option_mode) === 1 && ids.length) {
@@ -376,6 +394,7 @@ export const findMissingRequiredOption = async (products = []) => {
     }
 
     for (const line of lines) {
+        if (isAddonLine(line)) continue; // 추가상품 줄에는 필수옵션이 없다 — 본상품 줄이 따로 검사받는다
         const pid = Number(line?.id) || 0;
         const 필요 = groups.filter((g) => Number(g.product_id) === pid);
         if (!필요.length) continue;
@@ -411,19 +430,22 @@ export const checkPurchaseLimit = async (user_id, products = []) => {
     // 지난 구매 수량. 취소된 주문은 빼고, 결제대기는 센다 —
     // 한정 상품은 '덜 세서 초과 판매' 보다 '더 세서 막는' 쪽이 안전하다.
     // (버려진 결제대기는 cleanup-abandoned 스케줄러가 지운다)
+    // 지난 주문의 추가상품 줄(order_groups 안 addon_line=1)은 본상품 개수가 아니다 — 소스 3개가 한정 3개를 채우면 안 된다.
     const [past] = await readPool.query(
         `SELECT o.product_id, SUM(o.order_count) AS cnt
            FROM transaction_orders o
            JOIN transactions t ON t.id = o.trans_id
           WHERE o.product_id IN (${ph}) AND t.user_id = ?
             AND t.is_cancel = 0 AND t.is_cancel_trans = 0 AND t.is_delete = 0
+            AND (o.order_groups IS NULL OR o.order_groups NOT LIKE '%"addon_line":1%')
           GROUP BY o.product_id`, [...ids, uid]);
     const 지난것 = new Map(past.map((r) => [Number(r.product_id), Number(r.cnt) || 0]));
 
     for (const p of rows) {
         const pid = Number(p.id);
         // 같은 상품을 옵션만 달리해 여러 줄로 담았을 수 있다 — 합쳐서 본다.
-        const 이번 = lines.filter((l) => Number(l?.id) === pid)
+        // 추가상품 줄은 본상품 개수가 아니다(소스 3개가 한정 3개를 채우면 안 된다).
+        const 이번 = lines.filter((l) => Number(l?.id) === pid && !isAddonLine(l))
             .reduce((s, l) => s + Math.max(1, Number(l?.order_count) || 1), 0);
         const 합 = (지난것.get(pid) ?? 0) + 이번;
         if (합 > Number(p.purchase_limit)) {
@@ -509,7 +531,7 @@ export const decreaseStock = async (trans_id, products = []) => {
 //      같은 상품을 옵션만 달리해 두 줄로 담았을 수 있어서, product_id 만 보면 남의 줄까지 푼다.
 //   ② 원장 'in' 행에 cancel_id 를 넣는다. 안 넣으면 UNIQUE 때문에
 //      **첫 부분취소만 반영되고 두 번째부터 재고가 안 돌아온다.**
-export const restoreStockPartial = async (trans_id, { product_id, option_ids = [], qty, cancel_id }) => {
+export const restoreStockPartial = async (trans_id, { product_id, option_ids = [], qty, cancel_id, only_options = false }) => {
     const tid = Number(trans_id) || 0;
     const pid = Number(product_id) || 0;
     const 수량 = Math.max(0, Number(qty) || 0);
@@ -522,7 +544,8 @@ export const restoreStockPartial = async (trans_id, { product_id, option_ids = [
 
     const 고른것 = new Set(option_ids.map((v) => Number(v) || 0).filter(Boolean));
     // 옵션이 걸린 행은 그 줄이 고른 옵션만, 상품/조합 단위 행(option_id=0)은 그대로 되돌린다.
-    const 대상 = outs.filter((r) => Number(r.option_id) === 0 || 고른것.has(Number(r.option_id)));
+    // 추가상품 줄(only_options)은 옵션 행만 — 같은 상품의 본상품 줄이 잡은 상품 재고를 건드리면 안 된다.
+    const 대상 = outs.filter((r) => (Number(r.option_id) === 0 ? !only_options : 고른것.has(Number(r.option_id))));
 
     for (const n of 대상) {
         // 이 줄이 원래 몇 개를 잡았는지보다 많이 되돌리면 안 된다.

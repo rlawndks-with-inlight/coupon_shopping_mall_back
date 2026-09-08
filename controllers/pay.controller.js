@@ -205,6 +205,12 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
     const counted = new Set();
     const line_product_id = parseInt(lines[i]?.id);
     const 조합형 = optionModeById.get(line_product_id) === 1;
+    // 추가상품 줄(addon_line=1) — 네이버·카페24처럼 추가상품은 제 줄·제 수량이다(2026-09-09).
+    //   · 상품가는 안 붙는다. 그 줄의 추가상품 옵션 가격 × 수량뿐이다.
+    //   · 추가상품(group_type=1)이 아닌 옵션이 실려 오면 통째로 거부한다 — 필수옵션을 이 줄에
+    //     실어 상품가 없이 사는 길을 막는다.
+    //   · 같은 주문에 그 상품의 본상품 줄이 있어야 한다(아래에서 본다). 추가상품만 주문은 안 된다.
+    const 추가상품줄 = Number(lines[i]?.addon_line) === 1;
     const 선택옵션ids = [];
     for (const g of (lines[i]?.groups ?? [])) {
       for (const o of (g?.options ?? [])) {
@@ -213,12 +219,15 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
         if (counted.has(oid)) continue;
         counted.add(oid);
         const 종류 = groupTypeByOption.get(`${line_product_id}:${oid}`) ?? 0;
+        if (추가상품줄 && 종류 !== 1) return null;
         // 조합형 상품의 **선택옵션**은 개별 가격이 아니라 조합 추가금으로 값이 매겨진다.
         // 추가상품(종류 1)은 조합과 무관하게 늘 개별 가격이 붙는다.
         if (조합형 && 종류 === 0) { 선택옵션ids.push(oid); continue; }
         optionPrice += (optionPriceById.get(`${line_product_id}:${oid}`) ?? 0);
       }
     }
+    // 추가상품 줄인데 추가상품이 하나도 안 실렸으면 값이 0인 빈 줄이다 — 거부한다.
+    if (추가상품줄 && counted.size === 0) return null;
     if (조합형 && 선택옵션ids.length > 0) {
       const key = [...new Set(선택옵션ids)].sort((a, b) => a - b).join('-');
       optionPrice += (comboPriceByKey.get(`${line_product_id}:${key}`) ?? 0);
@@ -226,9 +235,17 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
     const count = parseInt(lines[i]?.order_count);
     if (!Number.isInteger(count) || count <= 0) return null;
 
-    const lineMerch = ((Number(p.product_sale_price) || 0) + optionPrice) * count;
+    const lineMerch = ((추가상품줄 ? 0 : (Number(p.product_sale_price) || 0)) + optionPrice) * count;
     merchByIdx[i] = lineMerch;
     merchTotal += lineMerch;
+  }
+
+  // 추가상품 줄은 같은 주문에 그 상품의 본상품 줄이 있어야 한다.
+  // 본상품을 지우고 추가상품만 남긴 주문(소스만 1,500원)은 받지 않는다 — 화면도 같은 규칙으로 걷어낸다.
+  for (const l of lines) {
+    if (Number(l?.addon_line) !== 1) continue;
+    const 본상품있음 = lines.some((m) => Number(m?.addon_line) !== 1 && parseInt(m?.id) === parseInt(l?.id));
+    if (!본상품있음) return null;
   }
 
   // 2) 배송비 — 정책이 켜져 있으면 주문단위로 첫 라인에 1회
@@ -240,9 +257,10 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
   const expectedLines = [];
   for (let i = 0; i < lines.length; i++) {
     const p = productById.get(parseInt(lines[i]?.id));
+    // 상품별 배송비(정책 안 쓰는 몰)는 본상품 줄에만 붙는다 — 추가상품 줄에 또 붙으면 배송비가 두 번이다.
     const lineDelivery = shipActive
       ? (i === 0 ? shipFee : 0)
-      : (Number(p.delivery_fee) || 0);
+      : (Number(lines[i]?.addon_line) === 1 ? 0 : (Number(p.delivery_fee) || 0));
     const order_amount = merchByIdx[i] + lineDelivery;
     amount += order_amount;
     expectedLines.push({ id: parseInt(lines[i]?.id), order_amount, delivery_fee: lineDelivery });
