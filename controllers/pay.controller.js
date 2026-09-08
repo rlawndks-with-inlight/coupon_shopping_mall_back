@@ -37,6 +37,12 @@ const table_name = "transactions";
 // ⚠ 지원 안 하는 PG 에 부분취소를 걸면 **전액이 취소된다**. 목록에 없으면 막는다.
 const PARTIAL_CANCEL_METHODS = [41];
 
+// transaction_orders.order_groups(JSON 문자열)를 배열로. 깨진 값이면 빈 배열 — 취소 자체를 막지 않는다.
+const 옵션스냅샷 = (raw) => {
+  try { const v = typeof raw === 'string' ? JSON.parse(raw) : raw; return Array.isArray(v) ? v : []; }
+  catch (e) { return []; }
+};
+
 // 결제가 실패로 끝나면 주문을 만들며 잡아둔 것들을 전부 놓아준다.
 //
 // 주문을 만들 때 두 가지를 미리 잡는다:
@@ -1244,6 +1250,10 @@ const payCtrl = {
           order_count: l.order_count, cancel_count: l.cancel_count,
           remain_count: l.remain_count, unit_price: l.unit_price, remain_amount: l.remain_amount,
           requested_count: l.requested_count,
+          // 그 줄이 고른 옵션(주문 시점 스냅샷). 같은 상품을 옵션만 다르게 두 줄 주문하면
+          // (사과 중과 2개 / 사과 대과 1개) 이름이 똑같아서, 이게 없으면 관리자는
+          // 어느 줄을 취소하는지 알 수 없다 — 2026-09-09 점검에서 드러남.
+          order_groups: 옵션스냅샷(l.order_groups),
         })),
       });
     } catch (err) {
