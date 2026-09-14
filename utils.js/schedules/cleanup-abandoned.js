@@ -1,7 +1,7 @@
 'use strict';
 import { writePool } from "../../config/db-pool.js";
 import logger from "../winston/index.js";
-import { restoreStock } from "../product-options.js";
+import { applyCancelEffects } from "../cancel.js";
 import { logTrx } from "../trx-log.js";
 
 // 버려진 포스페이/페이레터 결제대기(승인 안 된 채 방치) 거래를 「결제실패/미완료」(trx_status -1)로 정리한다.
@@ -12,7 +12,8 @@ import { logTrx } from "../trx-log.js";
 //   · 손님 화면은 trx_status>=0 만 보므로(transaction.controller list) 여전히 안 보인다.
 //   · 매출·정산은 trx_status>=5 만 세므로 섞이지 않는다.
 //   · 뒤늦게 PG 승인 통지가 오면 확정 쿼리(`WHERE trx_status<>5`)가 -1 도 5 로 올린다 —
-//     예전엔 행이 없어 돈만 빠지고 주문이 사라졌으니 이쪽이 낫다. (그때 재고는 이미 돌려놨으므로 다시 차감되진 않는다.)
+//     예전엔 행이 없어 돈만 빠지고 주문이 사라졌으니 이쪽이 낫다. 그때 풀어 둔 재고·돌려준 포인트는
+//     late-approve.js(늦은승인정리)가 다시 잡고 이력에 남긴다.
 //
 // 안전범위(이 조건 전부 만족해야 정리):
 //   - trx_method IN (40,41)  : 페이레터·포스페이(결제창 리다이렉트형)만. 무통장(10)·상품권(11) 등은 제외.
@@ -34,15 +35,16 @@ export const cleanupAbandonedPending = async ({ olderThanMinutes = 60, batch = 2
       const ids = rows.map((r) => r.id);
       if (ids.length === 0) break;
 
-      // ⚠ 표시를 바꾸기 **전에** 재고를 놓아준다.
+      // ⚠ 표시를 바꾸기 **전에** 재고를 놓아주고 사용 포인트를 돌려준다(applyCancelEffects).
+      //   예전엔 재고만 되돌려서, 포인트를 쓰고 결제창을 닫은 회원은 포인트를 잃었다.
       //
       // 재고는 주문을 만들 때 미리 잡는다(결제창을 띄운 사이 남이 사가지 못하게).
       // 손님이 결제창을 닫고 사라지면 잡아둔 재고를 안 돌려놓으면 **팔지도 못한 채 영영 잠긴다**.
       // 원장(product_stock_moves)을 먼저 지우면 무엇을 되돌릴지 알 수 없으므로 순서가 중요하다.
       // 실패해도 정리는 계속한다 — 재고는 사람이 고칠 수 있지만 쌓인 결제대기는 그렇지 않다.
       for (const id of ids) {
-        try { await restoreStock(id); } catch (e) {
-          logger.error(`[cleanup] 재고 복구 실패 trans_id=${id}: ${e?.sqlMessage || e?.message || e}`);
+        try { await applyCancelEffects(id); } catch (e) {
+          logger.error(`[cleanup] 재고·포인트 복구 실패 trans_id=${id}: ${e?.sqlMessage || e?.message || e}`);
         }
       }
       // 되돌린 원장은 지운다 — 남겨 두면 나중에 취소 부수처리가 같은 재고를 한 번 더 되돌린다.

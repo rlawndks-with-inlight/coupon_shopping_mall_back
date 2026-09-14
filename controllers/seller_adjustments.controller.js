@@ -46,7 +46,7 @@ const sellerAdjustmentsCtrl = {
                 -- 취소된 주문은 정산 대상이 아니다. is_cancel = 0 만 걸면 취소 원장 행(음수)만
                 -- 걸러지고, 정작 취소된 원주문(is_cancel_trans = 1, 양수)은 그대로 남아
                 -- 셀러에게 더 주게 된다. 대시보드 매출과 같은 결함이었다.
-                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0 AND is_cancel_trans = 0
+                WHERE trx_status >= 5 AND is_cancel = 0 AND is_cancel_trans = 0
                 ${s_dt ? ` AND created_at >= ?` : ''}
                 ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
@@ -109,7 +109,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0 AND is_cancel_trans = 0
+                WHERE trx_status >= 5 AND is_cancel = 0 AND is_cancel_trans = 0
                 ${s_dt ? ` AND created_at >= ?` : ''}
                 ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
@@ -146,7 +146,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0 AND is_cancel_trans = 0
+                WHERE trx_status >= 5 AND is_cancel = 0 AND is_cancel_trans = 0
                 ${s_dt ? ` AND created_at >= ?` : ''}
                 ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
@@ -208,7 +208,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0 AND is_cancel_trans = 0
+                WHERE trx_status >= 5 AND is_cancel = 0 AND is_cancel_trans = 0
                 ${s_dt ? ` AND created_at >= ?` : ''}
                 ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
@@ -242,7 +242,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0 AND is_cancel_trans = 0
+                WHERE trx_status >= 5 AND is_cancel = 0 AND is_cancel_trans = 0
                 ${s_dt ? ` AND created_at >= ?` : ''}
                 ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t
@@ -278,7 +278,7 @@ const sellerAdjustmentsCtrl = {
                 LEFT JOIN (
                 SELECT *
                 FROM ${table_name}
-                WHERE trx_status != 0 AND trx_status != 1 AND is_cancel = 0 AND is_cancel_trans = 0
+                WHERE trx_status >= 5 AND is_cancel = 0 AND is_cancel_trans = 0
                 ${s_dt ? ` AND created_at >= ?` : ''}
                 ${e_dt ? ` AND created_at <= ?` : ''}
                 ) t

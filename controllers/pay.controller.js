@@ -23,6 +23,7 @@ import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/orde
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
 import { applyCancelEffects, markCanceled, getCancelState, cancelLines } from "../utils.js/cancel.js";
 import { logTrx, actorOf } from "../utils.js/trx-log.js";
+import { 늦은승인정리 } from "../utils.js/late-approve.js";
 
 
 const table_name = "transactions";
@@ -1066,7 +1067,8 @@ const payCtrl = {
         if (!markRes?.affectedRows) {
           return response(req, res, 100, "success", {}); // 이미 확정됨(멱등)
         }
-        await logTrx({ trans_id: id, brand_id: dns_data?.id, kind: 'approve', from_status: 0, to_status: 5, actor: { type: 'system' }, note: 'PG 승인 확정' });
+        await logTrx({ trans_id: id, brand_id: dns_data?.id, kind: 'approve', from_status: Number(pay_data?.trx_status), to_status: 5, actor: { type: 'system' }, note: 'PG 승인 확정' });
+        await 늦은승인정리(pay_data, { note: 'PG 통지' });
         // 적립은 정책 함수 한 곳에서 센다 — 여기서 직접 곱하면 적립률 상한(100%)이 안 걸린다.
         const 쌓을것 = 적립예정({ dns: dns_data, 결제금액: amount });
         if (쌓을것 > 0) {
@@ -1536,6 +1538,7 @@ async function settlePayletterTransaction(transId, data = {}) {
     trx_status: 5,
   }, transId);
   await logTrx({ trans_id: transId, brand_id: trx.brand_id, kind: 'approve', from_status: Number(trx.trx_status), to_status: 5, actor: { type: 'system' }, note: '페이레터 승인 확정' });
+  await 늦은승인정리(trx, { note: '페이레터' });
 
   // 포인트 적립 (기존 pays.result 성공 로직과 동일)
   let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);
@@ -1625,6 +1628,7 @@ async function settleForspayTransaction(transId, data = {}) {
     return true;
   }
   await logTrx({ trans_id: transId, brand_id: trx.brand_id, kind: 'approve', from_status: Number(trx.trx_status), to_status: 5, actor: { type: 'system' }, note: '포스페이 승인 확정' });
+  await 늦은승인정리(trx, { note: '포스페이' });
 
   // 포인트 적립 (우리가 방금 정산을 확정한 경우에만 — 위 affectedRows 로 1회 보장)
   let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);

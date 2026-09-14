@@ -171,6 +171,9 @@ const utilCtrl = {
                 const [[이전]] = await readPool.query(`SELECT trx_status FROM transactions WHERE id=? ${scope.sql}`, [id, ...scope.params]);
                 if (!이전) return lowLevelException(req, res);
                 이전상태 = Number(이전.trx_status);
+                if (이전상태 < 0) {
+                    return response(req, res, -100, "결제실패/미완료 주문은 상태를 바꿀 수 없습니다. 결제가 안 된 주문이라 손님이 다시 결제해야 합니다.", false);
+                }
             }
             let result = await writePool.query(
                 `UPDATE ${table} SET ${column_name}=? WHERE id=? ${scope.sql}`,
