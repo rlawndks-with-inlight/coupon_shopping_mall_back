@@ -10,10 +10,13 @@
 --   **같은 자리에서** 돌린다. 사이가 벌어지면 그동안 그 4곳의 별점이 반으로 보인다.
 --   순서: ① _v2.sql(컬럼) → 백엔드 배포 → 이 파일 → 프론트 배포.
 -- 6 이상인 값이 하나라도 있을 때만 돌아 두 번 돌려도 안전하다(되돌릴 수는 없다 — 반올림으로 정보가 줄었다).
+-- 옛 행 = order_id 가 비어 있고 샘플 표식이 없는 행. 새 코드가 쓴 후기는 order_id 가 있어 건드리지 않는다.
 -- ============================================================================
 
+-- ⚠ 새 코드로 쓴 후기(order_id 있음)와 미리보기 샘플(title='__preview_sample__')은 이미 1~5 다 — 옛 행만 나눈다.
+--   (2026-09-15: 배포 뒤 샘플 58건이 먼저 들어가 있어, 전체를 나누면 샘플이 반으로 깎인다.)
 SET @sql := IF(EXISTS(SELECT 1 FROM product_reviews WHERE scope > 5),
-  'UPDATE product_reviews SET scope = LEAST(5, GREATEST(1, ROUND(scope / 2)))',
+  'UPDATE product_reviews SET scope = LEAST(5, GREATEST(1, ROUND(scope / 2))) WHERE order_id IS NULL AND (title IS NULL OR title <> ''__preview_sample__'')',
   'SELECT ''별점은 이미 1~5 — 건너뜀'' AS 안내');
 PREPARE st FROM @sql; EXECUTE st; DEALLOCATE PREPARE st;
 
