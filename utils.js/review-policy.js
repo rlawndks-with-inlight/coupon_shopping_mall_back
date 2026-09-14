@@ -17,7 +17,8 @@ import logger from "./winston/index.js";
 // shopgo 산하 몰의 is_use_review 가 비어 있을 때의 기본값.
 // 배포 첫날은 꺼짐(false)으로 올려 forsmall·mbc01 에서 확인한 뒤 true 로 바꾼다.
 // 다른 배포 브랜드(shopgo 밖)는 늘 후기를 써 왔으므로 비어 있으면 켜진 것으로 본다.
-export const REVIEW_DEFAULT_ON_SHOPGO = false;
+// 2026-09-15 사장님 결정: 산하 몰도 기본 켜짐, 대신 가맹점이 「후기설정」에서 끌 수 있다.
+export const REVIEW_DEFAULT_ON_SHOPGO = true;
 
 // 비어 있으면(미설정) 기본값 d. ⚠ Number('') 은 0 이라 그냥 Number 로 읽으면 '미설정' 이 0 이 되어
 //   최소 글자 1·BEST 0개 같은 엉뚱한 값이 된다(2026-09-14 미리보기에서 실제로 그랬다).
