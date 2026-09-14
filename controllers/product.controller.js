@@ -1,5 +1,5 @@
 'use strict';
-import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
+import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery, hasColumn } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeObjByList, resolveWriteBrandId, response, settingFiles, settingLangs } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
@@ -337,7 +337,7 @@ const productCtrl = {
             // 일반 사용자는 이 값을 사용하지 않으므로 성능 최적화를 위해 제외
             if (isAdminLike) {
                 columns.push(`(SELECT COUNT(*) FROM transaction_orders LEFT JOIN transactions ON transactions.id=transaction_orders.trans_id WHERE transaction_orders.product_id=${table_name}.id AND transactions.is_cancel=0 AND transactions.trx_status >=5 AND transactions.is_delete=0) AS order_count`);
-                columns.push(`(SELECT COUNT(*) FROM product_reviews WHERE product_id=${table_name}.id AND is_delete=0) AS review_count`);
+                columns.push(`(SELECT COUNT(*) FROM product_reviews WHERE product_id=${table_name}.id AND is_delete=0${(await hasColumn('product_reviews', 'is_hidden')) ? ' AND is_hidden=0' : ''}) AS review_count`);
             } else {
                 columns.push(`0 AS order_count`);
                 columns.push(`0 AS review_count`);
@@ -780,7 +780,9 @@ const productCtrl = {
                     table: 'scope',
                     // 삭제된 리뷰가 평점·리뷰수에 계속 반영됐다.
                     // 같은 파일 99행의 review_count 는 is_delete=0 을 걸고 있어 둘이 어긋나 있었다.
-                    sql: `SELECT AVG(scope)/2 AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=? AND is_delete=0`,
+                    // 2026-09-14: 별점이 1~5 정수로 통일됐다(migrations/2026-09-14_product_reviews_v2.sql) — 예전 /2 를 뺀다.
+                    //   숨긴 후기(is_hidden)는 평균에서도 빠진다. 소수 첫째 자리(4.7).
+                    sql: `SELECT ROUND(AVG(scope), 1) AS product_average_scope, COUNT(*) AS product_review_count FROM product_reviews WHERE product_id=? AND is_delete=0${(await hasColumn('product_reviews', 'is_hidden')) ? ' AND is_hidden=0' : ''}`,
                     params: [productId],
                 },
                 {

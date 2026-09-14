@@ -3,6 +3,7 @@ import { insertQuery } from "./query-util.js";
 import { restoreStock, restoreStockPartial } from "./product-options.js";
 import logger from "./winston/index.js";
 import { logTrx, statusText } from "./trx-log.js";
+import { hideReviewsForCanceled } from "./review-policy.js";
 
 // 취소 부수처리 — 재고 복구 · 적립 포인트 회수 · 사용 포인트 환불.
 //
@@ -277,6 +278,8 @@ export const markCanceled = async (trans_id, { column = 'is_cancel_trans', actor
     // 그 행이 곧 취소완료 행이므로 따로 만들면 같은 취소가 두 줄로 보인다.
     if (column === 'is_cancel_trans') await 취소원장행쓰기(tid);
     await applyCancelEffects(tid);
+    // 전액 취소된 주문의 후기는 손님 화면에서 내린다(설계 §4.6). 절대 던지지 않는다.
+    await hideReviewsForCanceled(tid);
     return true;
 };
 
@@ -464,6 +467,8 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
         //   포인트 정산도 바로 위에서 비율 1 로 끝냈다. 그래서 원장 행만 남긴다.
         await 취소원장행쓰기(tid);
     }
+    // 전부 취소된 줄의 후기는 손님 화면에서 내린다(설계 §4.6). 수량 일부만 취소면 그대로. 절대 던지지 않는다.
+    await hideReviewsForCanceled(tid);
     await logTrx({ trans_id: tid, brand_id: state.trx.brand_id, kind: 'cancel', from_status: Number(state.trx.trx_status), to_status: null,
         actor: actor || (user_id ? { type: 'admin', id: user_id } : { type: 'system' }),
         note: `${전체취소 ? '전체' : '부분'} 취소 ${환불액}원 — ` + 계산.map((c) => `${c.line.order_name ?? c.line.product_id} ${c.qty}개`).join(', ')

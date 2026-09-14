@@ -188,7 +188,8 @@ const shopCtrl = {
             let product_review_sql = `SELECT ${product_review_columns.join()} FROM product_reviews `;
             product_review_sql += ` LEFT JOIN products ON product_reviews.product_id=products.id `;
             product_review_sql += ` WHERE product_reviews.brand_id=? `;
-            product_review_sql += ` AND product_reviews.is_delete=0 ORDER BY id DESC LIMIT 0, 10`;
+            // 숨긴 후기(관리자 숨김·주문 취소)는 홈 「후기」 섹션에도 안 나간다. 컬럼은 2026-09-14 마이그레이션이 만든다.
+            product_review_sql += ` AND product_reviews.is_delete=0${(await hasColumn('product_reviews', 'is_hidden')) ? ' AND product_reviews.is_hidden=0' : ''} ORDER BY id DESC LIMIT 0, 10`;
 
             //상품문의
             let product_faq_columns = [
