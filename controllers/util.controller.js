@@ -2,6 +2,7 @@
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { logTrx, actorOf, statusText } from "../utils.js/trx-log.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
@@ -157,10 +158,28 @@ const utilCtrl = {
                 return lowLevelException(req, res);
             }
             const scope = buildTenantScope(table, decode_dns?.id ?? 0);
+            // 주문 상태 드롭다운(transactions.trx_status) — 가맹점 요청서 2026-09-11.
+            //   · 결제대기(0)로 되돌릴 수 없다. 결제대기는 '아직 승인 안 됨'이라 사람이 정할 상태가 아니다
+            //     (돈이 들어왔는데 결제대기로 두면 발송이 막히고, 안 들어왔는데 다른 상태로 두면 배송이 나간다).
+            //     음수(-1 결제실패/미완료)도 마찬가지 — 시스템만 정한다.
+            //   · 바꾸기 전 값을 읽어 이력에 남긴다(누가 언제 무엇을 → 무엇으로).
+            let 이전상태 = null;
+            if (table === 'transactions' && column_name === 'trx_status') {
+                if (!(Number(value) > 0)) {
+                    return response(req, res, -100, "결제대기로는 되돌릴 수 없습니다. 결제가 안 된 주문이면 취소 처리해 주세요.", false);
+                }
+                const [[이전]] = await readPool.query(`SELECT trx_status FROM transactions WHERE id=? ${scope.sql}`, [id, ...scope.params]);
+                if (!이전) return lowLevelException(req, res);
+                이전상태 = Number(이전.trx_status);
+            }
             let result = await writePool.query(
                 `UPDATE ${table} SET ${column_name}=? WHERE id=? ${scope.sql}`,
                 [value, id, ...scope.params]
             );
+            if (table === 'transactions' && column_name === 'trx_status' && result?.[0]?.affectedRows > 0 && 이전상태 !== Number(value)) {
+                await logTrx({ trans_id: id, brand_id: decode_dns?.id, kind: 'status', from_status: 이전상태, to_status: Number(value),
+                    actor: actorOf(decode_user, 'admin'), note: `${statusText(이전상태)} → ${statusText(Number(value))}` });
+            }
             // ── 캐시 무효화 ─────────────────────────────────────────────────
             // 이 핸들러는 raw UPDATE 만 하고 Redis 를 건드리지 않았다.
             // 그런데 관리자 상품목록의 상태 <Select>(판매중단·품절·비공개)가 여기로 온다

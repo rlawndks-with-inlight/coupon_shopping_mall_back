@@ -22,6 +22,7 @@ import { encForSave } from "../utils.js/pii.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
 import { applyCancelEffects, markCanceled, getCancelState, cancelLines } from "../utils.js/cancel.js";
+import { logTrx, actorOf } from "../utils.js/trx-log.js";
 
 
 const table_name = "transactions";
@@ -1065,6 +1066,7 @@ const payCtrl = {
         if (!markRes?.affectedRows) {
           return response(req, res, 100, "success", {}); // 이미 확정됨(멱등)
         }
+        await logTrx({ trans_id: id, brand_id: dns_data?.id, kind: 'approve', from_status: 0, to_status: 5, actor: { type: 'system' }, note: 'PG 승인 확정' });
         // 적립은 정책 함수 한 곳에서 센다 — 여기서 직접 곱하면 적립률 상한(100%)이 안 걸린다.
         const 쌓을것 = 적립예정({ dns: dns_data, 결제금액: amount });
         if (쌓을것 > 0) {
@@ -1138,7 +1140,7 @@ const payCtrl = {
         }
         try {
           await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount });
-          await markCanceled(id);
+          await markCanceled(id, { actor: actorOf(decode_user, 'admin') });
           return response(req, res, 100, "success", {});
         } catch (e) {
           logger.error(errText(e));
@@ -1160,7 +1162,7 @@ const payCtrl = {
         const ip_addr = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '127.0.0.1').toString().split(',')[0].trim();
         const cancelRes = await cancelPayment({ client_id: creds.client_id, payment_key: creds.payment_key, user_id: trx.user_id, tid: trx.trx_id, ip_addr, pgcode: 'creditcard' });
         if (cancelRes?.tid) {
-          await markCanceled(id);
+          await markCanceled(id, { actor: actorOf(decode_user, 'admin') });
           return response(req, res, 100, "success", {});
         }
         return response(req, res, -200, cancelRes?.message || "페이레터 취소 실패", false);
@@ -1178,7 +1180,7 @@ const payCtrl = {
         //console.log(fintree_cancel)
         fintree_cancel = fintree_cancel?.data ?? {};
         if (fintree_cancel?.resultCd == "0000") {
-          await markCanceled(id, { column: 'is_cancel' });
+          await markCanceled(id, { column: 'is_cancel', actor: actorOf(decode_user, 'admin') });
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, fintree_cancel?.result_msg, false);
@@ -1204,7 +1206,7 @@ const payCtrl = {
         );
         pay_cancel = pay_cancel?.data ?? {};
         if (pay_cancel?.result_cd == "0000") {
-          await markCanceled(id);
+          await markCanceled(id, { actor: actorOf(decode_user, 'admin') });
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, pay_cancel?.result_msg, false);
@@ -1224,7 +1226,7 @@ const payCtrl = {
         if (payvery_cancel?.result_cd == "0000") {
           // 예전엔 PG 에만 취소를 걸고 DB 를 전혀 안 바꿨다 —
           // 화면에는 정상 주문으로 남고 매출 집계도 취소분을 그대로 안고 갔다.
-          await markCanceled(id);
+          await markCanceled(id, { actor: actorOf(decode_user, 'admin') });
           return response(req, res, 100, "success", {});
         } else {
           return response(req, res, -200, payvery_cancel?.result_msg, false);
@@ -1257,6 +1259,10 @@ const payCtrl = {
       if (!canWriteBrand(decode_user, state.trx?.brand_id)) return lowLevelException(req, res);
       return response(req, res, 100, "success", {
         cancelable: state.cancelable,
+        // 출고 이후: 화면이 「출고된 주문 취소」 확인 칸을 보여 주고 shipped_confirm=1 을 붙여 실행한다
+        shipped: state.shipped,
+        cancelable_after_confirm: state.cancelable_after_confirm,
+        trx_status: state.trx?.trx_status,
         all_canceled: state.all_canceled,
         // 고객이 낸 취소요청 내역. 화면이 수량을 미리 채운다.
         has_request: state.has_request,
@@ -1291,7 +1297,7 @@ const payCtrl = {
       if (!decode_user || decode_user?.level < 10) return lowLevelException(req, res);
       const id = parseInt(req.params?.id) || 0;
       if (!id) return response(req, res, -100, "취소할 주문을 특정할 수 없습니다.", false);
-      const { items, reason, idem_key } = req.body;
+      const { items, reason, idem_key, shipped_confirm } = req.body;
 
       const state = await getCancelState(id);
       if (!state) return response(req, res, -100, "주문을 찾을 수 없습니다.", false);
@@ -1307,6 +1313,9 @@ const payCtrl = {
       const result = await cancelLines(id, {
         items, reason, idem_key,
         user_id: decode_user?.id ?? null,
+        // 출고 이후 취소는 관리자가 확인 칸을 눌렀을 때만(cancel.js 가 다시 검사한다)
+        allow_shipped: Number(shipped_confirm) === 1,
+        actor: actorOf(decode_user, 'admin'),
         // PG 호출은 여기서 주입한다. cancel.js 는 PG 를 모른다.
         pgCancel: async ({ trx, amount }) => {
           const creds = await getForspayCreds(trx.brand_id);
@@ -1435,7 +1444,7 @@ const payCtrl = {
         const orderAmount = Math.abs(Number(trx.amount) || 0);
         if (cancelledTotal >= orderAmount && orderAmount > 0) {
           // 전액 취소 확인 → 관리자 취소와 똑같이 처리(부수처리는 멱등이라 겹쳐도 두 번 움직이지 않는다)
-          await markCanceled(trx.id);
+          await markCanceled(trx.id, { actor: { type: 'system' }, note: '포스페이 취소 통지(전액)' });
         } else if (cancelledTotal > 0) {
           // 부분취소: 우리 쪽에서 실행한 것이면 이미 cancelLines 가 반영했다(멱등). 상위(OMS)에서 한 부분취소는
           // 어느 줄인지 알 수 없으므로 자동 반영하지 않고 기록만 남긴다 — 사람이 확인해 처리한다.
@@ -1526,6 +1535,7 @@ async function settlePayletterTransaction(transId, data = {}) {
     trx_tm,
     trx_status: 5,
   }, transId);
+  await logTrx({ trans_id: transId, brand_id: trx.brand_id, kind: 'approve', from_status: Number(trx.trx_status), to_status: 5, actor: { type: 'system' }, note: '페이레터 승인 확정' });
 
   // 포인트 적립 (기존 pays.result 성공 로직과 동일)
   let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);
@@ -1614,6 +1624,7 @@ async function settleForspayTransaction(transId, data = {}) {
     // 그 사이 다른 경로가 먼저 정산함 → 중복 적립을 막고 여기서 끝낸다.
     return true;
   }
+  await logTrx({ trans_id: transId, brand_id: trx.brand_id, kind: 'approve', from_status: Number(trx.trx_status), to_status: 5, actor: { type: 'system' }, note: '포스페이 승인 확정' });
 
   // 포인트 적립 (우리가 방금 정산을 확정한 경우에만 — 위 affectedRows 로 1회 보장)
   let brandRows = await readPool.query(`SELECT * FROM brands WHERE id=?`, [trx.brand_id]);

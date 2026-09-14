@@ -2,6 +2,7 @@ import { readPool, writePool } from "../config/db-pool.js";
 import { insertQuery } from "./query-util.js";
 import { restoreStock, restoreStockPartial } from "./product-options.js";
 import logger from "./winston/index.js";
+import { logTrx, statusText } from "./trx-log.js";
 
 // 취소 부수처리 — 재고 복구 · 적립 포인트 회수 · 사용 포인트 환불.
 //
@@ -103,6 +104,10 @@ export const applyCancelEffects = async (trans_id, { ratio = 1, restock = true }
 //   (getCancelState 만 이 상수를 쓴다 = 관리자 실행 경로. 고객의 '재요청 방지'는
 //    transaction.controller 의 cancelRequest 가 자체 [5,10]+trx_status==1 검사로 따로 막는다.)
 export const CANCELABLE_STATUS = [0, 1, 5, 10];
+// 출고 이후(출고완료·배송중·배송완료). 관리자는 **확인을 거쳐** 취소할 수 있다(2026-09-11 가맹점 요청 → 사장님 결정).
+// 손님의 취소요청은 여전히 막는다(transaction.controller cancelRequest 의 [5,10]).
+// 그전엔 가맹점이 상태를 「취소요청」으로 바꾼 뒤 취소하는 우회를 썼다 — 이력도 안 남고 손님에게 취소요청으로 보였다.
+export const SHIPPED_STATUS = [15, 20, 25];
 
 // 줄 하나의 '개당 상품가'. 배송비는 뺀다 — 배송비는 개수로 나눌 성질이 아니다.
 // (order_amount 는 그 줄의 배송비를 포함한 값이다. pay.controller 가 그렇게 넣는다)
@@ -164,6 +169,10 @@ export const getCancelState = async (trans_id) => {
         request_reason: requests.find((r) => r.reason)?.reason ?? null,
         has_request: requests.length > 0,
         cancelable: CANCELABLE_STATUS.includes(Number(trx.trx_status))
+            && Number(trx.is_cancel) !== 1 && Number(trx.is_cancel_trans) !== 1,
+        // 출고 이후 — 관리자가 회수 확인(shipped_confirm)을 붙이면 취소할 수 있다
+        shipped: SHIPPED_STATUS.includes(Number(trx.trx_status)),
+        cancelable_after_confirm: SHIPPED_STATUS.includes(Number(trx.trx_status))
             && Number(trx.is_cancel) !== 1 && Number(trx.is_cancel_trans) !== 1,
         all_canceled: lines.length > 0 && lines.every((l) => l.remain_count === 0),
     };
@@ -251,11 +260,16 @@ const 취소원장행쓰기 = async (tid) => {
     }
 };
 
-export const markCanceled = async (trans_id, { column = 'is_cancel_trans' } = {}) => {
+export const markCanceled = async (trans_id, { column = 'is_cancel_trans', actor = null, note = null } = {}) => {
     const tid = Number(trans_id) || 0;
     if (!tid) return false;
+    let 이전상태 = null;
     try {
+        const [[이전]] = await readPool.query(`SELECT trx_status, brand_id, amount FROM transactions WHERE id=?`, [tid]);
+        이전상태 = 이전 ? Number(이전.trx_status) : null;
         await writePool.query(`UPDATE transactions SET ${column}=1 WHERE id=?`, [tid]);
+        await logTrx({ trans_id: tid, brand_id: 이전?.brand_id, kind: 'cancel', from_status: 이전상태, to_status: null,
+            actor: actor || { type: 'system' }, note: note || `전체 취소 (${Number(이전?.amount) || 0}원)` });
     } catch (e) {
         logger.error(`[취소] 상태 표시 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
     }
@@ -277,7 +291,7 @@ export const markCanceled = async (trans_id, { column = 'is_cancel_trans' } = {}
 //
 // items: [{ order_id, qty }]
 export const cancelLines = async (trans_id, { items = [], user_id = null, reason = null,
-                                              idem_key = null, pgCancel } = {}) => {
+                                              idem_key = null, pgCancel, allow_shipped = false, actor = null } = {}) => {
     const tid = Number(trans_id) || 0;
     if (!tid) return { ok: false, message: '주문을 찾을 수 없습니다.' };
     const 요청 = (Array.isArray(items) ? items : [])
@@ -288,7 +302,12 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
     const state = await getCancelState(tid);
     if (!state) return { ok: false, message: '주문을 찾을 수 없습니다.' };
     if (!state.cancelable) {
-        return { ok: false, message: '출고된 주문은 취소할 수 없습니다. 반품/환불은 판매자에게 문의해 주세요.' };
+        // 출고 이후는 관리자가 '회수 확인'을 붙였을 때만 — 화면(PartialCancelDialog)이 확인 칸을 거쳐 shipped_confirm 을 보낸다.
+        if (!(state.cancelable_after_confirm && allow_shipped)) {
+            return { ok: false, message: state.shipped
+                ? '출고된 주문입니다. 회수 확인 후 「출고된 주문 취소」 확인을 거쳐 취소해 주세요.'
+                : '이미 취소되었거나 취소할 수 없는 주문입니다.' };
+        }
     }
 
     // 브랜드 배송비 정책
@@ -423,7 +442,11 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
             const [[남음]] = await readPool.query(
                 `SELECT COUNT(*) AS n FROM transaction_cancel_requests WHERE trans_id=? AND status=0`, [tid]);
             if (!(Number(남음?.n) > 0)) {
-                await writePool.query(`UPDATE transactions SET trx_status=5 WHERE id=? AND trx_status=1`, [tid]);
+                const [되돌림] = await writePool.query(`UPDATE transactions SET trx_status=5 WHERE id=? AND trx_status=1`, [tid]);
+                if (되돌림?.affectedRows > 0) {
+                    await logTrx({ trans_id: tid, brand_id: state.trx.brand_id, kind: 'status', from_status: 1, to_status: 5,
+                        actor: { type: 'system' }, note: '취소요청 처리 뒤 남은 상품은 결제완료로 되돌림' });
+                }
             }
         } catch (e) {
             logger.error(`[부분취소] 상태 되돌리기 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
@@ -441,5 +464,9 @@ export const cancelLines = async (trans_id, { items = [], user_id = null, reason
         //   포인트 정산도 바로 위에서 비율 1 로 끝냈다. 그래서 원장 행만 남긴다.
         await 취소원장행쓰기(tid);
     }
+    await logTrx({ trans_id: tid, brand_id: state.trx.brand_id, kind: 'cancel', from_status: Number(state.trx.trx_status), to_status: null,
+        actor: actor || (user_id ? { type: 'admin', id: user_id } : { type: 'system' }),
+        note: `${전체취소 ? '전체' : '부분'} 취소 ${환불액}원 — ` + 계산.map((c) => `${c.line.order_name ?? c.line.product_id} ${c.qty}개`).join(', ')
+            + (reason ? ` / 사유: ${String(reason).slice(0, 120)}` : '') + (state.shipped ? ' / 출고 후 취소(회수 확인)' : '') });
     return { ok: true, cancel_id, amount: 환불액, delivery_adjust: 배송비조정, all_canceled: 전체취소 };
 };

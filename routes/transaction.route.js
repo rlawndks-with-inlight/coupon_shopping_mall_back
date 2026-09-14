@@ -18,6 +18,9 @@ router
     .put(transactionCtrl.update)
     .delete(transactionCtrl.remove)
 router
+    .route('/:id/logs')
+    .get(transactionCtrl.logs)
+router
     .route('/:id/invoice')
     .post(transactionCtrl.changeInvoice)
 router

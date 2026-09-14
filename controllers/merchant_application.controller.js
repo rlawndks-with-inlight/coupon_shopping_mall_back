@@ -416,6 +416,10 @@ const merchantApplicationCtrl = {
             if (!business_name || !ceo_name || !ceo_phone || !manager_name || !manager_phone) {
                 return response(req, res, -100, "필수 항목이 누락되었습니다", false);
             }
+            // 영업추천인 필수(2026-09-11 가맹점 요청 → 사장님 결정: 추천인 없으면 신청 불가)
+            if (!String(referrer_name || '').trim()) {
+                return response(req, res, -105, "영업추천인을 입력해 주세요", false);
+            }
             const bizNo = String(business_number || '').replace(/-/g, '');
             if (!BIZNO_RE.test(bizNo)) {
                 return response(req, res, -102, "사업자번호 형식이 올바르지 않습니다", false);

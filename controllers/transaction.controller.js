@@ -2,6 +2,7 @@
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
+import { logTrx, actorOf, listTrxLogs } from "../utils.js/trx-log.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
@@ -77,8 +78,19 @@ const transactionCtrl = {
             // 관리자·판매자(level>=10)는 정산·확인을 위해 전부 본다.
             if (isCustomer) {
                 sql += HIDE_ABANDONED_PENDING;
+                // 「결제실패/미완료」(-1, cleanup-abandoned 가 정리한 건)도 손님에게는 주문이 아니다
+                sql += ` AND ${table_name}.trx_status >= 0 `;
             }
-            if (trx_status) {
+            // kind — 관리자 「결제실패/미완료」·「결제대기」 나누기(가맹점 요청서 2026-09-11 ①).
+            //   failed  : -1(정리된 건) + 아직 정리 전인 버려진 결제대기(카드/간편 창만 열고 승인 안 남)
+            //   waiting : 결제대기 중 진짜 대기(무통장·상품권·수기·가상계좌 발급)
+            // trx_status 필터와 같이 오면 이쪽이 우선한다.
+            const { kind } = req.query;
+            if (kind === 'failed') {
+                sql += ` AND (${table_name}.trx_status = -1 OR (${table_name}.trx_status=0 AND (${table_name}.appr_num IS NULL OR ${table_name}.appr_num='') AND (${table_name}.virtual_acct_num IS NULL OR ${table_name}.virtual_acct_num='') AND ${table_name}.trx_method IN (2,4,21,30,31,40,41))) `;
+            } else if (kind === 'waiting') {
+                sql += ` AND ${table_name}.trx_status = 0 ` + HIDE_ABANDONED_PENDING;
+            } else if (trx_status) {
                 sql += ` AND trx_status=? `;
                 params.push(trx_status);
             }
@@ -364,7 +376,9 @@ const transactionCtrl = {
             // 주문 수정은 관리자 전용이다(프론트 호출부는 pages/manager/orders/** 뿐).
             // 검사가 없어서 무인증으로 남의 주문 금액·상태·승인번호를 바꿀 수 있었다.
             // (고객의 취소요청은 cancelRequest 가 따로 처리하며 본인·브랜드 검증이 들어 있다)
-            if (!decode_user || decode_user?.level < 40) {
+            // 2026-09-11 가맹점 요청 → 사장님 결정: 거래 수정·삭제는 마스터(본사, level 50) 계정만.
+            // 가맹점 관리자(40)는 상태 변경·송장·취소만 한다.
+            if (!decode_user || decode_user?.level < 50) {
                 return lowLevelException(req, res);
             }
             const {
@@ -405,6 +419,23 @@ const transactionCtrl = {
 
         }
     },
+    // 주문 한 건의 상태 변경 이력(가맹점 요청서 2026-09-11 「결제 상태변경 히스토리」).
+    logs: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const { id } = req.params;
+            if (!decode_user || decode_user?.level < 10) return lowLevelException(req, res);
+            // 남의 브랜드 주문 이력을 볼 수 없다(remove 와 같은 소유 검증).
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
+            const logs = await listTrxLogs(id);
+            return response(req, res, 100, "success", { logs, current_status: target?.trx_status });
+        } catch (err) {
+            console.log(err)
+            logger.error(errText(err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        }
+    },
     remove: async (req, res, next) => {
         try {
 
@@ -412,7 +443,8 @@ const transactionCtrl = {
             const decode_dns = checkDns(req.cookies.dns);
             const { id } = req.params;
             // 검사 없이 삭제로 직행했다 — id 만 알면 남의 주문이 지워졌다.
-            if (!decode_user || decode_user?.level < 40) {
+            // 2026-09-11 가맹점 요청 → 사장님 결정: 거래 삭제는 마스터(본사, level 50) 계정만.
+            if (!decode_user || decode_user?.level < 50) {
                 return lowLevelException(req, res);
             }
             // deleteQuery 도 WHERE id=? 만 걸어 브랜드 스코프가 없다 —
@@ -551,6 +583,9 @@ const transactionCtrl = {
             let result = await updateQuery(`${table_name}`, {
                 trx_status: 1,
             }, id)
+            await logTrx({ trans_id: id, brand_id: data?.brand_id, kind: 'cancel_request', from_status: data?.trx_status, to_status: 1,
+                actor: 회원본인 ? actorOf(decode_user, 'customer') : { type: 'customer', id: null, name: '비회원' },
+                note: req.body?.reason ? `취소요청 — ${String(req.body.reason).slice(0, 200)}` : '취소요청' });
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
