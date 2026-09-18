@@ -4,6 +4,7 @@ import { insertQuery, updateQuery, hasColumn } from "../utils.js/query-util.js";
 import { createHashedPassword, checkLevel, makeUserToken, makeDnsToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
 import { encForSave, decRow, decRows, blindIndex } from "../utils.js/pii.js";
 import { isShopgoBrand } from "../utils.js/is-shopgo.js";
+import { 탈퇴막는주문, 남은적립금, 막힘안내 } from "../utils.js/resign-guard.js";
 import {
     isValidSecurityQuestionId,
     normalizeAnswer,
@@ -967,6 +968,32 @@ const authCtrl = {
 
         }
     },
+    // 탈퇴해도 되는지 미리 알려 준다. 화면이 비밀번호를 묻기 전에 먼저 부른다 —
+    // 비밀번호까지 다 치고 나서야 「안 됩니다」 라고 하면 손님은 두 번 헛수고한다.
+    resignCheck: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            if (!(Number(decode_user?.id) > 0)) {
+                return lowLevelException(req, res);
+            }
+            const brand_id = decode_user?.brand_id ?? decode_dns?.id ?? 0;
+            const orders = await 탈퇴막는주문(decode_user?.id, brand_id);
+            const point = await 남은적립금(decode_user?.id, brand_id);
+            return response(req, res, 100, "success", {
+                can_resign: orders.length === 0,
+                orders,
+                point,
+                message: 막힘안내(orders) || null,
+            })
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        } finally {
+
+        }
+    },
     resign: async (req, res, next) => {
         try {
             let is_manager = await checkIsManagerUrl(req);
@@ -988,6 +1015,13 @@ const authCtrl = {
             let user_pw = (await createHashedPassword(password, user.user_salt)).hashedPassword;
             if (user_pw != user.user_pw) {
                 return response(req, res, -100, "비밀번호가 일치하지 않습니다.", {})
+            }
+            // 진행 중인 주문이 있으면 막는다. 화면에도 같은 검사가 있지만 여기서도 막아야 한다 —
+            // 화면만 막으면 API 를 직접 불러 빠져나갈 수 있고, 그러면 손님이 자기 주문을
+            // 다시는 못 본다(회원 주문은 주문비밀번호가 없어 비회원 조회로도 안 잡힌다).
+            const 막는주문 = await 탈퇴막는주문(user?.id, user?.brand_id ?? decode_dns?.id);
+            if (막는주문.length > 0) {
+                return response(req, res, -100, 막힘안내(막는주문), { orders: 막는주문 })
             }
             await updateQuery('users', {
                 status: 3,

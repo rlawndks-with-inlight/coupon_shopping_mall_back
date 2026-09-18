@@ -38,6 +38,10 @@ router
     .route('/reset-password-by-answer') // POST : 답변 검증 후 비밀번호 재설정
     .post(authCtrl.resetPasswordByAnswer);
 router
+    // 탈퇴 가능 여부 미리 조회(진행 중 주문·남은 적립금)
+    .route('/resign-check')
+    .get(authCtrl.resignCheck);
+router
     .route('/resign')
     .put(authCtrl.resign);
 router
