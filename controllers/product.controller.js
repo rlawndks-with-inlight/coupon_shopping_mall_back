@@ -1124,7 +1124,11 @@ const productCtrl = {
                 return lowLevelException(req, res);
             }
             // 소유 확인: 등급만 보고 id 로 갱신하면 다른 브랜드 상품(상세 URL 에 id 가 노출됨)의 가격·설명을 바꿀 수 있었다.
-            const ownedProduct = await loadOwnedRow(readPool, table_name, req.body?.id, decode_user);
+            // id 는 몸통(관리자 화면)과 주소(PUT /products/:id — API 안내문·외부 연동)를 둘 다 받는다.
+            // 몸통만 읽던 때는 안내문대로 주소에 id 를 붙인 외부 호출이 전부 403 이었다(2026-09-22 koreastandardshop).
+            const targetId = parseInt(req.body?.id ?? req.params?.id, 10) || 0;
+            req.body.id = targetId;
+            const ownedProduct = await loadOwnedRow(readPool, table_name, targetId, decode_user);
             if (!ownedProduct) {
                 return lowLevelException(req, res);
             }
