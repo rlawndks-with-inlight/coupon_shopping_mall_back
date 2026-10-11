@@ -5,6 +5,7 @@ import { checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelExc
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
+import { loadSellerScope, parseIdList, sellerBrandCondition } from "../utils.js/seller-scope.js";
 
 const table_name = 'seller_products';
 
@@ -139,16 +140,19 @@ const sellerProductsCtrl = {
 
             sql += where_sql;
 
-            if (decode_user?.seller_range_o != 0) {
+            // 범위는 '등록 대상 셀러' 의 것이다(운영자가 셀러를 지정해 일괄등록할 때도). 토큰이 아니라 DB 에서 읽는다
+            // — 예전엔 호출한 사람의 토큰 값을 써서, 운영자가 대신 등록하면 셀러 범위가 통째로 무시됐다.
+            const sellerUser = await loadSellerScope(seller_id);
+            if (sellerUser?.seller_range_o != 0) {
                 sql += ` AND product_sale_price BETWEEN ? AND ?`;
-                params.push(decode_user?.seller_range_u, decode_user?.seller_range_o);
+                params.push(sellerUser?.seller_range_u, sellerUser?.seller_range_o);
             }
-            if ((decode_user?.seller_brand != undefined || decode_user?.seller_category != undefined)) {
-                if (decode_user?.seller_brand && !decode_user?.seller_category) {
-                    let brandIds = String(decode_user?.seller_brand).split(',');
-                    sql += ` AND category_id1 IN (${brandIds.map(() => '?').join(',')})`;
-                    params.push(...brandIds);
-                } else if (!decode_user?.seller_brand && decode_user?.seller_category) {
+            if ((sellerUser?.seller_brand != undefined || sellerUser?.seller_category != undefined)) {
+                if (sellerUser?.seller_brand && !sellerUser?.seller_category) {
+                    const brandCond = await sellerBrandCondition(decode_dns?.id ?? 0, sellerUser?.seller_brand, 'products');
+                    sql += brandCond.sql;
+                    params.push(...brandCond.params);
+                } else if (!sellerUser?.seller_brand && sellerUser?.seller_category) {
                     let category_sql_list = [];
                     category_sql_list.push({
                         table: `category_id0`,
@@ -156,7 +160,7 @@ const sellerProductsCtrl = {
                     })
                     let category_obj = await getMultipleQueryByWhen(category_sql_list);
 
-                    let seller_category = decode_user?.seller_category.split(',')
+                    let seller_category = parseIdList(sellerUser?.seller_category).map(String)
 
                     let seller_categories = []
 
@@ -175,8 +179,8 @@ const sellerProductsCtrl = {
                         }
                     }
 
-                    //sql += ` AND category_id0 IN (${decode_user?.seller_category}) `
-                } else if (decode_user?.seller_brand && decode_user?.seller_category) {
+                    //sql += ` AND category_id0 IN (${sellerUser?.seller_category}) `
+                } else if (sellerUser?.seller_brand && sellerUser?.seller_category) {
                     let category_sql_list = [];
                     category_sql_list.push({
                         table: `category_id0`,
@@ -184,7 +188,7 @@ const sellerProductsCtrl = {
                     })
                     let category_obj = await getMultipleQueryByWhen(category_sql_list);
 
-                    let seller_category = decode_user?.seller_category.split(',')
+                    let seller_category = parseIdList(sellerUser?.seller_category).map(String)
 
                     let seller_categories = []
 
@@ -200,12 +204,12 @@ const sellerProductsCtrl = {
                             // dual-read(단계 이행): 연결테이블 OR 위치컬럼 category_id0
                             sql += ` AND (products.id IN (SELECT product_id FROM products_categories WHERE category_id IN (${catIds2.map(() => '?').join(',')}) AND is_delete=0) OR category_id0 IN (${catIds2.map(() => '?').join(',')}))`;
                             params.push(...catIds2, ...catIds2);
-                            let brandIds2 = String(decode_user?.seller_brand).split(',');
-                            sql += ` AND category_id1 IN (${brandIds2.map(() => '?').join(',')}) `;
-                            params.push(...brandIds2);
+                            const brandCond2 = await sellerBrandCondition(decode_dns?.id ?? 0, sellerUser?.seller_brand, 'products');
+                            sql += brandCond2.sql;
+                            params.push(...brandCond2.params);
                         }
                     }
-                    //sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
+                    //sql += ` AND category_id0 IN (${sellerUser?.seller_category}) AND category_id1 IN (${sellerUser?.seller_brand}) `
                 }
             }
 

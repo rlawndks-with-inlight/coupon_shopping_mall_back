@@ -9,6 +9,7 @@ import { redisClient } from "../config/redis-client.js";
 import { deleteKeys } from "../utils.js/redis-scan.js";
 import { saveOptionGroups, saveCombinations } from "../utils.js/product-options.js";
 import { saveProductOrderFormFields } from "../utils.js/order-form.js";
+import { loadSellerScope, parseIdList, sellerBrandCondition } from "../utils.js/seller-scope.js";
 
 const table_name = 'products';
 
@@ -415,6 +416,15 @@ const productCtrl = {
                 }
             }
 
+            // thegrazia(74) 옛 브랜드 링크(?category_id1=에르메스 카테고리 번호).
+            // 2026-08-07 정규화로 브랜드 카테고리가 삭제되고 속성이 되면서 이 값은 그냥 무시돼 전체 상품이 떴다.
+            // 정규화가 남긴 대응표로 브랜드 속성으로 바꿔 거른다(즐겨찾기·외부에 남은 링크 보존).
+            if (Number(decode_dns?.id) == 74 && req.query.category_id1 && !req.query.category_id) {
+                const legacyBrand = await sellerBrandCondition(decode_dns?.id, req.query.category_id1, table_name);
+                where_sql += legacyBrand.sql;
+                params.push(...legacyBrand.params);
+            }
+
             for (var i = 0; i < 20; i++) {
                 if (req.query[`property_ids${i}`]) {
                     let propIds = req.query[`property_ids${i}`].split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
@@ -449,19 +459,22 @@ const productCtrl = {
             sql += where_sql;
 
 
-            if (manager_type == 'seller' && decode_user?.seller_range_o != 0) {
+            // 셀러 범위는 로그인 토큰이 아니라 DB 에서 읽는다 — 관리자가 바꾼 범위가 재로그인 없이 바로 반영되게
+            // (utils.js/seller-scope.js 참고).
+            const sellerUser = manager_type == 'seller'
+                ? { ...decode_user, ...(await loadSellerScope(decode_user?.id)) }
+                : decode_user;
+            if (manager_type == 'seller' && sellerUser?.seller_range_o != 0) {
                 sql += ` AND product_sale_price BETWEEN ? AND ?`
-                params.push(decode_user?.seller_range_u, decode_user?.seller_range_o);
+                params.push(sellerUser?.seller_range_u, sellerUser?.seller_range_o);
             }
 
-            if (manager_type == 'seller' && (decode_user?.seller_brand != undefined || decode_user?.seller_category != undefined)) {
-                if (decode_user?.seller_brand && !decode_user?.seller_category) {
-                    let sellerBrandIds = String(decode_user?.seller_brand).split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
-                    if (sellerBrandIds.length > 0) {
-                        sql += ` AND category_id1 IN (${sellerBrandIds.map(() => '?').join(',')})`;
-                        params.push(...sellerBrandIds);
-                    }
-                } else if (!decode_user?.seller_brand && decode_user?.seller_category) {
+            if (manager_type == 'seller' && (sellerUser?.seller_brand != undefined || sellerUser?.seller_category != undefined)) {
+                if (sellerUser?.seller_brand && !sellerUser?.seller_category) {
+                    const brandCond = await sellerBrandCondition(decode_dns?.id ?? 0, sellerUser?.seller_brand, table_name);
+                    sql += brandCond.sql;
+                    params.push(...brandCond.params);
+                } else if (!sellerUser?.seller_brand && sellerUser?.seller_category) {
                     let category_sql_list = [];
                     category_sql_list.push({
                         table: `category_id0`,
@@ -469,7 +482,7 @@ const productCtrl = {
                     })
                     let category_obj = await getMultipleQueryByWhen(category_sql_list);
 
-                    let seller_category = decode_user?.seller_category.split(',')
+                    let seller_category = parseIdList(sellerUser?.seller_category).map(String)
 
                     let seller_categories = []
 
@@ -480,7 +493,7 @@ const productCtrl = {
                                 let category_ids = findChildIds(category_obj[key], seller_category[j]);
                                 category_ids.unshift(parseInt(seller_category[j]));
                                 seller_categories.unshift(category_ids.join())
-                            }//decode_user?.seller_category를 바로 사용하지 않는 이유는 하위 카테고리의 존재 때문임
+                            }//sellerUser?.seller_category를 바로 사용하지 않는 이유는 하위 카테고리의 존재 때문임
                             //console.log(1)
                             //console.log(seller_categories.join())
                             let allSellerCatIds = seller_categories.join().split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
@@ -491,8 +504,8 @@ const productCtrl = {
                         }
                     }
 
-                    //sql += ` AND category_id0 IN (${decode_user?.seller_category}) `
-                } else if (decode_user?.seller_brand && decode_user?.seller_category) {
+                    //sql += ` AND category_id0 IN (${sellerUser?.seller_category}) `
+                } else if (sellerUser?.seller_brand && sellerUser?.seller_category) {
                     let category_sql_list = [];
                     category_sql_list.push({
                         table: `category_id0`,
@@ -500,7 +513,7 @@ const productCtrl = {
                     })
                     let category_obj = await getMultipleQueryByWhen(category_sql_list);
 
-                    let seller_category = decode_user?.seller_category.split(',')
+                    let seller_category = parseIdList(sellerUser?.seller_category).map(String)
 
                     let seller_categories = []
 
@@ -511,7 +524,7 @@ const productCtrl = {
                                 let category_ids = findChildIds(category_obj[key], seller_category[j]);
                                 category_ids.unshift(parseInt(seller_category[j]));
                                 seller_categories.unshift(category_ids.join())
-                            }//decode_user?.seller_category를 바로 사용하지 않는 이유는 하위 카테고리의 존재 때문임
+                            }//sellerUser?.seller_category를 바로 사용하지 않는 이유는 하위 카테고리의 존재 때문임
                             //console.log(2)
                             //console.log(seller_category)
                             //console.log(seller_categories.join())
@@ -520,25 +533,23 @@ const productCtrl = {
                                 sql += ` AND category_id0 IN (${allSellerCatIds2.map(() => '?').join(',')})`;
                                 params.push(...allSellerCatIds2);
                             }
-                            let sellerBrandIds2 = String(decode_user?.seller_brand).split(',').map(v => parseInt(v)).filter(v => !isNaN(v));
-                            if (sellerBrandIds2.length > 0) {
-                                sql += ` AND category_id1 IN (${sellerBrandIds2.map(() => '?').join(',')}) `;
-                                params.push(...sellerBrandIds2);
-                            }
+                            const brandCond2 = await sellerBrandCondition(decode_dns?.id ?? 0, sellerUser?.seller_brand, table_name);
+                            sql += brandCond2.sql;
+                            params.push(...brandCond2.params);
                         }
                     }
-                    //sql += ` AND category_id0 IN (${decode_user?.seller_category}) AND category_id1 IN (${decode_user?.seller_brand}) `
+                    //sql += ` AND category_id0 IN (${sellerUser?.seller_category}) AND category_id1 IN (${sellerUser?.seller_brand}) `
                 }
             }
-            if (manager_type == 'seller' && (decode_user?.seller_property != undefined)) {
+            if (manager_type == 'seller' && (sellerUser?.seller_property != undefined)) {
 
-                if (decode_user?.seller_property.split(',').includes('0')) {
+                if (String(sellerUser?.seller_property ?? '').split(',').includes('0')) {
                     sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (48) )`
                 }
-                if (decode_user?.seller_property.split(',').includes('1')) {
+                if (String(sellerUser?.seller_property ?? '').split(',').includes('1')) {
                     sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (47) )`
                 }
-                if (decode_user?.seller_property.split(',').includes('2')) {
+                if (String(sellerUser?.seller_property ?? '').split(',').includes('2')) {
                     sql += ` AND ${table_name}.id IN (SELECT product_id FROM products_and_properties WHERE property_id IN (46) )`
                 }
             }

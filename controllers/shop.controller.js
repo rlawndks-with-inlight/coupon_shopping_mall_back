@@ -444,6 +444,30 @@ const shopCtrl = {
             }
             delete data.product_properties;
 
+            // thegrazia(74) '브랜드' 속성에 옛 브랜드 카테고리의 영문명을 붙인다(property_en_name).
+            // 2026-08-07 정규화로 브랜드가 카테고리→속성이 될 때 영문명(HERMES 등)은 옮겨지지 않았다.
+            // 셀러몰(프레임4) 'ALL BRAND' 메뉴가 영문명으로 ABC 정렬·표기를 하므로 대응표로 되찾아 온다.
+            // 대응표가 없는 환경이면 조용히 건너뛴다 — 설정 응답 전체를 깨뜨리면 안 된다.
+            if (Number(decode_dns?.id) == 74) {
+                try {
+                    const brandGroup = (data?.product_property_groups ?? []).find((g) => g?.property_group_name === '브랜드');
+                    const ids = (brandGroup?.product_properties ?? []).map((p) => Number(p?.id)).filter((v) => v > 0);
+                    if (ids.length > 0) {
+                        const [enRows] = await readPool.query(
+                            `SELECT m.property_id, MAX(pc.category_en_name) AS en
+                               FROM _mig_cat_to_prop m JOIN product_categories pc ON pc.id = m.category_id
+                              WHERE m.brand_id = 74 AND m.property_id IN (${ids.map(() => '?').join(',')})
+                              GROUP BY m.property_id`, ids);
+                        const enById = new Map(enRows.map((r) => [Number(r.property_id), r.en]));
+                        for (const p of brandGroup.product_properties) {
+                            if (enById.get(Number(p?.id))) p.property_en_name = enById.get(Number(p?.id));
+                        }
+                    }
+                } catch (e) {
+                    logger.error('브랜드 영문명 조회 실패(건너뜀): ' + (e?.sqlMessage || e?.message || e));
+                }
+            }
+
             //게시물카테고리처리
             let post_category_ids = data.post_categories.map(item => {
                 return item?.id

@@ -7,6 +7,7 @@ import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { encForSave, decListContent, decField, decRow, decRows } from "../utils.js/pii.js";
 import { stripUserSecrets, stripUserSecretsList } from "../utils.js/security-question.js";
+import { isBrandPropertyMigrated, parseIdList, toBrandPropertyIds } from "../utils.js/seller-scope.js";
 const table_name = 'users';
 
 // ── 셀러 상세(get) 공개 프로필 컬럼 화이트리스트 ────────────────────────────────
@@ -168,6 +169,11 @@ const sellerCtrl = {
                 || (!!decode_user && Number(decode_user?.id) === Number(id));
             if (!is_admin) {
                 return response(req, res, 100, "success", { ...pickPublicSeller(data), products })
+            }
+            // 브랜드=속성으로 정규화한 브랜드는 노출 브랜드를 '브랜드 속성 번호' 로 내려준다.
+            // 정규화 전에 저장된 옛 카테고리 번호는 화면의 브랜드 선택기에 없어서, 그대로 주면 선택이 빈칸으로 보였다.
+            if (data?.seller_brand && await isBrandPropertyMigrated(data?.brand_id)) {
+                data.seller_brand = (await toBrandPropertyIds(data?.brand_id, data?.seller_brand)).join(',');
             }
             return response(req, res, 100, "success", { ...data, products })
         } catch (err) {
@@ -360,9 +366,15 @@ const sellerCtrl = {
             );
             let agent = agentData?.[0] ?? {};
 
-            const normalize = (val) => (val ?? '').toString().replace(/\s/g, '').split(',').filter(Boolean).sort().join(',');
-            let isSellerBrandChanged = normalize(sellerData[0].seller_brand) !== normalize(seller_brand);
-            let isSellerCategoryChanged = normalize(sellerData[0].seller_category) !== normalize(seller_category);
+            // 번호 '집합' 으로 비교한다. 바뀌었다고 판정되면 아래에서 이 셀러의 seller_products 를 전부 지운다.
+            //   · 저장값엔 따옴표째 들어간 행('"6875"')이 있다 — 문자열 그대로 비교하면 같은 값도 다르다고 나온다.
+            //   · 정규화 브랜드는 화면이 브랜드를 속성 번호로 받는다(get 참고). 옛 카테고리 번호와 비교하면
+            //     아무것도 안 바꾸고 저장만 눌러도 '바뀜' 이 돼 셀러 상품이 통째로 지워진다 — 양쪽을 속성 번호로 맞춘다.
+            const normalize = (ids) => [...new Set(ids)].sort((a, b) => a - b).join(',');
+            const 브랜드속성 = await isBrandPropertyMigrated(sellerData[0]?.brand_id);
+            const 브랜드번호 = async (val) => 브랜드속성 ? toBrandPropertyIds(sellerData[0]?.brand_id, val) : parseIdList(val);
+            let isSellerBrandChanged = normalize(await 브랜드번호(sellerData[0].seller_brand)) !== normalize(await 브랜드번호(seller_brand));
+            let isSellerCategoryChanged = normalize(parseIdList(sellerData[0].seller_category)) !== normalize(parseIdList(seller_category));
 
             if (isSellerBrandChanged || isSellerCategoryChanged) {
                 await writePool.query(

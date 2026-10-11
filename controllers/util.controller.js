@@ -34,12 +34,19 @@ const TENANT_COLUMN = {
     product_properties: 'brand_id',
     product_property_groups: 'brand_id',
     transactions: 'brand_id',
-    seller_products: 'brand_id',
     consignments: 'brand_id',
 };
 
 const buildTenantScope = (table, brandId) => {
     if (table === 'brands') return { sql: '', params: [] };
+    // seller_products 에도 brand_id 컬럼이 없다(seller_products.controller 주석 참고).
+    // 예전엔 'brand_id' 로 적혀 있어 셀러 가격 단건 수정이 늘 SQL 오류(500)였다 — 셀러(users)의 브랜드로 좁힌다.
+    if (table === 'seller_products') {
+        return {
+            sql: ' AND seller_id IN (SELECT id FROM users WHERE brand_id=?) ',
+            params: [brandId],
+        };
+    }
     if (table === 'posts') {
         return {
             sql: ' AND category_id IN (SELECT id FROM post_categories WHERE brand_id=?) ',
@@ -175,10 +182,28 @@ const utilCtrl = {
                     return response(req, res, -100, "결제실패/미완료 주문은 상태를 바꿀 수 없습니다. 결제가 안 된 주문이라 손님이 다시 결제해야 합니다.", false);
                 }
             }
+            // 셀러상품: 셀러 본인(레벨 15 미만)은 자기 행만, 판매가는 본사 공급가(agent_price) 밑으로 못 내린다.
+            // 화면(products/list.js changeSellerProducts)만 막고 있었다 — 같은 규칙을 서버에서도 본다.
+            if (table === 'seller_products') {
+                if (Number(decode_user?.level) < 15) {
+                    scope.sql += ' AND seller_id=? ';
+                    scope.params.push(decode_user?.id ?? 0);
+                }
+                if (column_name === 'seller_price') {
+                    if (!(Number(value) > 0)) {
+                        return response(req, res, -100, "판매가를 올바르게 입력해 주세요.", false);
+                    }
+                    scope.sql += ' AND agent_price <= ? ';
+                    scope.params.push(Number(value));
+                }
+            }
             let result = await writePool.query(
                 `UPDATE ${table} SET ${column_name}=? WHERE id=? ${scope.sql}`,
                 [value, id, ...scope.params]
             );
+            if (table === 'seller_products' && column_name === 'seller_price' && !(result?.[0]?.affectedRows > 0)) {
+                return response(req, res, -100, "본사 가격보다 낮게 등록할 수 없습니다.", false);
+            }
             if (table === 'transactions' && column_name === 'trx_status' && result?.[0]?.affectedRows > 0 && 이전상태 !== Number(value)) {
                 await logTrx({ trans_id: id, brand_id: decode_dns?.id, kind: 'status', from_status: 이전상태, to_status: Number(value),
                     actor: actorOf(decode_user, 'admin'), note: `${statusText(이전상태)} → ${statusText(Number(value))}` });

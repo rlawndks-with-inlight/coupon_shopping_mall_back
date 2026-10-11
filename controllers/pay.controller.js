@@ -111,7 +111,14 @@ const 결제실패정리 = async (trans_id) => {
 // 옵션가는 product_options(클라이언트가 보낸 option_price 는 쓰지 않는다),
 // 배송비 정책은 brands.setting_obj.
 // 문자열 옵션({value:'블랙'})은 id 도 가격도 없으므로 0 원으로 본다.
-const recalcOrderAmount = async (brand_id, products, use_point) => {
+//
+// 셀러몰(seller_id > 0)은 상품가 자리에 셀러 판매가(seller_products.seller_price)를 쓴다.
+// 셀러몰 화면은 목록·상세 모두 seller_price 로 product_sale_price 를 덮어써 보여준다
+// (product.controller 목록·상세의 '셀러몰: seller_price 로 덮어쓰기'). 여기서 본사가만 보면
+// 셀러가 ≠ 본사가인 셀러몰 주문이 전부 '결제금액이 변경되었습니다' 로 거절된다 — 2026-08-07
+// 재계산 도입 이후 thegrazia(74) 셀러몰이 이 상태였다(2026-10-10 발견).
+// 화면과 같은 규칙: 셀러가 행이 없으면 본사가 그대로.
+const recalcOrderAmount = async (brand_id, products, use_point, seller_id = 0) => {
   const lines = Array.isArray(products) ? products : [products];
 
   const product_ids = [...new Set(
@@ -125,6 +132,17 @@ const recalcOrderAmount = async (brand_id, products, use_point) => {
     product_ids
   );
   const productById = new Map(rows[0].map((r) => [parseInt(r.id), r]));
+  if (Number(seller_id) > 0) {
+    const [srows] = await readPool.query(
+      `SELECT product_id, seller_price FROM seller_products
+        WHERE seller_id=? AND is_delete=0 AND product_id IN (${ph})`,
+      [Number(seller_id), ...product_ids]
+    );
+    for (const r of srows) {
+      const p = productById.get(parseInt(r.product_id));
+      if (p && r.seller_price != null) p.product_sale_price = r.seller_price;
+    }
+  }
 
   // 주문에 실린 옵션 id 를 모아 실제 가격을 한 번에 읽는다.
   const option_ids = [...new Set(
@@ -345,6 +363,33 @@ const payCtrl = {
         return response(req, res, -100, "잘못된 접근입니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.", false);
       }
       brand_id = Number(decode_dns.id);
+      // 셀러도 서버가 정한다 — 셀러몰 호스트(users.dns)로 들어왔을 때만 dns 토큰에 seller_id 가 실린다
+      // (domain.controller). body 값을 믿으면 아무 셀러 id 나 실어 보내 셀러가로 사거나
+      // 남의 셀러에게 수수료를 붙일 수 있다. 줄마다 실린 seller_id(정산 스냅샷)도 같은 값으로 맞춘다.
+      seller_id = Number(decode_dns?.seller_id) > 0 ? Number(decode_dns.seller_id) : 0;
+      // thegrazia(74)는 셀러몰에서만 판다 — 본사 사이트에서는 결제하지 않는다(2026-10-10 사장님 확인).
+      // 예전엔 demo-4 구매 버튼의 화면 검사뿐이라 본몰(demo-9)·주문서로는 그대로 결제됐다.
+      if (brand_id == 74 && !(seller_id > 0)) {
+        return response(req, res, -100, "본사페이지에서는 결제가 진행되지 않습니다.", false);
+      }
+      // thegrazia(74)는 해외직구라 주문마다 개인통관고유부호가 있어야 통관된다.
+      // 예전엔 가입할 때만 받아(users.unipass) 주문 화면에서는 확인하지 않았고, 고칠 화면도 없어
+      // 번호 없는 회원은 살 수 없거나(demo-4) 번호 없이 결제됐다(demo-9·공용 주문서).
+      // 주문서가 받은 번호를 검사하고, 회원정보와 다르면 회원정보에 저장한다 —
+      // 관리자 주문목록의 통관부호 열(users.unipass)이 그대로 이 값을 보여준다.
+      if (brand_id == 74) {
+        if (!(user_id > 0)) {
+          return response(req, res, -100, "로그인 후 주문해 주세요.", false);
+        }
+        const [[회원]] = await readPool.query(`SELECT unipass FROM users WHERE id=?`, [user_id]);
+        const 통관부호 = String(req.body?.unipass || 회원?.unipass || '').replace(/\s/g, '').toUpperCase();
+        if (!/^P\d{12}$/.test(통관부호)) {
+          return response(req, res, -100, "개인통관고유부호를 정확히 입력해 주세요. (P로 시작하는 13자리)", false);
+        }
+        if (통관부호 !== String(회원?.unipass ?? '')) {
+          await writePool.query(`UPDATE users SET unipass=? WHERE id=?`, [통관부호, user_id]);
+        }
+      }
       // ⚠ 남은 것: 아래 상품 상태 검사(SELECT id, status FROM products WHERE id IN (...))와
       //   recalcOrderAmount 의 상품 조회에는 아직 브랜드 스코프가 없다. 다른 브랜드 상품 id 를
       //   섞어 보내면 이 브랜드 주문에 그 상품이 들어간다(금액은 실제 상품 행에서 재계산하므로
@@ -398,7 +443,7 @@ const payCtrl = {
           `id`,
           `id`,
         ]
-        let seller = await readPool.query(`SELECT ${seller_columns.join()} FROM users WHERE id=? AND level=10`, [seller_id]);
+        let seller = await readPool.query(`SELECT ${seller_columns.join()} FROM users WHERE id=? AND level=10 AND brand_id=? AND is_delete=0`, [seller_id, brand_id]);
         seller = seller[0][0];
         if (!seller) {
           return response(req, res, -100, "셀러값이 잘못 되었습니다.", false)
@@ -436,7 +481,7 @@ const payCtrl = {
       // ── 결제금액 검증(서버 재계산) ────────────────────────────────────
       // 여기까지는 '살 수 있는 상품인가'만 봤다. '얼마인가'를 서버가 직접 계산해 대조한다.
       {
-        const expected = await recalcOrderAmount(brand_id, products, use_point);
+        const expected = await recalcOrderAmount(brand_id, products, use_point, seller_id);
         if (!expected) {
           return response(req, res, -100, "주문 상품 정보가 올바르지 않습니다.", false);
         }
@@ -487,6 +532,7 @@ const payCtrl = {
         for (let i = 0; i < products.length; i++) {
           products[i].order_amount = expected.lines[i]?.order_amount ?? 0;
           products[i].delivery_fee = expected.lines[i]?.delivery_fee ?? 0;
+          products[i].seller_id = seller_id;
         }
       }
 
