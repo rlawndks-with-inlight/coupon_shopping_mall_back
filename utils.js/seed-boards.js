@@ -30,9 +30,25 @@ export const seedDefaultBoards = async (brandId) => {
         [brandId]
     );
     const existTitles = (exist[0] || []).map((r) => r.post_category_title);
+    // 언어팩이 켜진 몰이면 새 게시판 이름도 번역 대기열에 올린다.
+    // 승인 경로는 몰을 처음부터 언어팩 켜짐으로 만든다. 그래서 '꺼짐→켜짐' 전환 때 한꺼번에 올리는 길(lang-process)을
+    // 한 번도 타지 않는다. 해담수산(141)은 영어 화면에서도 「공지사항」「1:1문의」가 한국어로 남았다(2026-10-12 점검).
+    const [[brand]] = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [brandId]);
+    let setting = {};
+    try { setting = JSON.parse(brand?.setting_obj || '{}') || {}; } catch (e) { setting = {}; }
+    const 번역 = setting?.is_use_lang == 1;
     for (const b of boards) {
         if (existTitles.includes(b.post_category_title)) continue;
-        await insertQuery('post_categories', { ...b, brand_id: brandId });
+        const result = await insertQuery('post_categories', { ...b, brand_id: brandId });
+        if (번역 && result?.insertId) {
+            // 형식은 lang-process 의 일괄 등록과 같다 — obj 는 id + 번역할 칸.
+            await insertQuery('lang_processes', {
+                table_name: 'post_categories',
+                item_id: result.insertId,
+                brand_id: brandId,
+                obj: JSON.stringify({ id: result.insertId, post_category_title: b.post_category_title }),
+            });
+        }
     }
 };
 
