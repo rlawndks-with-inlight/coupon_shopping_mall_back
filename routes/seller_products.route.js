@@ -8,6 +8,10 @@ router
     .route('/')
     .get(sellerProductsCtrl.list)
     .post(sellerProductsCtrl.create)
+// '/:id' 보다 먼저 둔다(뒤에 두면 id='impact' 로 잡힌다).
+router
+    .route('/impact')
+    .get(sellerProductsCtrl.impact)
 router
     .route('/all')
     .post(sellerProductsCtrl.all)

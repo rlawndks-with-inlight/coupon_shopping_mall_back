@@ -10,6 +10,7 @@ import { deleteKeys } from "../utils.js/redis-scan.js";
 import { saveOptionGroups, saveCombinations } from "../utils.js/product-options.js";
 import { saveProductOrderFormFields } from "../utils.js/order-form.js";
 import { loadSellerScope, parseIdList, sellerBrandCondition } from "../utils.js/seller-scope.js";
+import { planForProduct, applyPlan } from "../utils.js/seller-price.js";
 
 const table_name = 'products';
 
@@ -1218,6 +1219,17 @@ const productCtrl = {
             }
             obj = { ...obj, ...files, };
             let result = await updateQuery(`${table_name}`, obj, id);
+
+            // 본사 판매가가 바뀌면 이 상품을 파는 셀러들의 공급가·판매가를 다시 계산한다(마진 유지 —
+            // utils.js/seller-price.js). 예전엔 그대로 남아, 본사가 가격을 올리면 셀러가 원가 아래로 팔 수 있었다.
+            // 관리자 화면은 저장 전에 영향(셀러 수·예시)을 보여주고 확인을 받는다(seller-products/impact).
+            if (Number(ownedProduct?.product_sale_price) !== Number(product_sale_price)) {
+                try {
+                    await applyPlan(writePool, await planForProduct(id));
+                } catch (e) {
+                    logger.error('셀러 공급가 재계산 실패(상품 ' + id + '): ' + (e?.sqlMessage || e?.message || e));
+                }
+            }
 
             let dns_data = await readPool.query(`SELECT id, setting_obj FROM brands WHERE id=?`, [brand_id]);
             dns_data = dns_data[0][0];

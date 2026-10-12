@@ -6,11 +6,55 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { loadSellerScope, parseIdList, sellerBrandCondition } from "../utils.js/seller-scope.js";
-import { calcAgentPrice, loadSellerFees } from "../utils.js/seller-price.js";
+import { calcAgentPrice, loadSellerFees, planForProduct, planForSeller, summarizePlan } from "../utils.js/seller-price.js";
 
 const table_name = 'seller_products';
 
 const sellerProductsCtrl = {
+    // 저장 전 '영향 미리보기' — 쓰지 않고 계산만 한다(관리자 확인창용).
+    //   · 본사 판매가 변경: ?product_id=&sale_price=        → 그 상품을 파는 셀러들의 공급가·판매가 변화
+    //   · 셀러의 영업자·수수료 변경: ?seller_id=&oper_id=&seller_trx_fee=&seller_trx_fee_type= → 그 셀러 상품 전부
+    // 실제 반영은 product.controller update · seller.controller update 가 같은 계산(utils.js/seller-price.js)으로 한다.
+    impact: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 15, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            if (!decode_user) return lowLevelException(req, res);
+            const brandId = Number(decode_dns?.id ?? 0);
+            const { product_id, sale_price, seller_id, oper_id, seller_trx_fee, seller_trx_fee_type } = req.query;
+            const 이름 = (p) => p?.seller_name || p?.user_name || p?.product_name || '';
+
+            if (Number(product_id) > 0) {
+                const [[product]] = await readPool.query(`SELECT id FROM products WHERE id=? AND brand_id=?`, [Number(product_id), brandId]);
+                if (!product) return lowLevelException(req, res);
+                const plan = await planForProduct(product.id, Number(sale_price));
+                return response(req, res, 100, "success", summarizePlan(plan, 이름));
+            }
+            if (Number(seller_id) > 0) {
+                const current = await loadSellerFees(seller_id);
+                if (!current || Number(current.brand_id) !== brandId) return lowLevelException(req, res);
+                let operFee = { oper_trx_fee: current.oper_trx_fee, oper_trx_fee_type: current.oper_trx_fee_type };
+                if (Number(oper_id) > 0) {
+                    const [[oper]] = await readPool.query(
+                        `SELECT oper_trx_fee, oper_trx_fee_type FROM users WHERE id=? AND brand_id=? AND is_delete=0`, [Number(oper_id), brandId]);
+                    if (!oper) return lowLevelException(req, res);
+                    operFee = oper;
+                }
+                const fees = {
+                    ...operFee,
+                    seller_trx_fee: seller_trx_fee !== undefined && seller_trx_fee !== '' ? Number(seller_trx_fee) : current.seller_trx_fee,
+                    seller_trx_fee_type: seller_trx_fee_type !== undefined && seller_trx_fee_type !== '' ? Number(seller_trx_fee_type) : current.seller_trx_fee_type,
+                };
+                const plan = await planForSeller(seller_id, fees);
+                return response(req, res, 100, "success", summarizePlan(plan, 이름));
+            }
+            return response(req, res, -100, "확인할 대상을 지정해 주세요.", false);
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        }
+    },
     list: async (req, res, next) => {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);

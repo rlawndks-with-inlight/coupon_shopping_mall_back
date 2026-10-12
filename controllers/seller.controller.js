@@ -8,6 +8,7 @@ import { readPool, writePool } from "../config/db-pool.js";
 import { encForSave, decListContent, decField, decRow, decRows } from "../utils.js/pii.js";
 import { stripUserSecrets, stripUserSecretsList } from "../utils.js/security-question.js";
 import { isBrandPropertyMigrated, parseIdList, toBrandPropertyIds } from "../utils.js/seller-scope.js";
+import { planForSeller, applyPlan } from "../utils.js/seller-price.js";
 const table_name = 'users';
 
 // ── 셀러 상세(get) 공개 프로필 컬럼 화이트리스트 ────────────────────────────────
@@ -389,47 +390,15 @@ const sellerCtrl = {
             const newSellerFee = parseFloat(seller_trx_fee ?? 0);
             const newSellerFeeType = parseInt(seller_trx_fee_type ?? 0);
 
-            if (oldSellerFee !== newSellerFee || oldSellerFeeType !== newSellerFeeType) {
-                // 해당 셀러의 모든 seller_products 조회
-                let [sellerProducts] = await readPool.query(
-                    `SELECT sp.id, sp.product_id, sp.seller_price, sp.agent_price, p.product_sale_price
-                     FROM seller_products sp
-                     LEFT JOIN products p ON sp.product_id = p.id
-                     WHERE sp.seller_id = ? AND sp.is_delete = 0`,
-                    [id]
-                );
-
-                let bulkUpdates = [];
-                for (const sp of sellerProducts) {
-                    if (!sp.product_sale_price || sp.product_sale_price == 0) continue;
-                    const margin = sp.seller_price - sp.agent_price; // 기존 마진 보존
-                    // 새 agent_price 계산
-                    const basePrice = sp.product_sale_price;
-                    const operFee = parseFloat(agent?.oper_trx_fee ?? 0);
-                    const operFeeType = parseInt(agent?.oper_trx_fee_type ?? 0);
-                    const afterOper = operFeeType == 1 ? basePrice + operFee : basePrice * (1 + operFee);
-                    const afterSeller = newSellerFeeType == 1 ? afterOper + newSellerFee : afterOper * (1 + newSellerFee);
-                    const newAgentPrice = Math.round(Math.floor(Number(afterSeller.toFixed(6))) / 1000) * 1000;
-                    const newSellerPrice = newAgentPrice + margin;
-                    // seller_price가 agent_price보다 낮아지지 않도록
-                    const finalSellerPrice = newSellerPrice >= newAgentPrice ? newSellerPrice : newAgentPrice;
-                    bulkUpdates.push({ id: sp.id, agent_price: newAgentPrice, seller_price: finalSellerPrice });
-                }
-
-                // 벌크 UPDATE: CASE WHEN으로 한 번에 (파라미터화)
-                if (bulkUpdates.length > 0) {
-                    let ids = bulkUpdates.map(u => u.id);
-                    let agentCase = bulkUpdates.map(() => `WHEN ? THEN ?`).join(' ');
-                    let sellerCase = bulkUpdates.map(() => `WHEN ? THEN ?`).join(' ');
-                    let params = [];
-                    for (const u of bulkUpdates) { params.push(u.id, u.agent_price); }
-                    for (const u of bulkUpdates) { params.push(u.id, u.seller_price); }
-                    params.push(...ids);
-                    await writePool.query(
-                        `UPDATE seller_products SET agent_price = CASE id ${agentCase} END, seller_price = CASE id ${sellerCase} END WHERE id IN (${ids.map(() => '?').join(',')})`,
-                        params
-                    );
-                }
+            // 셀러 수수료가 바뀌거나 **영업자가 바뀌면**(영업자 수수료가 달라진다) 공급가·판매가를 다시 계산한다(마진 유지).
+            // 예전엔 셀러 수수료가 바뀔 때만 돌아서, 수수료가 다른 영업자 밑으로 옮기면 공급가가 옛 값으로 남았다.
+            // 계산은 utils.js/seller-price.js 하나로(새 값은 아직 저장 전이라 여기서 넘긴다).
+            const 영업자바뀜 = Number(oper_id || oldOper.oper_id || 0) !== Number(oldOper.oper_id || 0);
+            if (oldSellerFee !== newSellerFee || oldSellerFeeType !== newSellerFeeType || 영업자바뀜) {
+                await applyPlan(writePool, await planForSeller(id, {
+                    seller_trx_fee: newSellerFee, seller_trx_fee_type: newSellerFeeType,
+                    oper_trx_fee: agent?.oper_trx_fee ?? 0, oper_trx_fee_type: agent?.oper_trx_fee_type ?? 0,
+                }));
             }
 
             // ── 비밀번호는 '새로 입력했을 때만' 갱신한다 ─────────────────────────────────────
