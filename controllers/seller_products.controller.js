@@ -6,6 +6,7 @@ import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { loadSellerScope, parseIdList, sellerBrandCondition } from "../utils.js/seller-scope.js";
+import { calcAgentPrice, loadSellerFees } from "../utils.js/seller-price.js";
 
 const table_name = 'seller_products';
 
@@ -77,7 +78,23 @@ const sellerProductsCtrl = {
             }
             if (Number(decode_user?.level) < 15) seller_id = decode_user.id;
             let files = settingFiles(req.files);
-            if (Number(seller_price) < Number(agent_price)) {
+            // 공급가는 서버가 계산한다(utils.js/seller-price.js). 화면이 보낸 agent_price 는 쓰지 않는다 —
+            // 예전엔 그대로 저장해서, 낮춰 보내면 본사 몫이 깎이고 셀러 정산(결제×0.9 − 공급가)이 부풀었다.
+            const fees = await loadSellerFees(seller_id);
+            if (!fees || Number(fees.brand_id) !== Number(decode_dns?.id ?? 0)) {
+                return response(req, res, -100, "셀러 정보를 확인할 수 없습니다.", false);
+            }
+            const [[product]] = await readPool.query(
+                `SELECT product_sale_price FROM products WHERE id=? AND brand_id=? AND is_delete=0`,
+                [Number(product_id) || 0, Number(fees.brand_id)]);
+            if (!product) {
+                return response(req, res, -100, "상품을 찾을 수 없습니다.", false);
+            }
+            agent_price = calcAgentPrice(product.product_sale_price, fees);
+            if (!(agent_price > 0)) {
+                return response(req, res, -100, "본사 가격이 없는 상품은 등록할 수 없습니다.", false);
+            }
+            if (!(Number(seller_price) >= agent_price)) {
                 return response(req, res, -100, "본사 가격보다 낮게 등록할 수 없습니다.", false);
             }
             await writePool.query(
@@ -143,6 +160,10 @@ const sellerProductsCtrl = {
             // 범위는 '등록 대상 셀러' 의 것이다(운영자가 셀러를 지정해 일괄등록할 때도). 토큰이 아니라 DB 에서 읽는다
             // — 예전엔 호출한 사람의 토큰 값을 써서, 운영자가 대신 등록하면 셀러 범위가 통째로 무시됐다.
             const sellerUser = await loadSellerScope(seller_id);
+            const sellerFees = await loadSellerFees(seller_id);
+            if (!sellerFees || Number(sellerFees.brand_id) !== Number(decode_dns?.id ?? 0)) {
+                return response(req, res, -100, "셀러 정보를 확인할 수 없습니다.", false);
+            }
             if (sellerUser?.seller_range_o != 0) {
                 sql += ` AND product_sale_price BETWEEN ? AND ?`;
                 params.push(sellerUser?.seller_range_u, sellerUser?.seller_range_o);
@@ -239,16 +260,9 @@ const sellerProductsCtrl = {
                     const product_id = item.id;
                     if (!item.product_sale_price || item.product_sale_price == 0) return;
 
-                    const basePrice = item.product_sale_price;
-                    const operFee = decode_user?.oper_trx_fee ?? 0;
-                    const sellerFee = decode_user?.seller_trx_fee ?? 0;
-                    const operFeeType = decode_user?.oper_trx_fee_type ?? 0;
-                    const sellerFeeType = decode_user?.seller_trx_fee_type ?? 0;
-
-                    const afterOper = operFeeType == 1 ? basePrice + operFee : basePrice * (1 + operFee);
-                    const afterSeller = sellerFeeType == 1 ? afterOper + sellerFee : afterOper * (1 + sellerFee);
-
-                    const agent_price = Math.round(Math.floor(Number(afterSeller.toFixed(6))) / 1000) * 1000;
+                    // 수수료는 '등록 대상 셀러' 의 현재 값(DB)으로 — 예전엔 등록하는 사람의 로그인 토큰 값이라
+                    // 영업자가 대신 등록하면 영업자 본인 수수료로, 셀러 본인이어도 로그인 뒤 바뀐 수수료는 빠졌다.
+                    const agent_price = calcAgentPrice(item.product_sale_price, sellerFees);
 
                     const seller_price = (price_per != 0
                         ? Math.round((agent_price * (1 + price_per / 100)) / 1000) * 1000

@@ -14,6 +14,7 @@ import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
 import { readPool, writePool } from "../config/db-pool.js";
+import { calcAgentPrice, loadSellerFees } from "../utils.js/seller-price.js";
 import crypto from 'crypto';
 import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
@@ -534,6 +535,28 @@ const payCtrl = {
           products[i].delivery_fee = expected.lines[i]?.delivery_fee ?? 0;
           products[i].seller_id = seller_id;
         }
+      }
+
+      // ── 셀러몰 공급가 합계(agent_amount) — 서버가 계산한다 ─────────────────────────
+      // 정산의 셀러 몫 = 결제금액 × 0.9 − agent_amount (seller_adjustments·dashboard).
+      // 예전엔 화면(fintree-auth.js 등)이 상품마다 product_agent_price 를 더해 보냈다.
+      //   · 수량을 곱하지 않아 같은 상품 2개를 사도 공급가가 1개분만 잡혔다(셀러 몫 과다).
+      //   · 값이 없는 경로에선 0 이 돼 결제금액의 90% 가 통째로 셀러 몫이 됐다.
+      //   · 화면 값이라 낮춰 보내면 그만큼 셀러 몫이 부풀었다.
+      // 공급가는 지금 수수료로 계산한다(utils.js/seller-price.js — 셀러상품 등록과 같은 규칙).
+      // 추가상품 줄(addon_line=1)은 본사 상품가가 없으므로 넣지 않는다. 셀러가 아닌 주문은 예전 그대로 둔다.
+      if (seller_id > 0) {
+        const fees = await loadSellerFees(seller_id);
+        const 본상품줄 = (Array.isArray(products) ? products : [products]).filter((p) => Number(p?.addon_line) !== 1);
+        const ids = [...new Set(본상품줄.map((p) => parseInt(p?.id)).filter((v) => v > 0))];
+        let 본사가 = new Map();
+        if (ids.length > 0) {
+          const [rows] = await readPool.query(
+            `SELECT id, product_sale_price FROM products WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+          본사가 = new Map(rows.map((r) => [parseInt(r.id), Number(r.product_sale_price) || 0]));
+        }
+        agent_amount = 본상품줄.reduce((sum, p) =>
+          sum + calcAgentPrice(본사가.get(parseInt(p?.id)) ?? 0, fees) * (parseInt(p?.order_count) || 0), 0);
       }
 
       // 배송 국가는 주문에도 남긴다 — 주소록 행은 나중에 수정·삭제될 수 있으므로
