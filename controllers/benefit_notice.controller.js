@@ -45,6 +45,22 @@ const tab_table_name = 'benefit_notice_tabs';
 //   직접 부르면 그냥 우회된다(회원가입 아이디 검증에서 같은 일을 이미 겪었다).
 export const 라벨상한 = 8;
 
+// 제목·요약 강조(style_obj). 손님 화면의 style 에 그대로 들어가므로 정해진 모양만 받는다:
+// 색은 #rrggbb, 크기는 normal·large·xlarge. 그 밖의 값은 버린다. 남는 게 없으면 null(=예전 모양).
+const 꾸밈정리 = (raw) => {
+    let s = raw;
+    if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { s = null; } }
+    if (!s || typeof s !== 'object') return null;
+    const 색 = (v) => (/^#[0-9a-fA-F]{6}$/.test(String(v ?? '')) ? String(v) : undefined);
+    const out = {
+        title_color: 색(s.title_color),
+        title_size: ['normal', 'large', 'xlarge'].includes(s.title_size) ? s.title_size : undefined,
+        summary_color: 색(s.summary_color),
+    };
+    Object.keys(out).forEach((k) => { if (out[k] === undefined) delete out[k]; });
+    return Object.keys(out).length ? JSON.stringify(out) : null;
+};
+
 const 라벨검사 = (label) => {
     const 값 = String(label ?? '').trim();
     if (!값) return null;                      // 비우면 아래에서 '혜택' 으로 채운다
@@ -136,7 +152,7 @@ const benefitNoticeCtrl = {
             if (!brand_id) {
                 return lowLevelException(req, res);
             }
-            const { label, summary, icon_img, popup_title, sort, is_show, tabs } = req.body;
+            const { label, summary, icon_img, popup_title, style_obj, sort, is_show, tabs } = req.body;
             const 라벨오류 = 라벨검사(label);
             if (라벨오류) {
                 return response(req, res, -100, 라벨오류, false);
@@ -147,6 +163,7 @@ const benefitNoticeCtrl = {
                 summary: summary ?? '',
                 icon_img: icon_img ?? null,
                 popup_title: popup_title ?? null,
+                style_obj: 꾸밈정리(style_obj),
                 sort: Number(sort) || 0,
                 is_show: Number(is_show) === 0 ? 0 : 1,
             };
@@ -177,7 +194,7 @@ const benefitNoticeCtrl = {
             if (!before || Number(before.brand_id) !== brand_id) {
                 return lowLevelException(req, res);
             }
-            const { label, summary, icon_img, popup_title, sort, is_show, tabs } = req.body;
+            const { label, summary, icon_img, popup_title, style_obj, sort, is_show, tabs } = req.body;
             const 라벨오류 = 라벨검사(label);
             if (라벨오류) {
                 return response(req, res, -100, 라벨오류, false);
@@ -187,6 +204,7 @@ const benefitNoticeCtrl = {
                 summary: summary ?? '',
                 icon_img: icon_img ?? null,
                 popup_title: popup_title ?? null,
+                style_obj: 꾸밈정리(style_obj),
                 sort: Number(sort) || 0,
                 is_show: Number(is_show) === 0 ? 0 : 1,
             };
