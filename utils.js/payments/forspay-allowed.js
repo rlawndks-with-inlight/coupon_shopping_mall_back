@@ -1,8 +1,9 @@
 'use strict';
 import { redisClient } from "../../config/redis-client.js";
-import { getAvailableMethodIds } from "./forspay.js";
+import { getAvailableMethodIds, FORSPAY_METHODS } from "./forspay.js";
 import { invalidateShopSettingCache } from "../cache.js";
 import logger from "../winston/index.js";
+import { getPayType } from "../util.js";
 
 // 포스페이 계정이 지금 쓸 수 있는 결제 '대분류'(0 카드 · 1 계좌이체 · 3 간편결제 · 5 해외결제) 저장값.
 // shop.controller 가 주문서 결제수단을 거를 때 읽고, pay.controller 가 결제창 열기에 실패하면 다시 확인한다.
@@ -49,3 +50,83 @@ export const 실패후대분류다시확인 = async (brandId, app_key, pg_method
         return false;
     }
 };
+
+
+// ── 주문서용 '지금 확인' ─────────────────────────────────────────────────────
+// 주문서를 열 때마다 포스페이에 다시 묻는다(2026-10-15 사장님 제안: 「결제창 들어갈 때마다 확인」).
+// 같은 몰에 손님이 몰려도 포스페이를 두드리지 않게 30초는 직전 결과를 쓴다.
+// 포스페이가 2.5초 안에 답하지 않으면 기다리지 않고 5분 저장값으로 대신한다 — 포스페이 장애로 주문서가 막히면 안 된다.
+const 지금키 = (brandId) => `forspay:allowed_methods_now:${Number(brandId) || 0}`;
+const 지금보관초 = 30;
+const 기다림한도 = 2500;
+export const 대분류지금확인 = async (brandId, app_key) => {
+    if (!app_key) return null;
+    try {
+        const cached = redisClient?.isOpen ? await redisClient.get(지금키(brandId)) : null;
+        if (cached) return JSON.parse(cached);
+    } catch (e) { /* 저장소 실패는 그냥 묻는다 */ }
+    const 시간초과 = Symbol('timeout');
+    const ids = await Promise.race([
+        getAvailableMethodIds({ app_key }).catch(() => null),
+        new Promise((r) => setTimeout(() => r(시간초과), 기다림한도)),
+    ]);
+    if (Array.isArray(ids)) {
+        try {
+            if (redisClient?.isOpen) {
+                await redisClient.set(지금키(brandId), JSON.stringify(ids), { EX: 지금보관초 });
+                await redisClient.set(키(brandId), JSON.stringify(ids), { EX: 대분류보관초 }); // 5분 저장값도 새 것으로
+            }
+        } catch (e) { /* 무시 */ }
+        return ids;
+    }
+    if (ids === 시간초과) logger.info(`[forspay] 주문서 결제수단 확인이 ${기다림한도}ms 넘게 걸려 저장값으로 대신 — brand_id=${brandId}`);
+    try {
+        const old = redisClient?.isOpen ? await redisClient.get(키(brandId)) : null;
+        return old ? JSON.parse(old) : null; // 저장값도 없으면 null → 거르지 않고 전부 보여준다
+    } catch (e) {
+        return null;
+    }
+};
+
+// ── 결제모듈 행 → 손님에게 보일 결제수단 목록 ─────────────────────────────────────
+// 몰 설정 응답(shop.controller setting)과 주문서용 API(paymentMethods)가 같은 규칙을 쓴다.
+// 순서는 FORSPAY_METHODS 배열 순서다(포스페이는 순서를 주지 않는다).
+export const 결제수단목록 = (rows = [], allowedIds = null) => (rows || []).flatMap((item) => {
+    if (item?.trx_type != 41) {
+        // ⚠ 여기서 pay_key·mid·tid 가 비로그인 방문자에게도 그대로 내려간다
+        //   (localStorage.themeDnsData 에도 저장된다).
+        //   한 번 제거해 봤으나 프론트가 이 값을 결제 요청에 되실어 보내는 구조라
+        //   포스페이 외 결제수단(무통장입금·수기결제 등)이 죽는다 — 되돌렸다.
+        //   올바른 순서는 pay.controller 가 페이레터·포스페이에서 하듯
+        //   brand_id + trx_method 로 DB 에서 자격증명을 읽는 경로를 먼저 만들고,
+        //   그 다음 응답에서 제거하는 것이다.
+        //   ShopGo 산하는 결제모듈이 포스페이(41)뿐이라(DB 확인) 실노출이 없다.
+        return [{ ...item, ...getPayType(item?.trx_type) }];
+    }
+    // 수단별 노출 설정(enabled) 파싱. 설정 없으면 pending(삼성페이) 제외 전부 노출.
+    let methodsCfg = {};
+    try {
+        const cfg = item?.forspay_config ? JSON.parse(item.forspay_config) : {};
+        methodsCfg = cfg?.methods || {};
+    } catch (e) { methodsCfg = {}; }
+    const base = getPayType(item?.trx_type); // type: 'auth_forspay'
+    // 비밀값(App key 등)은 프론트로 내보내지 않는다 — 화이트리스트 필드만 구성
+    return FORSPAY_METHODS
+        .filter((m) => {
+            // 포스페이(계정)가 지원하지 않는 대분류는 무조건 숨김 (조회 성공 시)
+            if (Array.isArray(allowedIds) && !allowedIds.includes(m.pg_method_id)) return false;
+            const mc = methodsCfg[m.key];
+            if (mc && typeof mc.enabled !== 'undefined') return !!mc.enabled;
+            return !m.pending;
+        })
+        .map((m) => ({
+            id: item?.id,
+            trx_type: item?.trx_type,
+            is_old_auth: item?.is_old_auth,
+            sort_idx: item?.sort_idx,
+            ...base,
+            title: m.label,                                   // 접두어 없이 수단명만
+            description: m.desc || '포스페이로 결제합니다.',   // 수단별 안내 문구
+            pay_method: m.key,
+        }));
+});

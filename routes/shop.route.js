@@ -10,6 +10,10 @@ router
 router
     .route('/main')
     .get(shopCtrl.main)
+// 주문서 전용 — 결제수단을 지금 포스페이에 확인해서 내려준다(캐시 없음).
+router
+    .route('/payment-methods')
+    .get(shopCtrl.paymentMethods)
 router
     .route('/product/:id')
     .get(shopCtrl.item)

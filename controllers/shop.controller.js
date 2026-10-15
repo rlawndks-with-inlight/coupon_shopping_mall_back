@@ -3,7 +3,7 @@ import { checkIsManagerUrl, getMainObjType, returnMoment } from "../utils.js/fun
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, hasColumn } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
 import { FORSPAY_METHODS } from "../utils.js/payments/forspay.js";
-import { 대분류읽기 } from "../utils.js/payments/forspay-allowed.js";
+import { 대분류읽기, 대분류지금확인, 결제수단목록 } from "../utils.js/payments/forspay-allowed.js";
 import 'dotenv/config';
 import productCtrl from "./product.controller.js";
 import postCtrl from "./post.controller.js";
@@ -345,45 +345,8 @@ const shopCtrl = {
                 : null;
 
             //결제모듈처리 (포스페이(41)는 활성 결제수단별 옵션으로 분리 — 구매자가 수단 선택)
-            data['payment_modules'] = (data?.payment_modules || []).flatMap((item) => {
-                if (item?.trx_type != 41) {
-                    // ⚠ 여기서 pay_key·mid·tid 가 비로그인 방문자에게도 그대로 내려간다
-                    //   (localStorage.themeDnsData 에도 저장된다).
-                    //   한 번 제거해 봤으나 프론트가 이 값을 결제 요청에 되실어 보내는 구조라
-                    //   포스페이 외 결제수단(무통장입금·수기결제 등)이 죽는다 — 되돌렸다.
-                    //   올바른 순서는 pay.controller 가 페이레터·포스페이에서 하듯
-                    //   brand_id + trx_method 로 DB 에서 자격증명을 읽는 경로를 먼저 만들고,
-                    //   그 다음 응답에서 제거하는 것이다.
-                    //   ShopGo 산하는 결제모듈이 포스페이(41)뿐이라(DB 확인) 실노출이 없다.
-                    return [{ ...item, ...getPayType(item?.trx_type) }];
-                }
-                // 수단별 노출 설정(enabled) 파싱. 설정 없으면 pending(삼성페이) 제외 전부 노출.
-                let methodsCfg = {};
-                try {
-                    const cfg = item?.forspay_config ? JSON.parse(item.forspay_config) : {};
-                    methodsCfg = cfg?.methods || {};
-                } catch (e) { methodsCfg = {}; }
-                const base = getPayType(item?.trx_type); // type: 'auth_forspay'
-                // 비밀값(App key 등)은 프론트로 내보내지 않는다 — 화이트리스트 필드만 구성
-                return FORSPAY_METHODS
-                    .filter((m) => {
-                        // 포스페이(계정)가 지원하지 않는 대분류는 무조건 숨김 (ping 조회 성공 시)
-                        if (Array.isArray(forspayAllowedMethodIds) && !forspayAllowedMethodIds.includes(m.pg_method_id)) return false;
-                        const mc = methodsCfg[m.key];
-                        if (mc && typeof mc.enabled !== 'undefined') return !!mc.enabled;
-                        return !m.pending;
-                    })
-                    .map((m) => ({
-                        id: item?.id,
-                        trx_type: item?.trx_type,
-                        is_old_auth: item?.is_old_auth,
-                        sort_idx: item?.sort_idx,
-                        ...base,
-                        title: m.label,                                   // 접두어 없이 수단명만
-                        description: m.desc || '포스페이로 결제합니다.',   // 수단별 안내 문구
-                        pay_method: m.key,
-                    }));
-            })
+            // 규칙은 utils.js/payments/forspay-allowed.js 결제수단목록 한 곳 — 주문서용 paymentMethods 와 같이 쓴다.
+            data['payment_modules'] = 결제수단목록(data?.payment_modules, forspayAllowedMethodIds);
 
             //상품카테고리처리 (단계 이행 dual-mode)
             if (brand_data?.is_category_migrated == 1) {
@@ -494,6 +457,23 @@ const shopCtrl = {
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
+        }
+    },
+    // 주문서 전용 — 결제수단을 '지금' 포스페이에 확인해서 내려준다(캐시 없음, 포스페이 쪽만 30초 재사용).
+    // 몰 설정 응답(setting)은 3분 캐시 + 대분류 5분 저장이라, 그 사이 포스페이에서 꺼진 대분류가 남을 수 있다.
+    // 주문서가 열릴 때 이걸 따로 불러 목록을 갈아 끼운다(2026-10-15). 포스페이가 느리면 2.5초에서 저장값으로 대신한다.
+    paymentMethods: async (req, res, next) => {
+        try {
+            const decode_dns = checkDns(req.cookies.dns);
+            if (!(decode_dns?.id > 0)) return lowLevelException(req, res);
+            const [rows] = await readPool.query(`SELECT * FROM payment_modules WHERE brand_id=? ORDER BY sort_idx DESC`, [decode_dns.id]);
+            const forspayModule = (rows || []).find((m) => m?.trx_type == 41);
+            const allowed = forspayModule?.pay_key ? await 대분류지금확인(decode_dns.id, forspayModule.pay_key) : null;
+            return response(req, res, 100, "success", 결제수단목록(rows, allowed));
+        } catch (err) {
+            console.log(err)
+            logger.error(JSON.stringify(err?.response?.data || err))
+            return response(req, res, -200, "서버 에러 발생", false)
         }
     },
     main: async (req, res, next) => {
