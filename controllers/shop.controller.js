@@ -2,7 +2,8 @@
 import { checkIsManagerUrl, getMainObjType, returnMoment } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, hasColumn } from "../utils.js/query-util.js";
 import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
-import { FORSPAY_METHODS, getAvailableMethodIds } from "../utils.js/payments/forspay.js";
+import { FORSPAY_METHODS } from "../utils.js/payments/forspay.js";
+import { 대분류읽기 } from "../utils.js/payments/forspay-allowed.js";
 import 'dotenv/config';
 import productCtrl from "./product.controller.js";
 import postCtrl from "./post.controller.js";
@@ -337,25 +338,11 @@ const shopCtrl = {
             })
 
             // 포스페이(41) 모듈이 있으면, 그 키(계정)가 지원하는 결제수단(대분류)을 ping으로 조회해 노출을 자동 필터.
-            // 계정 capability는 자주 안 바뀌므로 브랜드별 1시간 캐시. 조회 실패 시 null → 필터 미적용(기존처럼 전부 노출).
-            let forspayAllowedMethodIds = null;
+            // 브랜드별 5분 보관(utils.js/payments/forspay-allowed.js — 예전 1시간). 조회 실패 시 null → 필터 미적용(기존처럼 전부 노출).
             const forspayModule = (data?.payment_modules || []).find((m) => m?.trx_type == 41);
-            if (forspayModule?.pay_key) {
-                const fkey = `forspay:allowed_methods:${decode_dns?.id ?? 0}`;
-                try {
-                    const cachedFm = redisClient?.isOpen ? await redisClient.get(fkey) : null;
-                    if (cachedFm) {
-                        forspayAllowedMethodIds = JSON.parse(cachedFm);
-                    } else {
-                        forspayAllowedMethodIds = await getAvailableMethodIds({ app_key: forspayModule.pay_key });
-                        if (redisClient?.isOpen && Array.isArray(forspayAllowedMethodIds)) {
-                            await redisClient.set(fkey, JSON.stringify(forspayAllowedMethodIds), { EX: 3600 });
-                        }
-                    }
-                } catch (e) {
-                    forspayAllowedMethodIds = null;
-                }
-            }
+            const forspayAllowedMethodIds = forspayModule?.pay_key
+                ? await 대분류읽기(decode_dns?.id ?? 0, forspayModule.pay_key)
+                : null;
 
             //결제모듈처리 (포스페이(41)는 활성 결제수단별 옵션으로 분리 — 구매자가 수단 선택)
             data['payment_modules'] = (data?.payment_modules || []).flatMap((item) => {

@@ -20,6 +20,7 @@ import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
 import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, getCancelRecords as forspayGetCancelRecords, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
+import { 실패후대분류다시확인 } from "../utils.js/payments/forspay-allowed.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
 import { applyCancelEffects, markCanceled, getCancelState, cancelLines } from "../utils.js/cancel.js";
@@ -888,6 +889,8 @@ const payCtrl = {
         // 실패했을 때 '무엇을 보냈는지' 를 남기려면 catch 에서도 값이 보여야 한다.
         // try 안의 const 는 catch 에서 안 보인다(블록 스코프) — 여기 담아 두고 catch 는 이것만 읽는다.
         const 진단 = { ord_num: '(미정)', method: '(미정)', pg_method_id: '-', route: '-', provider: '(자동)', app_key_len: 0 };
+        // 결제창 열기가 실패하면 포스페이에 다시 물어, 고른 대분류가 빠졌으면 주문서에서 바로 숨긴다(기다리지 않는다).
+        let 대분류다시확인 = () => {};
         try {
           const creds = await getForspayCreds(brand_id);
           진단.app_key_len = String(creds?.app_key ?? '').length;
@@ -914,6 +917,7 @@ const payCtrl = {
             ? routedProvider
             : creds.pg_provider_id;
           진단.provider = fsProvider ?? '(자동)';
+          대분류다시확인 = () => { 실패후대분류다시확인(brand_id, creds.app_key, fsMethod.pg_method_id).catch(() => {}); };
           const front_url = (req.body.front_url || "").toString().trim();
           const backBase = `${req.protocol}://${req.get('host')}`;
           const order_no = String(ord_num || `FS${trans_id}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 64);
@@ -975,6 +979,7 @@ const payCtrl = {
             // HTTP 상태만 보면 성공이라 여기서 걸러야 한다. 사유는 **로그에만** 남긴다 —
             // 손님에게는 결제시작실패문구 를 보낸다(그 이유는 정의부 주석 참고).
             logger.error(`[forspay] launch_page_url 없음 — resp=${JSON.stringify(session)}`);
+            대분류다시확인();
             return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
           }
 
@@ -994,6 +999,7 @@ const payCtrl = {
             + ` route=${진단.route} pg_provider_id=${진단.provider}`
             + ` app_key_len=${진단.app_key_len}`
             + ` ${errText(e)}`);
+          대분류다시확인();
           return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
         }
       }
