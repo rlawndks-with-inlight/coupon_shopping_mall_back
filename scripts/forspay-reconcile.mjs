@@ -27,7 +27,8 @@
 
 import { readPool } from '../config/db-pool.js';
 import { markCanceled } from '../utils.js/cancel.js';
-import { getCancelRecords as forspayGetCancelRecords } from '../utils.js/payments/forspay.js';
+import { getCancelRecords as forspayGetCancelRecords, getTransaction as forspayGetTransaction } from '../utils.js/payments/forspay.js';
+import { settleForspayTransaction } from '../controllers/pay.controller.js';
 
 const 최근일수   = parseInt(process.env.FORSPAY_RECONCILE_DAYS  ?? '21')  || 21;
 const 최대건수   = parseInt(process.env.FORSPAY_RECONCILE_LIMIT ?? '300') || 300;
@@ -108,4 +109,56 @@ for (const t of candidates) {
 }
 
 log(`완료 — 확인 ${확인} / 취소반영 ${취소반영} / 스킵 ${스킵}`);
+
+// ── 2부: 승인 복구 ──────────────────────────────────────────────────────────
+// 포스페이에서는 승인됐는데 우리 장부는 결제대기(0)·미완료(-1)로 남은 주문을 살린다.
+// 손님 브라우저가 복귀하지 못하고(창 닫힘·통신 끊김) 웹훅도 안 오면(noti_url 미등록) 아무도 확정하지 않는다 —
+// 돈은 나갔는데 가맹점 화면엔 결제대기라 발송도 안 되고, 1시간 반 뒤엔 미완료(-1)로 내려간다.
+// (2026-10-19 오픈 전 점검)
+//
+// 안전:
+//   - 확정은 settleForspayTransaction 하나로만 한다 — status=approved + 주문번호 같음 + 금액 같음일 때만,
+//     0·-1 인 행만 원자적으로 5 로 바꾼다(웹훅·결과페이지와 같은 규칙). 늦은 승인의 재고는 늦은승인정리가 다시 잡는다.
+//   - 조회 실패·없음(409)은 건드리지 않는다. 방금 결제창을 연 주문과 겹치지 않게 15분 지난 것만 본다.
+const 복구일수 = parseInt(process.env.FORSPAY_RECOVER_DAYS ?? '3') || 3;
+const [pendings] = await readPool.query(
+    `SELECT id, ord_num, brand_id FROM transactions
+      WHERE trx_method=41 AND trx_status IN (0, -1)
+        AND IFNULL(is_cancel,0)=0 AND IFNULL(is_cancel_trans,0)=0 AND IFNULL(is_delete,0)=0
+        AND ord_num IS NOT NULL AND ord_num <> ''
+        AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        AND created_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+      ORDER BY id DESC
+      LIMIT ?`,
+    [복구일수, 최대건수]
+);
+log(`승인 복구 대상 ${pendings.length}건 (결제대기·미완료, 최근 ${복구일수}일)`);
+let 복구 = 0, 미승인 = 0, 복구스킵 = 0;
+for (const t of pendings) {
+    try {
+        const app_key = await getAppKey(t.brand_id);
+        if (!app_key) { 복구스킵++; continue; }
+        let txn = null;
+        try {
+            txn = await forspayGetTransaction({ app_key, ord_num: t.ord_num, timeout: 건당타임아웃ms });
+        } catch (e) {
+            const st = e?.response?.status;
+            if (st === 409 || st === 404) { 미승인++; } else { 복구스킵++; log(`skip(복구) id=${t.id} (조회실패: ${st || e?.code || e?.message})`); }
+            await sleep(건당텀ms);
+            continue;
+        }
+        if (txn?.status === 'approved') {
+            const 됨 = await settleForspayTransaction(t.id, txn);
+            if (됨) { 복구++; log(`★ 승인 복구 id=${t.id} ord=${t.ord_num} brand=${t.brand_id}`); }
+            else log(`△ 승인됐지만 확정 거부(주문번호·금액 불일치 등) id=${t.id} ord=${t.ord_num} — 확인 필요`);
+        } else {
+            미승인++;
+        }
+    } catch (e) {
+        복구스킵++;
+        log(`skip(복구) id=${t.id} (예외: ${e?.message})`);
+    }
+    await sleep(건당텀ms);
+}
+log(`승인 복구 완료 — 복구 ${복구} / 미승인 ${미승인} / 스킵 ${복구스킵}`);
 process.exit(0);

@@ -13,7 +13,8 @@ import http from 'http';
 import https from 'https';
 import scheduleIndex from "./utils.js/schedules/index.js";
 import upload, { sanitizeSvgMiddleware } from "./config/multerConfig.js";
-import { imageFieldList } from "./utils.js/util.js";
+import { imageFieldList, checkLevel, checkDns, lowLevelException } from "./utils.js/util.js";
+import logger from "./utils.js/winston/index.js";
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { uploadMultipleFiles } from "./utils.js/api-util.js";
@@ -119,6 +120,23 @@ app.use('/files', (req, res, next) => {
 app.use('/files', express.static(__dirname + '/files'));
 //app.post('/api/upload/multiple', upload.array('post_file'), uploadMultipleFiles);
 
+// 로그인 계정의 몰과 접속 쿠키(dns)의 몰이 다르면 거절한다(본사 레벨 50 이상 제외).
+//
+// 관리자 API 대부분이 '어느 몰 데이터인가'를 dns 쿠키로 정한다. dns 쿠키는 그 몰에 접속한 누구에게나 발급되므로,
+// A몰 관리자가 B몰 dns 쿠키를 붙이면 B몰 주문(손님 이름·전화·주소)을 보고 상태까지 바꿀 수 있었다
+// (2026-10-19 오픈 전 점검 — mbc02 로그인 + mbc03 쿠키로 주문 목록이 열리는 것을 운영에서 확인).
+// 로그인은 그 몰 주소에서만 되고(토큰 brand_id = 그 몰) 쿠키도 그 주소 전용이라, 정상 사용에서는 둘이 다를 일이 없다.
+// 엔드포인트마다 고치면 하나는 빠진다 — 입구에서 한 번에 막는다.
+app.use('/api', (req, res, next) => {
+  const 사용자 = checkLevel(req.cookies?.token, 0);
+  if (!사용자 || Number(사용자.level) >= 50) return next();
+  const 몰 = checkDns(req.cookies?.dns);
+  if (몰 && Number(사용자.brand_id) > 0 && Number(몰.id) > 0 && Number(사용자.brand_id) !== Number(몰.id)) {
+    logger.error(`[몰 불일치] user=${사용자.id} 토큰몰=${사용자.brand_id} 쿠키몰=${몰.id} ${req.method} ${req.originalUrl.split('?')[0]}`);
+    return lowLevelException(req, res);
+  }
+  return next();
+});
 app.use('/api', upload.fields(imageFieldList), sanitizeSvgMiddleware, routes);
 
 app.get('/', (req, res) => {

@@ -254,12 +254,13 @@ const transactionCtrl = {
                 const pwCandidates = orderPasswordCandidates(password);
                 const pwPlaceholders = pwCandidates.map(() => '?').join(',');
                 // 비회원 주문조회는 항상 고객 관점 — '버려진 결제대기'(결제창만 열고 승인 안 난 건)를 숨긴다.
+                // 「결제실패/미완료」(-1)도 숨긴다 — 회원 목록(위 list)과 같은 규칙(2026-10-19 오픈 전 점검).
                 // 또한 '취소 원장 행(is_cancel=1, 금액 음수인 별도 행)'도 제외한다 — 안 그러면 취소된 주문이
                 // 원주문(취소완료)+원장행 2줄로 중복돼 보인다. 취소된 원주문(is_cancel_trans=1)은 남긴다.
                 let list = await readPool.query(
                     `SELECT * FROM ${table_name}
                      WHERE (REPLACE(REPLACE(REPLACE(buyer_phone,'-',''),' ',''),'.','') = ? OR buyer_phone_idx = ?)
-                       AND password IN (${pwPlaceholders}) AND brand_id=? AND is_cancel=0 ${HIDE_ABANDONED_PENDING} ORDER BY id DESC LIMIT 50`,
+                       AND password IN (${pwPlaceholders}) AND brand_id=? AND is_cancel=0 ${HIDE_ABANDONED_PENDING} AND trx_status >= 0 ORDER BY id DESC LIMIT 50`,
                     [phoneDigits, blindIndex(buyer_phone), ...pwCandidates, brandId]
                 );
                 list = list[0];

@@ -429,14 +429,16 @@ export const checkPurchaseLimit = async (user_id, products = []) => {
 
     // 지난 구매 수량. 취소된 주문은 빼고, 결제대기는 센다 —
     // 한정 상품은 '덜 세서 초과 판매' 보다 '더 세서 막는' 쪽이 안전하다.
-    // (버려진 결제대기는 cleanup-abandoned 스케줄러가 지운다)
+    // ⚠ 결제실패·미완료(음수)는 뺀다. cleanup-abandoned 는 버려진 결제대기를 지우지 않고 -1 로 바꾸므로,
+    //   예전엔 결제창을 닫았던 손님이 그 한정 상품을 영영 다시 못 샀다. 부분취소한 수량도 뺀다.
+    //   (2026-10-19 오픈 전 점검)
     // 지난 주문의 추가상품 줄(order_groups 안 addon_line=1)은 본상품 개수가 아니다 — 소스 3개가 한정 3개를 채우면 안 된다.
     const [past] = await readPool.query(
-        `SELECT o.product_id, SUM(o.order_count) AS cnt
+        `SELECT o.product_id, SUM(GREATEST(0, o.order_count - IFNULL(o.cancel_count, 0))) AS cnt
            FROM transaction_orders o
            JOIN transactions t ON t.id = o.trans_id
           WHERE o.product_id IN (${ph}) AND t.user_id = ?
-            AND t.is_cancel = 0 AND t.is_cancel_trans = 0 AND t.is_delete = 0
+            AND t.is_cancel = 0 AND t.is_cancel_trans = 0 AND t.is_delete = 0 AND t.trx_status >= 0
             AND (o.order_groups IS NULL OR o.order_groups NOT LIKE '%"addon_line":1%')
           GROUP BY o.product_id`, [...ids, uid]);
     const 지난것 = new Map(past.map((r) => [Number(r.product_id), Number(r.cnt) || 0]));

@@ -175,11 +175,17 @@ const utilCtrl = {
                 if (!(Number(value) > 0)) {
                     return response(req, res, -100, "결제대기로는 되돌릴 수 없습니다. 결제가 안 된 주문이면 취소 처리해 주세요.", false);
                 }
-                const [[이전]] = await readPool.query(`SELECT trx_status FROM transactions WHERE id=? ${scope.sql}`, [id, ...scope.params]);
+                const [[이전]] = await readPool.query(`SELECT trx_status, trx_method FROM transactions WHERE id=? ${scope.sql}`, [id, ...scope.params]);
                 if (!이전) return lowLevelException(req, res);
                 이전상태 = Number(이전.trx_status);
                 if (이전상태 < 0) {
                     return response(req, res, -100, "결제실패/미완료 주문은 상태를 바꿀 수 없습니다. 결제가 안 된 주문이라 손님이 다시 결제해야 합니다.", false);
+                }
+                // 포스페이(41) 결제대기 → 다른 상태로도 사람이 못 바꾼다. 승인은 포스페이 거래조회로만 확정한다
+                // (웹훅·결과페이지 confirm·대사 스크립트). 가맹점이 0 → 출고로 바꾸면 돈 안 받은 주문이 배송된다.
+                // 본사(50 이상)는 막지 않는다 — 수동 정리가 필요할 때가 있다. (2026-10-19 오픈 전 점검)
+                if (이전상태 === 0 && Number(이전.trx_method) === 41 && Number(decode_user?.level) < 50) {
+                    return response(req, res, -100, "결제 확인 전(결제대기) 주문입니다. 결제가 확인되면 자동으로 결제완료로 바뀝니다.", false);
                 }
             }
             // 셀러상품: 셀러 본인(레벨 15 미만)은 자기 행만, 판매가는 본사 공급가(agent_price) 밑으로 못 내린다.

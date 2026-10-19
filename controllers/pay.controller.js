@@ -23,7 +23,7 @@ import { encForSave } from "../utils.js/pii.js";
 import { 실패후대분류다시확인 } from "../utils.js/payments/forspay-allowed.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
-import { applyCancelEffects, markCanceled, getCancelState, cancelLines } from "../utils.js/cancel.js";
+import { applyCancelEffects, markCanceled, getCancelState, cancelLines, withCancelLock } from "../utils.js/cancel.js";
 import { logTrx, actorOf } from "../utils.js/trx-log.js";
 import { 늦은승인정리 } from "../utils.js/late-approve.js";
 
@@ -426,6 +426,18 @@ const payCtrl = {
         //console.log(trx_type);
         return response(req, res, -100, "잘못된 결제타입 입니다.", false)
       }
+      // 이 몰에 등록된 결제모듈로만 주문을 받는다(payment_modules.trx_type = trx_method).
+      // 예전엔 주소의 trx_type 만 보고 받아서, 어느 몰에서든 /pays/ready/auth_fintree 를 부를 수 있었다 —
+      // 그 경로는 저장할 때부터 결제완료(5)로 넣고 PG 실패 시에도 5 가 남아, 돈 안 낸 주문이 결제완료로 보였다.
+      // 2026-10-19 운영 확인: 최근 90일 주문은 전부 등록된 모듈로 들어왔다(어긋난 건 0).
+      {
+        const [[모듈]] = await readPool.query(
+          `SELECT id FROM payment_modules WHERE brand_id=? AND trx_type=? LIMIT 1`, [brand_id, trx_method]);
+        if (!모듈) {
+          logger.error(`[pays/ready] 등록 안 된 결제수단 거부 brand=${brand_id} trx_method=${trx_method}`);
+          return response(req, res, -100, "이 쇼핑몰에서 사용할 수 없는 결제수단입니다.", false);
+        }
+      }
       // 비회원 주문 비밀번호 길이 검증.
       // DB 컬럼이 varchar(8) 이던 시절 프론트 maxLength 가 20 이라
       // 9자 이상이면 INSERT 가 'Data too long' 으로 터져 결제가 500 으로 끝났다.
@@ -797,6 +809,8 @@ const payCtrl = {
         );
         //console.log(result)
         if (!["0000", "3001"].includes(result?.data?.resultCd)) {
+          // 이 경로는 저장할 때 결제완료(5)로 넣는다 — 실패면 결제실패(-1)로 되돌려야 결제완료로 남지 않는다.
+          await writePool.query(`UPDATE transactions SET trx_status=-1 WHERE id=? AND trx_status=5`, [trans_id]);
           return 결제실패응답(trans_id, req, res, -100, result?.data?.resultMsg, false);
         } else {
           return response(req, res, 100, "success", {
@@ -1074,6 +1088,12 @@ const payCtrl = {
       //  ② 승인 통지는 결제대기(trx_status=0) 인 PG 결제건에만 — 무통장(10/11)은 사람이 확정한다.
       //  ③ 금액은 body 가 아니라 DB 의 주문금액을 쓴다.
       // (최근 60일 거래가 전부 포스페이(41)라 이 경로는 사실상 레거시다 — 정상 통지가 막히면 로그로 드러난다)
+      // 포스페이(41)는 이 경로로 확정하지 않는다 — 전용 경로(return·callback·confirm)가 거래조회로 확인한다.
+      // 포스페이 모듈의 mid 자리에는 PG 번호(1·4 같은 작은 수)가 들어가 맞히기 쉬웠다(2026-10-19 점검).
+      if (Number(pay_data?.trx_method) === 41) {
+        logger.error(`[pays/result] 포스페이 주문은 이 경로로 처리하지 않음 — 거부 (trans=${pay_data?.id})`);
+        return response(req, res, -100, "잘못된 접근입니다.", false);
+      }
       const pgModule = (await readPool.query(
         `SELECT mid FROM payment_modules WHERE brand_id=? AND trx_type=? ORDER BY id DESC LIMIT 1`,
         [pay_data?.brand_id, pay_data?.trx_method]))[0][0];
@@ -1215,14 +1235,34 @@ const payCtrl = {
         if (!creds?.app_key) {
           return response(req, res, -100, "포스페이 결제모듈 설정이 없습니다.", false);
         }
-        try {
-          await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount });
-          await markCanceled(id, { actor: actorOf(decode_user, 'admin') });
-          return response(req, res, 100, "success", {});
-        } catch (e) {
-          logger.error(errText(e));
-          return response(req, res, -200, e?.response?.data?.message || "포스페이 취소 실패", false);
+        // ⚠ 금액은 화면이 보낸 값을 쓰지 않는다 — 결제금액(transactions.amount = Σ줄 − 사용 포인트)이 곧 PG 에 남은 현금이다.
+        //   사용 포인트는 markCanceled → applyCancelEffects 가 포인트로 돌려준다.
+        //   부분취소 이력이 있으면 남은 현금을 여기서 알 수 없으니 부분취소 창(남은 수량 전부 = 전체취소)으로 보낸다.
+        //   (2026-10-19 오픈 전 점검)
+        if (Number(trx.is_cancel_trans) === 1 || Number(trx.is_cancel) === 1) {
+          return response(req, res, -100, "이미 취소된 주문입니다.", false);
         }
+        const [[부분]] = await readPool.query(`SELECT COUNT(*) AS n FROM transaction_cancels WHERE trans_id=?`, [trx.id]);
+        if (Number(부분?.n) > 0) {
+          return response(req, res, -100, "부분취소한 주문입니다. 「부분취소」 창에서 남은 수량을 모두 선택해 취소해 주세요.", false);
+        }
+        const 현금 = Math.max(0, Number(trx.amount) || 0);
+        const 결과 = await withCancelLock(trx.id, async () => {
+          // 잠금 안에서 다시 읽는다 — 다른 요청이 방금 취소했을 수 있다
+          const [[지금]] = await readPool.query(`SELECT is_cancel_trans, is_cancel FROM transactions WHERE id=?`, [trx.id]);
+          if (Number(지금?.is_cancel_trans) === 1 || Number(지금?.is_cancel) === 1) return { ok: false, message: "이미 취소된 주문입니다." };
+          try {
+            if (현금 > 0) await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount: 현금 });
+          } catch (e) {
+            logger.error(errText(e));
+            return { ok: false, code: -200, message: e?.response?.data?.message || "포스페이 취소 실패" };
+          }
+          await markCanceled(id, { actor: actorOf(decode_user, 'admin') });
+          return { ok: true };
+        });
+        if (!결과) return response(req, res, -100, "같은 주문의 취소가 처리 중입니다. 잠시 후 다시 확인해 주세요.", false);
+        if (!결과.ok) return response(req, res, 결과.code ?? -100, 결과.message, false);
+        return response(req, res, 100, "success", {});
       }
 
       // 페이레터 취소: 거래에서 user_id/tid(trx_id)를 읽어 취소 API 호출
@@ -1464,15 +1504,21 @@ const payCtrl = {
     const resultBase = `${front}/shop/auth/pay-result`;
     try {
       const transId = data.trans;
-      const ord = data.ord || data.ord_num;
-      const trx = transId
-        ? (await readPool.query(`SELECT * FROM transactions WHERE id=?`, [transId]))[0][0]
-        : (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
-      const creds = trx ? await getForspayCreds(trx.brand_id) : null;
-      let txn = {};
-      try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); } catch (e) { txn = {}; }
-      if (txn?.status === 'approved') {
-        await settleForspayTransaction(trx?.id, txn);
+      const ord = (data.ord || data.ord_num || '').toString();
+      // 주문은 주문번호(ord)로만 찾는다. 예전엔 주문은 trans 로, 승인 확인은 ord 로 따로 찾아서
+      // 싼 주문 A 를 결제한 뒤 ?trans=<비싼 B>&ord=<A> 로 열면 B 가 결제완료가 됐다(2026-10-19 점검).
+      // trans 는 이제 대조용으로만 쓴다 — 다르면 손대지 않는다. 취소 원장 행(is_cancel=1, 같은 ord_num)은 제외.
+      const trx = ord ? (await readPool.query(
+        `SELECT * FROM transactions WHERE ord_num=? AND IFNULL(is_cancel,0)=0 ORDER BY id DESC LIMIT 1`, [ord]))[0][0] : null;
+      if (!trx || Number(trx.trx_method) !== 41 || (transId && String(transId) !== String(trx.id))) {
+        logger.error(`[forspay return] 주문 대조 실패 — ord=${ord} trans=${transId} 찾은주문=${trx?.id ?? '-'}`);
+        return res.redirect(302, `${resultBase}?result_cd=9999`);
+      }
+      const creds = await getForspayCreds(trx.brand_id);
+      let txn = {}; let 조회실패 = false;
+      try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); } catch (e) { txn = {}; 조회실패 = true; }
+      const 확정 = txn?.status === 'approved' ? await settleForspayTransaction(trx.id, txn) : false;
+      if (확정 || Number(trx.trx_status) >= 5) {
         const q = new URLSearchParams({
           result_cd: '0000',
           ord_num: (ord || '').toString(),
@@ -1480,6 +1526,11 @@ const payCtrl = {
           trx_dttm: (txn.trx_dttm || '').toString(),
         }).toString();
         return res.redirect(302, `${resultBase}?${q}`);
+      }
+      // 거래조회가 늦거나(시간초과) 아직 승인 전이면 '실패'라고 단정하지 않는다 — 결과 화면이 잠시 더 확인한다(0001).
+      // 예전엔 바로 '결제에 실패하였습니다'를 보여 줘서, 실제로는 결제된 손님이 다시 결제(이중결제)할 수 있었다.
+      if (조회실패 || !txn?.status || ['ready', 'pending', 'processing', 'waiting'].includes(String(txn.status))) {
+        return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: '0001', ord_num: ord }).toString()}`);
       }
       return res.redirect(302, `${resultBase}?result_cd=9999`);
     } catch (err) {
@@ -1494,17 +1545,20 @@ const payCtrl = {
       const body = { ...req.query, ...req.body };
       // [진단·임시] 포스페이 웹훅 payload 에 할부 필드가 실리는지 확인용 — 키 이름만 기록(값 없음). 확인 후 제거.
       try { logger.info('[forspay-diag] webhook body keys: ' + Object.keys(body || {}).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
-      const ord = body.ord_num;
-      const trx = (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
-      if (!trx) return res.status(200).send({ ok: true });
+      const ord = (body.ord_num ?? '').toString();
+      // 포스페이 주문만 다룬다(무통장·페이레터 결제대기 주문을 이 경로로 건드리지 못하게). 취소 원장 행은 제외.
+      const trx = ord ? (await readPool.query(
+        `SELECT * FROM transactions WHERE ord_num=? AND IFNULL(is_cancel,0)=0 ORDER BY id DESC LIMIT 1`, [ord]))[0][0] : null;
+      if (!trx || Number(trx.trx_method) !== 41) return res.status(200).send({ ok: true });
       const creds = await getForspayCreds(trx.brand_id);
       // 서명 검증. sign_key 는 포스페이 쪽에서 '결제모듈(MID) 단위'로 관리된다(2026-09-03 답변) —
       // payload 의 mid 로 그 MID 의 키(forspay_config.sign_keys[mid])를 고르고, 없으면 모듈 공통 키(tid)를 쓴다.
       // 키가 없으면 포스페이는 timestamp·signature 를 빈 문자열로 보낸다 → 검증을 건너뛴다.
       const signKey = creds?.sign_keys?.[String(body.mid ?? '')] || creds?.sign_key;
-      if (signKey && body.signature) {
-        const ok = forspayVerifySig({ sign_key: signKey, timestamp: body.timestamp, mid: body.mid, signature: body.signature });
-        if (!ok) { logger.error('forspay webhook signature mismatch'); return res.status(200).send({ ok: false }); }
+      // 서명키를 받아 넣었다면 서명은 **필수**다. 예전엔 서명이 있을 때만 검사해서, 서명을 빼고 보내면 그냥 통과했다.
+      if (signKey) {
+        const ok = !!body.signature && forspayVerifySig({ sign_key: signKey, timestamp: body.timestamp, mid: body.mid, signature: body.signature });
+        if (!ok) { logger.error(`forspay webhook signature ${body.signature ? 'mismatch' : 'missing'} — ord=${ord}`); return res.status(200).send({ ok: false }); }
       }
       if (String(body.is_cancel) === '1') {
         // 취소 통지. 부분취소도 같은 모양(is_cancel=1, amount 음수)으로 오므로 금액을 봐야 한다 —
@@ -1531,11 +1585,13 @@ const payCtrl = {
         }
         return res.status(200).send({ ok: true });
       }
-      // 승인: 거래조회로 재확인 후 확정(멱등)
+      // 승인: **거래조회 결과만** 믿는다. 예전엔 `|| body.result_cd === '0000'` 이 있어서
+      // 위조 요청 { ord_num, result_cd:'0000' } 한 번으로 돈 없이 결제완료가 됐다(2026-10-19 점검).
+      // 웹훅 본문에서는 카드번호(거래조회엔 없음)만 보강용으로 받는다.
       let txn = {};
       try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); } catch (e) { txn = {}; }
-      if (txn?.status === 'approved' || String(body.result_cd) === '0000') {
-        await settleForspayTransaction(trx.id, { ...body, ...txn });
+      if (txn?.status === 'approved') {
+        await settleForspayTransaction(trx.id, txn, { card_num: body.card_num });
       }
       return res.status(200).send({ ok: true });
     } catch (err) {
@@ -1561,15 +1617,17 @@ const payCtrl = {
       const ord = (req.body?.ord_num ?? req.query?.ord_num ?? '').toString();
       const fail = (extra = {}) => response(req, res, 100, 'success', { settled: false, result_cd: '9999', ...extra });
       if (!ord) return fail();
-      const trx = (await readPool.query(`SELECT * FROM transactions WHERE ord_num=? ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
+      const trx = (await readPool.query(
+        `SELECT * FROM transactions WHERE ord_num=? AND IFNULL(is_cancel,0)=0 ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
       if (!trx || Number(trx.trx_method) !== 41) return fail(); // 없거나 포스페이 아님 → 손대지 않음
       if (Number(trx.is_cancel_trans) === 1) return fail();      // 취소된 건은 정산 안 함
-      if (Number(trx.trx_status) === 5) return response(req, res, 100, 'success', { settled: true, result_cd: '0000' }); // 이미 정산됨
+      // 이미 정산됐거나 그 뒤로 진행된 주문(출고·배송·취소요청)은 그대로 둔다. 예전엔 5 만 봐서, 결과 화면을
+      // 새로고침하면 출고된 주문이 '결제완료'로 되돌아가고 포인트가 또 쌓였다(2026-10-19 점검).
+      if (Number(trx.trx_status) >= 5 || Number(trx.trx_status) === 1) return response(req, res, 100, 'success', { settled: true, result_cd: '0000' });
       const creds = await getForspayCreds(trx.brand_id);
       let txn = {};
       try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0, timeout: 8000 }); } catch (e) { txn = {}; }
-      if (txn?.status === 'approved') {
-        await settleForspayTransaction(trx.id, txn); // 멱등·원자적
+      if (txn?.status === 'approved' && await settleForspayTransaction(trx.id, txn)) { // 멱등·원자적·대조
         return response(req, res, 100, 'success', { settled: true, result_cd: '0000' });
       }
       return fail(); // 아직 승인 안 됨 / 조회 실패 → 정산 보류(웹훅·재방문·대사가 나중에)
@@ -1660,22 +1718,41 @@ async function getForspayCreds(brand_id) {
   return { app_key: m.pay_key, pg_provider_id: m.mid, sign_key: m.tid, sign_keys, method_provider };
 }
 
-// 포스페이 거래 확정(멱등): 거래조회로 승인 확인된 건을 결제완료 처리 + 포인트 적립
-async function settleForspayTransaction(transId, data = {}) {
+// 포스페이 거래 확정(멱등). **포스페이 거래조회 결과(txn)만** 근거로 쓴다 — 웹훅 본문·주소 파라미터는 믿지 않는다.
+//  ① txn.status === 'approved'
+//  ② txn.ord_num 이 이 주문의 주문번호와 같다 — 남의 승인을 이 주문에 씌우지 못하게
+//  ③ txn.amount 가 이 주문 금액과 같다
+//  ④ 포스페이 주문이고, 결제대기(0)·결제실패/미완료(-1, 늦은 승인)일 때만 5 로 바꾼다 —
+//     출고·배송·취소요청·취소된 주문을 '결제완료'로 되돌리지 않는다(예전엔 trx_status<>5 만 봐서 되돌아갔다).
+// 반환: 결제완료(또는 그 뒤 단계)이면 true, 확정하지 못했으면 false.
+// extra.card_num: 웹훅 본문의 카드번호(거래조회 응답엔 없다) — 보강용.
+async function settleForspayTransaction(transId, txn = {}, extra = {}) {
   if (!transId) return false;
   let rows = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [transId]);
   let trx = rows[0][0];
   if (!trx) return false;
+  const data = { ...txn, card_num: extra?.card_num ?? txn?.card_num };
   // [진단·임시] 포스페이 응답(거래조회 txn 또는 웹훅 body 병합)에 할부 필드가 오는지 확인용.
   // 값이 아니라 '키 이름'만 기록한다(개인정보 노출 없음). 필드명 확인 후 이 줄을 제거할 것.
   try { logger.info('[forspay-diag] settle data keys: ' + Object.keys(data || {}).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
-  if (trx.trx_status == 5) {
-    // 이미 확정됨(중복 return/webhook 방지). 단, 카드번호는 거래조회 응답엔 없고 웹훅에만 있으므로
-    // 리턴 경로가 먼저 확정해 카드번호가 비어있으면, 뒤늦게 온 웹훅 데이터로 1회 보강한다.
+  if (Number(trx.trx_method) !== 41 || Number(trx.is_cancel) === 1) return false;
+  if (Number(trx.trx_status) >= 5) {
+    // 이미 확정됐거나 그 뒤 단계(출고·배송) — 상태는 건드리지 않는다. 단, 카드번호는 거래조회 응답엔 없고
+    // 웹훅에만 있으므로 리턴 경로가 먼저 확정해 카드번호가 비어있으면, 뒤늦게 온 웹훅 데이터로 1회 보강한다.
     if (!trx.card_num && data.card_num) {
       await updateQuery('transactions', { card_num: String(data.card_num) }, transId);
     }
     return true;
+  }
+  if (![0, -1].includes(Number(trx.trx_status)) || Number(trx.is_cancel_trans) === 1) return false;
+  if (txn?.status !== 'approved') return false;
+  if (String(txn?.ord_num ?? '') !== String(trx.ord_num ?? '')) {
+    logger.error(`[forspay 정산] 주문번호 불일치 — 거부 trans=${transId} 주문=${trx.ord_num} 승인=${txn?.ord_num}`);
+    return false;
+  }
+  if (Number(txn?.amount) !== Number(trx.amount)) {
+    logger.error(`[forspay 정산] 금액 불일치 — 거부 trans=${transId} 주문금액=${trx.amount} 승인금액=${txn?.amount}`);
+    return false;
   }
 
   let trx_dttm = (data.trx_dttm || '').toString();
@@ -1688,7 +1765,7 @@ async function settleForspayTransaction(transId, data = {}) {
   const [settleRes] = await writePool.query(
     `UPDATE transactions
         SET trx_id=?, appr_num=?, card_num=?, trx_dt=?, trx_tm=?, trx_status=5
-      WHERE id=? AND trx_status<>5`,
+      WHERE id=? AND trx_status IN (0, -1) AND IFNULL(is_cancel_trans,0)=0`,
     [
       data.trx_id ?? trx.trx_id,
       (data.appr_num ?? '').toString(),
@@ -1813,4 +1890,6 @@ const asdsadsad = async () => {
   }
 }
 //asdsadsad();
+// 대사 스크립트(scripts/forspay-reconcile.mjs)가 '승인됐는데 우리만 결제대기'인 주문을 같은 대조 규칙으로 살린다.
+export { settleForspayTransaction };
 export default payCtrl;
