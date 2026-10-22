@@ -1515,8 +1515,18 @@ const payCtrl = {
         return res.redirect(302, `${resultBase}?result_cd=9999`);
       }
       const creds = await getForspayCreds(trx.brand_id);
-      let txn = {}; let 조회실패 = false;
-      try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); } catch (e) { txn = {}; 조회실패 = true; }
+      // 포스페이는 결제가 안 된(손님이 결제창에서 취소·뒤로가기한) 주문을 조회하면 409 not_found 를 준다
+      // (2026-10-22 운영 확인: 미결제 세션 전부 409 validation.not_found_obj).
+      // 그건 '모름'이 아니라 '결제 안 됨'이다 — 확인 중(0001)으로 보내면 취소한 손님이 18초 기다린 뒤
+      // "결제 확인이 늦어지고 있습니다"를 본다(10/22 포스몰 실제 2건). 승인 직후 반영이 늦을 수 있어 1.5초 뒤 한 번만 다시 묻는다.
+      // 통신 오류·시간초과만 '모름'(0001)으로 둔다.
+      let txn = {}; let 조회실패 = false; let 없음 = false;
+      const 조회 = async () => {
+        try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); 조회실패 = false; 없음 = false; }
+        catch (e) { txn = {}; const st = e?.response?.status; 없음 = st === 409 || st === 404; 조회실패 = !없음; }
+      };
+      await 조회();
+      if (없음) { await new Promise((r) => setTimeout(r, 1500)); await 조회(); }
       const 확정 = txn?.status === 'approved' ? await settleForspayTransaction(trx.id, txn) : false;
       if (확정 || Number(trx.trx_status) >= 5) {
         const q = new URLSearchParams({
@@ -1529,7 +1539,7 @@ const payCtrl = {
       }
       // 거래조회가 늦거나(시간초과) 아직 승인 전이면 '실패'라고 단정하지 않는다 — 결과 화면이 잠시 더 확인한다(0001).
       // 예전엔 바로 '결제에 실패하였습니다'를 보여 줘서, 실제로는 결제된 손님이 다시 결제(이중결제)할 수 있었다.
-      if (조회실패 || !txn?.status || ['ready', 'pending', 'processing', 'waiting'].includes(String(txn.status))) {
+      if (조회실패 || (!없음 && !txn?.status) || ['ready', 'pending', 'processing', 'waiting'].includes(String(txn.status))) {
         return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: '0001', ord_num: ord }).toString()}`);
       }
       return res.redirect(302, `${resultBase}?result_cd=9999`);
