@@ -1542,6 +1542,10 @@ const payCtrl = {
       if (조회실패 || (!없음 && !txn?.status) || ['ready', 'pending', 'processing', 'waiting'].includes(String(txn.status))) {
         return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: '0001', ord_num: ord }).toString()}`);
       }
+      // 거래가 아예 없다 = 손님이 결제창을 닫거나 취소했다 → 결과 화면이 '결제가 취소되었습니다'로 보여 준다.
+      if (없음) {
+        return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: 'CANCEL', ord_num: ord }).toString()}`);
+      }
       return res.redirect(302, `${resultBase}?result_cd=9999`);
     } catch (err) {
       console.log(err);
