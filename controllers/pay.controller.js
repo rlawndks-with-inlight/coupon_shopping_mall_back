@@ -931,7 +931,7 @@ const payCtrl = {
             ? routedProvider
             : creds.pg_provider_id;
           진단.provider = fsProvider ?? '(자동)';
-          대분류다시확인 = () => { 실패후대분류다시확인(brand_id, creds.app_key, fsMethod.pg_method_id).catch(() => {}); };
+          대분류다시확인 = () => { 실패후대분류다시확인(brand_id, creds.app_key, fsMethod).catch(() => {}); };
           const front_url = (req.body.front_url || "").toString().trim();
           const backBase = `${req.protocol}://${req.get('host')}`;
           const order_no = String(ord_num || `FS${trans_id}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 64);

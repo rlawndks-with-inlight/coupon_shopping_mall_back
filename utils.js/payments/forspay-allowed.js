@@ -1,6 +1,6 @@
 'use strict';
 import { redisClient } from "../../config/redis-client.js";
-import { getAvailableMethodIds, FORSPAY_METHODS } from "./forspay.js";
+import { getAvailability, FORSPAY_METHODS } from "./forspay.js";
 import { invalidateShopSettingCache } from "../cache.js";
 import logger from "../winston/index.js";
 import { getPayType } from "../util.js";
@@ -11,8 +11,22 @@ import { getPayType } from "../util.js";
 // 보관 시간 5분 — 예전엔 1시간이었다. 포스페이에서 대분류를 꺼도 최대 1시간 동안 손님 화면에 남아
 // 누르면 결제가 실패했다(2026-10-15 사장님 지적). 조회는 0.4~0.7초짜리 외부 호출이지만,
 // 몰 설정 응답이 이미 3분 캐시라 이 조회는 몰마다 몇 분에 한 번뿐이다 — 줄여도 체감 속도는 그대로다.
-// 포스페이는 세부 수단(카카오·네이버·라인, 해외카드·위챗·알리)별 정보를 주지 않는다. 대분류까지만 거른다.
+// 2026-10-26 포스페이 API 변경으로 ping 이 세부 수단(간편결제 지갑·해외결제 수단)별 사용 가능 여부도 준다.
+// 저장값은 { ids: 대분류, sub: 세부수단 } — 예전 저장값(대분류 배열)도 읽는다(5분 안에 자연히 바뀐다).
 export const 대분류보관초 = 300;
+// 저장값·조회값을 { ids, sub } 로 맞춘다. 예전 배열 저장값 → 세부 수단 정보 없음.
+const 맞춤 = (v) => (Array.isArray(v) ? { ids: v, sub: null } : (v && Array.isArray(v.ids) ? v : null));
+// 이 결제수단이 지금 결제 가능한가. 모르면(조회 실패·정보 없음) 막지 않는다.
+export const 결제가능 = (allowed, m) => {
+    const a = 맞춤(allowed);
+    if (!a || !m) return true;
+    if (!a.ids.includes(Number(m.pg_method_id))) return false;
+    const 목록 = a.sub?.[String(m.pg_method_id)];
+    if (!Array.isArray(목록)) return true;
+    if (Number(m.pg_method_id) === 3) return m.route !== undefined && m.route !== null && 목록.includes(Number(m.route));
+    if (Number(m.pg_method_id) === 5) return !!m.foreign_method && 목록.includes(String(m.foreign_method));
+    return true;
+};
 const 키 = (brandId) => `forspay:allowed_methods:${Number(brandId) || 0}`;
 
 // 저장값이 있으면 그것을, 없으면 포스페이에 물어 저장한다. 조회 실패면 null(→ 거르지 않고 전부 보여준다).
@@ -20,9 +34,9 @@ export const 대분류읽기 = async (brandId, app_key) => {
     if (!app_key) return null;
     try {
         const cached = redisClient?.isOpen ? await redisClient.get(키(brandId)) : null;
-        if (cached) return JSON.parse(cached);
-        const ids = await getAvailableMethodIds({ app_key });
-        if (redisClient?.isOpen && Array.isArray(ids)) {
+        if (cached) return 맞춤(JSON.parse(cached));
+        const ids = await getAvailability({ app_key });
+        if (redisClient?.isOpen && ids) {
             await redisClient.set(키(brandId), JSON.stringify(ids), { EX: 대분류보관초 });
         }
         return ids;
@@ -32,17 +46,18 @@ export const 대분류읽기 = async (brandId, app_key) => {
 };
 
 // 결제창 열기가 실패했을 때 부른다. 포스페이에 **새로** 묻고 저장값을 갈아 끼운다.
-// 고른 대분류가 실제로 빠져 있으면 그 몰의 설정 캐시까지 지워 **다음 손님부터 바로** 숨겨지게 한다.
+// 고른 수단(대분류 또는 세부 수단 — 예: 꺼진 토스페이는 PV433)이 실제로 빠져 있으면
+// 그 몰의 설정 캐시까지 지워 **다음 손님부터 바로** 숨겨지게 한다.
 // 포스페이의 '미지원 수단' 오류 문구는 확인된 적이 없어 문구로 판정하지 않는다 — 다시 물어본 결과로 판정한다.
 // 손님 응답을 늦추지 않도록 호출측은 기다리지 않는다(fire-and-forget). 실패는 삼킨다.
-export const 실패후대분류다시확인 = async (brandId, app_key, pg_method_id) => {
+export const 실패후대분류다시확인 = async (brandId, app_key, method) => {
     try {
-        const fresh = await getAvailableMethodIds({ app_key });
-        if (!Array.isArray(fresh)) return false;
+        const fresh = await getAvailability({ app_key });
+        if (!fresh) return false;
         if (redisClient?.isOpen) await redisClient.set(키(brandId), JSON.stringify(fresh), { EX: 대분류보관초 });
-        if (!fresh.includes(Number(pg_method_id))) {
+        if (!결제가능(fresh, method)) {
             await invalidateShopSettingCache(brandId);
-            logger.info(`[forspay] 결제 실패 뒤 다시 확인 — brand_id=${brandId} 대분류 ${pg_method_id} 이(가) 빠져 있어 주문서에서 숨김 (지금 가능: ${fresh.join(',')})`);
+            logger.info(`[forspay] 결제 실패 뒤 다시 확인 — brand_id=${brandId} ${method?.key} 이(가) 지금 결제 불가라 주문서에서 숨김 (대분류 ${fresh.ids.join(',')})`);
             return true;
         }
         return false;
@@ -63,14 +78,14 @@ export const 대분류지금확인 = async (brandId, app_key) => {
     if (!app_key) return null;
     try {
         const cached = redisClient?.isOpen ? await redisClient.get(지금키(brandId)) : null;
-        if (cached) return JSON.parse(cached);
+        if (cached) return 맞춤(JSON.parse(cached));
     } catch (e) { /* 저장소 실패는 그냥 묻는다 */ }
     const 시간초과 = Symbol('timeout');
     const ids = await Promise.race([
-        getAvailableMethodIds({ app_key }).catch(() => null),
+        getAvailability({ app_key }).catch(() => null),
         new Promise((r) => setTimeout(() => r(시간초과), 기다림한도)),
     ]);
-    if (Array.isArray(ids)) {
+    if (ids && ids !== 시간초과) {
         try {
             if (redisClient?.isOpen) {
                 await redisClient.set(지금키(brandId), JSON.stringify(ids), { EX: 지금보관초 });
@@ -82,7 +97,7 @@ export const 대분류지금확인 = async (brandId, app_key) => {
     if (ids === 시간초과) logger.info(`[forspay] 주문서 결제수단 확인이 ${기다림한도}ms 넘게 걸려 저장값으로 대신 — brand_id=${brandId}`);
     try {
         const old = redisClient?.isOpen ? await redisClient.get(키(brandId)) : null;
-        return old ? JSON.parse(old) : null; // 저장값도 없으면 null → 거르지 않고 전부 보여준다
+        return old ? 맞춤(JSON.parse(old)) : null; // 저장값도 없으면 null → 거르지 않고 전부 보여준다
     } catch (e) {
         return null;
     }
@@ -113,8 +128,9 @@ export const 결제수단목록 = (rows = [], allowedIds = null) => (rows || [])
     // 비밀값(App key 등)은 프론트로 내보내지 않는다 — 화이트리스트 필드만 구성
     return FORSPAY_METHODS
         .filter((m) => {
-            // 포스페이(계정)가 지원하지 않는 대분류는 무조건 숨김 (조회 성공 시)
-            if (Array.isArray(allowedIds) && !allowedIds.includes(m.pg_method_id)) return false;
+            // 포스페이(계정)가 지금 결제할 수 없는 대분류·세부 수단은 무조건 숨김 (조회 성공 시).
+            // 세부 수단: 간편결제는 route, 해외결제는 foreign_method 가 sub_methods.available 에 있어야 한다.
+            if (!결제가능(allowedIds, m)) return false;
             const mc = methodsCfg[m.key];
             if (mc && typeof mc.enabled !== 'undefined') return !!mc.enabled;
             return !m.pending;

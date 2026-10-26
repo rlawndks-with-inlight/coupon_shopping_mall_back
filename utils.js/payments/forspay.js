@@ -25,7 +25,10 @@ const authHeaders = (app_key) => ({
 // ─────────────────────────────────────────────────────────────
 // 포스페이 결제수단 카탈로그 — 프론트 노출 + 백엔드 파라미터 매핑의 공용 단일 소스
 //   pg_method_id: 0=신용카드 1=실시간계좌이체 3=간편결제(+route) 5=해외결제(+foreign_method)
-//   route(간편결제): 0=카카오 1=네이버 3=라인   /   foreign_method(해외): card/alipay/wechat
+//   route(간편결제): 0=카카오 1=네이버 4=페이코 5=토스   /   foreign_method(해외): card/alipay/wechat/linepay
+//   ⚠ 2026-10-26 포스페이 API 변경: 알리페이·위챗페이·라인페이는 간편결제가 아니라 해외결제 세부 수단이다.
+//     간편결제 route 2·3·6 요청은 PV433 으로 거절된다 → 라인페이는 pg_method_id=5 + foreign_method=linepay.
+//     국내 전용 가맹점은 라인페이를 못 쓴다(PV413) — ping 의 sub_methods 로 거른다(forspay-allowed.js).
 //   pending=true 는 협력사 확인 전이라 기본 비활성 (삼성페이: route 값 미정)
 // ─────────────────────────────────────────────────────────────
 export const FORSPAY_METHODS = [
@@ -38,7 +41,7 @@ export const FORSPAY_METHODS = [
     { key: 'alipay',       label: '알리페이',        desc: '알리페이(Alipay)로 결제합니다.',                        pg_method_id: 5, foreign_method: 'alipay' },
     { key: 'samsungpay',   label: '삼성페이',        desc: '삼성페이로 결제합니다.',                                pg_method_id: 3, route: null, pending: true },
     // 라인페이는 맨 뒤 — 이 배열 순서가 곧 주문서 결제수단 순서다(포스페이는 순서를 주지 않는다). 2026-10-14 사장님 요청.
-    { key: 'linepay',      label: '라인페이',        desc: '라인페이로 간편하게 결제합니다.',                        pg_method_id: 3, route: 3 },
+    { key: 'linepay',      label: '라인페이',        desc: '라인페이로 간편하게 결제합니다.',                        pg_method_id: 5, foreign_method: 'linepay' },
 ];
 export const getForspayMethod = (key) => FORSPAY_METHODS.find((m) => m.key === String(key || '')) || null;
 
@@ -139,6 +142,41 @@ export const cancelTransaction = async ({ app_key, base = FORSPAY_API_BASE, ord_
 export const getPing = async ({ app_key, base = FORSPAY_API_BASE } = {}) => {
     const { data } = await axios.get(`${base}/api/v1/ping`, { headers: authHeaders(app_key), timeout: 3000 });
     return data;
+};
+
+// ping 응답 → { ids: 대분류 배열, sub: { '3': [route…], '5': [foreign_method…] } | null }. 못 읽으면 null.
+//   ids : checkout.direct_pg_ui.providers 에 한 번이라도 나온 pg_method_id
+//   sub : checkout.sub_methods[대분류].available — 이 가맹점에서 지금 결제 가능한 세부 수단(2026-10-26 신설).
+//         disabled(가맹점이 끔)·not_ready(PG 설정 미완료)·unsupported(PG 미지원)로 요청하면 PV433 으로 거절된다.
+//         sub_methods 가 없거나 모양이 다르면 null → 세부 수단은 거르지 않는다(대분류만 거른다, 예전 동작).
+export const parseAvailability = (data) => {
+    const providers = data?.checkout?.direct_pg_ui?.providers;
+    if (!providers) return null;
+    // 문서는 객체 {"1":[0,5]}, 실서버는 배열 [[0,..],[..]] 로 응답함 → 둘 다 처리
+    const lists = Array.isArray(providers) ? providers : Object.values(providers);
+    const set = new Set();
+    for (const arr of lists) {
+        if (Array.isArray(arr)) for (const id of arr) set.add(Number(id));
+    }
+    if (!set.size) return null;
+    let sub = null;
+    const sm = data?.checkout?.sub_methods;
+    if (sm && typeof sm === 'object') {
+        sub = {};
+        for (const [k, v] of Object.entries(sm)) {
+            if (Array.isArray(v?.available)) sub[String(k)] = v.available.map((x) => (k === '3' ? Number(x) : String(x)));
+        }
+    }
+    return { ids: Array.from(set), sub };
+};
+
+export const getAvailability = async ({ app_key, base = FORSPAY_API_BASE } = {}) => {
+    if (!app_key || !base || String(base).includes('REPLACE')) return null;
+    try {
+        return parseAvailability(await getPing({ app_key, base }));
+    } catch (e) {
+        return null;
+    }
 };
 
 // 이 계정(App key)이 direct_pg_ui에서 지원하는 pg_method_id 집합(대분류)을 배열로 반환. 실패 시 null(→ 호출측에서 필터 미적용).
