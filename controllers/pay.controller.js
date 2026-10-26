@@ -18,7 +18,7 @@ import { calcAgentPrice, loadSellerFees } from "../utils.js/seller-price.js";
 import crypto from 'crypto';
 import qs from 'qs';
 import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/payments/payletter.js";
-import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, getCancelRecords as forspayGetCancelRecords, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE } from "../utils.js/payments/forspay.js";
+import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, getCancelRecords as forspayGetCancelRecords, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE, 거절코드, 거절안내 } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
 import { 실패후대분류다시확인 } from "../utils.js/payments/forspay-allowed.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
@@ -994,7 +994,8 @@ const payCtrl = {
             // 손님에게는 결제시작실패문구 를 보낸다(그 이유는 정의부 주석 참고).
             logger.error(`[forspay] launch_page_url 없음 — resp=${JSON.stringify(session)}`);
             대분류다시확인();
-            return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
+            // 포스페이 거절 코드(PV…)가 있으면 손님이 할 일을 알려 준다(한도 초과 → 금액 줄이기, 꺼진 수단 → 다른 수단).
+            return 결제실패응답(trans_id, req, res, -100, 거절안내(거절코드(session)) ?? 결제시작실패문구, false);
           }
 
           return response(req, res, 100, "success", {
@@ -1014,7 +1015,7 @@ const payCtrl = {
             + ` app_key_len=${진단.app_key_len}`
             + ` ${errText(e)}`);
           대분류다시확인();
-          return 결제실패응답(trans_id, req, res, -100, 결제시작실패문구, false);
+          return 결제실패응답(trans_id, req, res, -100, 거절안내(거절코드(e?.response?.data)) ?? 결제시작실패문구, false);
         }
       }
 

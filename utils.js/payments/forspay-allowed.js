@@ -16,6 +16,22 @@ import { getPayType } from "../util.js";
 export const 대분류보관초 = 300;
 // 저장값·조회값을 { ids, sub } 로 맞춘다. 예전 배열 저장값 → 세부 수단 정보 없음.
 const 맞춤 = (v) => (Array.isArray(v) ? { ids: v, sub: null } : (v && Array.isArray(v.ids) ? v : null));
+// 포스페이 warnings(「연동에서 고칠 것」)를 서버 기록에 남긴다. 같은 내용은 1시간에 한 번만 — 주문서가 30초마다 묻는다.
+// 손님 화면에는 영향이 없다. 수단이 갑자기 사라졌을 때 원인을 찾는 단서용이다.
+export const 경고기록 = async (brandId, a) => {
+    try {
+        const w = Array.isArray(a?.warnings) ? a.warnings : [];
+        if (!w.length) return;
+        const 내용 = w.map((x) => `${x?.code ?? '-'}(${x?.pg_method_id ?? '-'}/${x?.sub_method ?? '-'}) ${String(x?.message ?? '').slice(0, 160)}`).join(' | ');
+        const k = `forspay:warn:${Number(brandId) || 0}`;
+        if (redisClient?.isOpen) {
+            if ((await redisClient.get(k)) === 내용) return;
+            await redisClient.set(k, 내용, { EX: 3600 });
+        }
+        logger.info(`[forspay] 포스페이 경고 brand_id=${brandId}: ${내용}`);
+    } catch (e) { /* 기록 실패는 무시 */ }
+};
+
 // 이 결제수단이 지금 결제 가능한가. 모르면(조회 실패·정보 없음) 막지 않는다.
 export const 결제가능 = (allowed, m) => {
     const a = 맞춤(allowed);
@@ -39,6 +55,7 @@ export const 대분류읽기 = async (brandId, app_key) => {
         if (redisClient?.isOpen && ids) {
             await redisClient.set(키(brandId), JSON.stringify(ids), { EX: 대분류보관초 });
         }
+        await 경고기록(brandId, ids);
         return ids;
     } catch (e) {
         return null;
@@ -54,6 +71,7 @@ export const 실패후대분류다시확인 = async (brandId, app_key, method) =
     try {
         const fresh = await getAvailability({ app_key });
         if (!fresh) return false;
+        await 경고기록(brandId, fresh);
         if (redisClient?.isOpen) await redisClient.set(키(brandId), JSON.stringify(fresh), { EX: 대분류보관초 });
         if (!결제가능(fresh, method)) {
             await invalidateShopSettingCache(brandId);
@@ -86,6 +104,7 @@ export const 대분류지금확인 = async (brandId, app_key) => {
         new Promise((r) => setTimeout(() => r(시간초과), 기다림한도)),
     ]);
     if (ids && ids !== 시간초과) {
+        await 경고기록(brandId, ids);
         try {
             if (redisClient?.isOpen) {
                 await redisClient.set(지금키(brandId), JSON.stringify(ids), { EX: 지금보관초 });

@@ -36,6 +36,9 @@ export const FORSPAY_METHODS = [
     { key: 'bank',         label: '실시간계좌이체',  desc: '은행 계좌에서 실시간 이체로 결제합니다.',                pg_method_id: 1 },
     { key: 'kakaopay',     label: '카카오페이',      desc: '카카오페이로 간편하게 결제합니다.',                      pg_method_id: 3, route: 0 },
     { key: 'naverpay',     label: '네이버페이',      desc: '네이버페이로 간편하게 결제합니다.',                      pg_method_id: 3, route: 1 },
+    // 페이코·토스페이 — 2026-10-26 API 변경 문서의 간편결제 지갑(route 4·5). sub_methods 에서 허용된 몰에만 보인다.
+    { key: 'payco',        label: '페이코',          desc: '페이코로 간편하게 결제합니다.',                          pg_method_id: 3, route: 4 },
+    { key: 'tosspay',      label: '토스페이',        desc: '토스페이로 간편하게 결제합니다.',                        pg_method_id: 3, route: 5 },
     { key: 'foreign_card', label: '해외발행카드',    desc: '해외에서 발행된 카드로 결제합니다. (Visa/Mastercard 등)', pg_method_id: 5, foreign_method: 'card' },
     { key: 'wechat',       label: '위챗페이',        desc: '위챗페이(WeChat Pay)로 결제합니다.',                    pg_method_id: 5, foreign_method: 'wechat' },
     { key: 'alipay',       label: '알리페이',        desc: '알리페이(Alipay)로 결제합니다.',                        pg_method_id: 5, foreign_method: 'alipay' },
@@ -167,8 +170,29 @@ export const parseAvailability = (data) => {
             if (Array.isArray(v?.available)) sub[String(k)] = v.available.map((x) => (k === '3' ? Number(x) : String(x)));
         }
     }
-    return { ids: Array.from(set), sub };
+    // warnings: 포스페이가 「연동에서 고칠 것」으로 알려 주는 목록(예: 꺼진 route). 기록용 — 판단에는 쓰지 않는다.
+    const warnings = Array.isArray(data?.warnings) ? data.warnings : [];
+    return { ids: Array.from(set), sub, warnings };
 };
+
+// 포스페이 결제 거절 코드(PV…) → 손님에게 보일 우리 문구. 모르는 코드는 null(→ 호출측이 일반 문구를 쓴다).
+// 포스페이 원문은 손님에게 그대로 보이지 않는다(내부 오류 문구가 섞여 온 적이 있다 — pay.controller 결제시작실패문구 주석).
+// 코드 뜻은 포스페이 문서(2026-10-26판) 「결제 거절 코드」 표를 따른다.
+export const 거절코드 = (body) => {
+    try {
+        const m = JSON.stringify(body ?? '').match(/\bPV\d{3,4}\b/);
+        return m ? m[0] : null;
+    } catch (e) {
+        return null;
+    }
+};
+export const 거절안내 = (code) => ({
+    PV408: '결제 가능한 금액을 넘었습니다. 금액을 줄이거나 다른 결제수단을 선택해 주세요.',
+    PV407: '지금 이 결제수단으로 결제할 수 없습니다. 잠시 후 다시 시도하거나 다른 결제수단을 선택해 주세요.',
+    PV413: '선택하신 결제수단은 지금 사용할 수 없습니다. 다른 결제수단을 선택해 주세요.',
+    PV433: '선택하신 결제수단은 지금 사용할 수 없습니다. 다른 결제수단을 선택해 주세요.',
+    PV9999: '선택하신 결제수단은 지금 사용할 수 없습니다. 다른 결제수단을 선택해 주세요.',
+}[code] ?? null);
 
 export const getAvailability = async ({ app_key, base = FORSPAY_API_BASE } = {}) => {
     if (!app_key || !base || String(base).includes('REPLACE')) return null;
