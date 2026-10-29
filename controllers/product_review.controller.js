@@ -7,8 +7,10 @@ import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js";
 import { decField } from "../utils.js/crypto-util.js";
+import { blindIndex, decField as decPii } from "../utils.js/pii.js";
+import { orderPasswordCandidates } from "../utils.js/order-password.js";
 import {
-    reviewSettings, maskWriter, parseImages, imagesOf, isAddonLine, optionTextOf,
+    reviewSettings, maskWriter, maskGuestName, parseImages, imagesOf, isAddonLine, optionTextOf,
     orderTimes, reviewState, invalidateReviewCache,
 } from "../utils.js/review-policy.js";
 
@@ -58,15 +60,17 @@ const shapePublic = (row, settings, { manager = false } = {}) => {
         id: row.id, product_id: row.product_id, order_id: row.order_id ?? null, user_id: row.user_id,
         scope: Number(row.scope) || 0, content: row.content ?? '', images: imagesOf(row),
         option_text: row.option_text ?? '', created_at: row.created_at, updated_at: row.updated_at,
-        writer: maskWriter(row.nickname || row.user_name),
+        // 비회원 후기(user_id<=0)는 작성 때 가려 둔 주문자 이름(guest_name)을 쓴다.
+        writer: Number(row.user_id) > 0 ? maskWriter(row.nickname || row.user_name) : (row.guest_name || '구매자'),
+        is_guest: Number(row.user_id) > 0 ? 0 : 1,
         reply_content: row.reply_content ?? null, replied_at: row.replied_at ?? null,
         helpful_count: Number(row.helpful_count) || 0, is_best: Number(row.is_best) || 0, is_hidden: Number(row.is_hidden) || 0,
         hidden_reason: row.hidden_reason ?? null,
         editable_until: created && settings ? new Date(created + settings.edit_days * 86400000) : null,
     };
     if (manager) {
-        out.writer_name = decField(row.writer_name);
-        out.user_name = row.user_name;
+        out.writer_name = Number(row.user_id) > 0 ? decField(row.writer_name) : `${row.guest_name || '구매자'} (비회원)`;
+        out.user_name = Number(row.user_id) > 0 ? row.user_name : '비회원 주문';
         out.product_name = row.product_name;
         out.product_img = row.product_img;
         out.ord_num = row.ord_num;
@@ -88,6 +92,98 @@ const orderLine = async (order_id, brandId) => {
           WHERE o.id=? AND t.brand_id=? LIMIT 1`, [Number(order_id) || 0, brandId]);
     return row;
 };
+
+// ── 비회원 본인 확인 ─────────────────────────────────────────────────────
+// 비회원 주문조회(transaction.controller get, buyer_phone 경로)와 같은 대조: 전화번호(숫자만 또는 블라인드 인덱스)
+// + 주문비밀번호(해시/옛 평문 후보) + 이 몰 + 비회원 주문(user_id<=0). 비밀번호는 매 요청 몸통으로 받는다
+// (비회원 주문취소와 같은 방식 — 세션을 만들지 않는다). 주소창·로그에 남지 않게 GET 을 쓰지 않는다.
+// 화면의 apiManager 는 multipart 폼으로 보내 'guest[buyer_phone]' 같은 평평한 이름이 된다(multer 는 대괄호를 풀지 않는다).
+// JSON 으로 부르는 쪽은 { guest: { buyer_phone, password } } 객체다. 두 모양을 다 받는다.
+const guestCred = (req) => {
+    const b = req.body ?? {};
+    const g = (b.guest && typeof b.guest === 'object') ? b.guest : {};
+    return {
+        phone: String(g.buyer_phone ?? b['guest[buyer_phone]'] ?? '').trim(),
+        password: String(g.password ?? b['guest[password]'] ?? ''),
+    };
+};
+const guestTrxIds = async (brandId, { phone, password }) => {
+    const digits = String(phone).replace(/[^0-9]/g, '');
+    if (!brandId || digits.length < 9 || !password) return [];
+    const pw = orderPasswordCandidates(password);
+    if (!pw.length) return [];
+    const [rows] = await readPool.query(
+        `SELECT id FROM transactions
+          WHERE (REPLACE(REPLACE(REPLACE(buyer_phone,'-',''),' ',''),'.','') = ? OR buyer_phone_idx = ?)
+            AND password IN (${pw.map(() => '?').join(',')}) AND brand_id=? AND is_cancel=0 AND is_delete=0
+            AND (user_id IS NULL OR user_id<=0)
+          ORDER BY id DESC LIMIT 50`,
+        [digits, blindIndex(phone), ...pw, brandId]);
+    return rows.map((r) => Number(r.id));
+};
+const guestReady = async () => (await v2Ready()) && (await hasColumn(table_name, 'guest_name'));
+
+// 비회원 수정·삭제 대상 확인: 그 후기가 이 몰의 비회원 후기이고, 몸통의 전화번호+비밀번호로 그 주문이 확인될 것.
+const guestOwnedReview = async (decode_dns, reviewId, req) => {
+    const brandId = Number(decode_dns?.id) || 0;
+    if (!reviewId || !brandId) return { error: '리뷰를 찾을 수 없습니다.' };
+    if (!(await guestReady())) return { error: '후기 기능 준비 중입니다.' };
+    const [[row]] = await readPool.query(`SELECT * FROM ${table_name} WHERE id=? LIMIT 1`, [reviewId]);
+    if (!row || Number(row.is_delete) === 1 || Number(row.brand_id) !== brandId || Number(row.user_id) > 0) return { error: '리뷰를 찾을 수 없습니다.' };
+    const ids = await guestTrxIds(brandId, guestCred(req));
+    if (!ids.includes(Number(row.trans_id))) return { error: '주문 정보를 확인할 수 없습니다. 전화번호와 주문 비밀번호를 다시 확인해 주세요.' };
+    return row;
+};
+
+// 주문 줄들 → 후기 판정(회원 writable 과 비회원 guestWritable 이 같이 쓴다)
+const judgeLines = async ({ brand, brandId, userId, lines, guest = false }) => {
+    const orderIds = lines.map((l) => l.order_id);
+    let existingByOrder = new Map();
+    if (orderIds.length) {
+        const [ex] = await readPool.query(
+            `SELECT id, order_id, user_id, is_delete, is_hidden, hidden_reason, rewrite_count, scope, content, images, content_img, profile_img, created_at
+               FROM ${table_name} WHERE brand_id=? AND order_id IN (?)`,
+            [brandId, orderIds]);
+        existingByOrder = new Map(ex.map((r) => [Number(r.order_id), r]));
+    }
+    const settings = reviewSettings(brand);
+    const timesByTrx = new Map();
+    const out = [];
+    for (const l of lines) {
+        if (isAddonLine(l.order_groups)) continue; // 추가상품 줄은 후기 대상이 아니다
+        const trx = { id: l.trans_id, user_id: l.user_id, trx_status: l.trx_status, is_cancel: l.is_cancel, is_cancel_trans: l.is_cancel_trans, updated_at: l.updated_at };
+        if (!timesByTrx.has(l.trans_id)) timesByTrx.set(l.trans_id, await orderTimes(trx));
+        const existing = existingByOrder.get(Number(l.order_id));
+        const st = await reviewState({ brand, userId, line: l, trx, existing, times: timesByTrx.get(l.trans_id), guest });
+        const alive = st.review && Number(st.review.is_delete) === 0;
+        const row = {
+            order_id: l.order_id, trans_id: l.trans_id, ord_num: l.ord_num, product_id: l.product_id,
+            product_name: l.product_name || l.order_name, product_img: l.product_img,
+            option_text: optionTextOf(l.order_groups), ordered_at: l.ordered_at, trx_status: l.trx_status,
+            state: st.state, reason: st.reason ?? null, deadline: st.deadline ? new Date(st.deadline) : null,
+            review_id: alive ? st.review.id : null,
+            review_hidden: alive && Number(st.review.is_hidden) === 1 ? (st.review.hidden_reason || '숨김') : null,
+        };
+        // 비회원은 상품 화면에서 '내 후기'를 알아볼 수 없다 — 주문조회 화면에서 고치고 지우도록 내용을 같이 준다.
+        if (guest && alive) {
+            const created = st.review.created_at ? new Date(st.review.created_at).getTime() : 0;
+            row.review = {
+                id: st.review.id, scope: Number(st.review.scope) || 0, content: st.review.content ?? '',
+                images: imagesOf(st.review), option_text: row.option_text,
+                editable_until: created ? new Date(created + settings.edit_days * 86400000) : null,
+            };
+        }
+        out.push(row);
+    }
+    return out;
+};
+
+const LINE_SELECT = `SELECT o.id AS order_id, o.trans_id, o.product_id, o.order_name, o.order_count, o.cancel_count, o.order_groups,
+                            t.trx_status, t.is_cancel, t.is_cancel_trans, t.updated_at, t.ord_num, t.user_id, t.created_at AS ordered_at,
+                            p.product_name, p.product_img
+                       FROM transaction_orders o
+                       JOIN transactions t ON t.id=o.trans_id
+                       LEFT JOIN products p ON p.id=o.product_id`;
 
 const productReviewCtrl = {
 
@@ -233,41 +329,11 @@ const productReviewCtrl = {
                 return response(req, res, 100, "success", { enabled: settings.enabled, logged_in: userId > 0, lines: [], writable_count: 0 });
             }
             const params = [brandId, userId];
-            let sql = `SELECT o.id AS order_id, o.trans_id, o.product_id, o.order_name, o.order_count, o.cancel_count, o.order_groups,
-                              t.trx_status, t.is_cancel, t.is_cancel_trans, t.updated_at, t.ord_num, t.user_id, t.created_at AS ordered_at,
-                              p.product_name, p.product_img
-                         FROM transaction_orders o
-                         JOIN transactions t ON t.id=o.trans_id
-                         LEFT JOIN products p ON p.id=o.product_id
-                        WHERE t.brand_id=? AND t.user_id=? AND t.is_delete=0 AND t.trx_status IN (15,20,25) `;
+            let sql = `${LINE_SELECT} WHERE t.brand_id=? AND t.user_id=? AND t.is_delete=0 AND t.trx_status IN (15,20,25) `;
             if (productIdNum) { sql += ` AND o.product_id=? `; params.push(productIdNum); }
             sql += ` ORDER BY o.id DESC LIMIT 200`;
             const [lines] = await readPool.query(sql, params);
-            const orderIds = lines.map((l) => l.order_id);
-            let existingByOrder = new Map();
-            if (orderIds.length) {
-                const [ex] = await readPool.query(
-                    `SELECT id, order_id, is_delete, is_hidden, hidden_reason, rewrite_count, scope FROM ${table_name} WHERE brand_id=? AND order_id IN (?)`,
-                    [brandId, orderIds]);
-                existingByOrder = new Map(ex.map((r) => [Number(r.order_id), r]));
-            }
-            // 같은 주문의 줄들은 출고·배송 시각이 같다 — 주문당 한 번만 읽는다.
-            const timesByTrx = new Map();
-            const out = [];
-            for (const l of lines) {
-                if (isAddonLine(l.order_groups)) continue; // 추가상품 줄은 후기 대상이 아니다
-                const trx = { id: l.trans_id, user_id: l.user_id, trx_status: l.trx_status, is_cancel: l.is_cancel, is_cancel_trans: l.is_cancel_trans, updated_at: l.updated_at };
-                if (!timesByTrx.has(l.trans_id)) timesByTrx.set(l.trans_id, await orderTimes(trx));
-                const st = await reviewState({ brand: decode_dns, userId, line: l, trx, existing: existingByOrder.get(Number(l.order_id)), times: timesByTrx.get(l.trans_id) });
-                out.push({
-                    order_id: l.order_id, trans_id: l.trans_id, ord_num: l.ord_num, product_id: l.product_id,
-                    product_name: l.product_name || l.order_name, product_img: l.product_img,
-                    option_text: optionTextOf(l.order_groups), ordered_at: l.ordered_at, trx_status: l.trx_status,
-                    state: st.state, reason: st.reason ?? null, deadline: st.deadline ? new Date(st.deadline) : null,
-                    review_id: st.review && Number(st.review.is_delete) === 0 ? st.review.id : null,
-                    review_hidden: st.review && Number(st.review.is_delete) === 0 && Number(st.review.is_hidden) === 1 ? (st.review.hidden_reason || '숨김') : null,
-                });
-            }
+            const out = await judgeLines({ brand: decode_dns, brandId, userId, lines });
             return response(req, res, 100, "success", {
                 enabled: true, logged_in: true, lines: out,
                 writable_count: out.filter((x) => x.state === 'writable').length,
@@ -429,6 +495,150 @@ const productReviewCtrl = {
             const loginUserId = Number(decode_user?.id) || 0;
             const loginLevel = Number(decode_user?.level) || 0;
             if (!(loginLevel >= 10 || (loginUserId > 0 && Number(row.user_id) === loginUserId))) return lowLevelException(req, res);
+            await deleteQuery(table_name, { id: reviewId });
+            await invalidateReviewCache(row.brand_id, row.product_id, reviewId);
+            return response(req, res, 100, "success", {});
+        } catch (err) {
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err));
+            return response(req, res, -200, "서버 에러 발생", false);
+        }
+    },
+
+    // ── 비회원 구매자 ─────────────────────────────────────────────────────
+    // 모두 몸통에 guest: { buyer_phone, password } 를 받는다. 비회원 주문조회 화면이 방금 조회에 쓴 값을 그대로 보낸다.
+
+    // 비회원 주문 줄마다 '쓸 수 있나' + 이미 쓴 후기 내용.
+    guestWritable: async (req, res, next) => {
+        try {
+            const decode_dns = checkDns(req.cookies.dns);
+            const brandId = Number(decode_dns?.id) || 0;
+            const settings = reviewSettings(decode_dns);
+            if (!brandId || !settings.enabled || !settings.allow_guest || !(await guestReady())) {
+                return response(req, res, 100, "success", { enabled: !!(settings.enabled && settings.allow_guest), lines: [], writable_count: 0 });
+            }
+            const ids = await guestTrxIds(brandId, guestCred(req));
+            if (!ids.length) return response(req, res, 100, "success", { enabled: true, lines: [], writable_count: 0 });
+            const [lines] = await readPool.query(
+                `${LINE_SELECT} WHERE t.brand_id=? AND t.id IN (?) AND t.trx_status IN (15,20,25) ORDER BY o.id DESC LIMIT 200`, [brandId, ids]);
+            const out = await judgeLines({ brand: decode_dns, brandId, userId: 0, lines, guest: true });
+            return response(req, res, 100, "success", { enabled: true, lines: out, writable_count: out.filter((x) => x.state === 'writable').length });
+        } catch (err) {
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err));
+            return response(req, res, -200, "서버 에러 발생", false);
+        }
+    },
+
+    // 비회원 작성. { guest, order_id, scope, content, images }
+    guestCreate: async (req, res, next) => {
+        try {
+            const decode_dns = checkDns(req.cookies.dns);
+            const brandId = Number(decode_dns?.id) || 0;
+            if (!brandId) return response(req, res, -400, "brand_id 또는 product_id가 올바르지 않습니다.", false);
+            if (!(await guestReady())) return response(req, res, -100, "후기 기능 준비 중입니다.", false);
+            const brand = await brandRow(brandId);
+            const settings = reviewSettings(brand);
+            if (!settings.enabled) return response(req, res, -100, "후기 기능을 사용하지 않는 몰입니다.", false);
+            if (!settings.allow_guest) return response(req, res, -100, "이 몰은 회원 구매자만 후기를 받습니다.", false);
+
+            const { order_id, scope, content, images } = req.body;
+            const line = await orderLine(order_id, brandId);
+            if (!line) return response(req, res, -100, "주문 정보를 찾을 수 없습니다.", false);
+            const ids = await guestTrxIds(brandId, guestCred(req));
+            if (!ids.includes(Number(line.trans_id))) return response(req, res, -100, "주문 정보를 확인할 수 없습니다. 전화번호와 주문 비밀번호를 다시 확인해 주세요.", false);
+            const [[existing]] = await readPool.query(
+                `SELECT id, is_delete, is_hidden, rewrite_count FROM ${table_name} WHERE order_id=? LIMIT 1`, [line.order_id]);
+            const st = await reviewState({ brand, userId: 0, line, trx: line, existing, guest: true });
+            if (!st.ok) return response(req, res, -100, st.reason, false);
+
+            const 별점잘못 = 별점검사(scope);
+            if (별점잘못) return response(req, res, -100, 별점잘못, false);
+            const text = String(content ?? '').replace(/\r\n/g, '\n').trim();
+            if ([...text].length < settings.min_length) return response(req, res, -100, "후기가 너무 짧습니다. 조금 더 적어 주세요.", false);
+            if ([...text].length > settings.max_length) return response(req, res, -100, "후기는 1,000자 이내로 입력해 주세요.", false);
+            let imgs = settings.allow_photo ? parseImages(images, 99) : [];
+            if (imgs.length > settings.max_images) return response(req, res, -100, "사진은 최대 5장까지 올릴 수 있습니다.", false);
+            imgs = imgs.slice(0, settings.max_images);
+            const [[product]] = await readPool.query(`SELECT id FROM products WHERE id=? AND brand_id=? AND is_delete=0 LIMIT 1`, [line.product_id, brandId]);
+            if (!product) return response(req, res, -100, "상품을 찾을 수 없습니다.", false);
+
+            // 주문자 이름은 암호화돼 있다 — 작성 때 한 번 풀어 가린 모양만 후기에 적는다(목록마다 풀지 않게).
+            const [[buyer]] = await readPool.query(`SELECT buyer_name FROM transactions WHERE id=? LIMIT 1`, [line.trans_id]);
+            const guestName = maskGuestName(decPii(buyer?.buyer_name));
+            const fields = {
+                scope: parseInt(scope, 10), content: text,
+                images: JSON.stringify(imgs), content_img: imgs[0] ?? null, profile_img: null, title: null,
+                option_text: optionTextOf(line.order_groups), guest_name: guestName,
+            };
+            let id;
+            if (existing) {
+                await writePool.query(
+                    `UPDATE ${table_name} SET scope=?, content=?, images=?, content_img=?, profile_img=NULL, title=NULL, option_text=?, guest_name=?, user_id=0,
+                            is_delete=0, is_hidden=0, hidden_reason=NULL, reply_content=NULL, reply_user_id=NULL, replied_at=NULL,
+                            helpful_count=0, report_count=0, is_best=0, rewrite_count=rewrite_count+1, created_at=NOW(), updated_at=NOW()
+                      WHERE id=?`,
+                    [fields.scope, fields.content, fields.images, fields.content_img, fields.option_text, guestName, existing.id]);
+                id = existing.id;
+            } else {
+                const result = await insertQuery(table_name, {
+                    brand_id: brandId, product_id: line.product_id, trans_id: line.trans_id, order_id: line.order_id, user_id: 0,
+                    ...fields,
+                });
+                id = result?.insertId;
+            }
+            await invalidateReviewCache(brandId, line.product_id, id);
+            return response(req, res, 100, "success", { id });
+        } catch (err) {
+            if (err?.code === 'ER_DUP_ENTRY') return response(req, res, -100, "이미 후기를 작성한 주문입니다.", false);
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err));
+            return response(req, res, -200, "서버 에러 발생", false);
+        }
+    },
+
+    // 비회원 수정. { guest, scope, content, images } — 작성 후 edit_days 안에.
+    guestUpdate: async (req, res, next) => {
+        try {
+            const decode_dns = checkDns(req.cookies.dns);
+            const reviewId = parseInt(req.params.id, 10) || 0;
+            const row = await guestOwnedReview(decode_dns, reviewId, req);
+            if (row?.error) return response(req, res, -100, row.error, false);
+            const settings = reviewSettings(await brandRow(row.brand_id));
+            const created = row.created_at ? new Date(row.created_at).getTime() : 0;
+            if (Date.now() > created + settings.edit_days * 86400000) return response(req, res, -100, "후기 수정 기간이 지났습니다.", false);
+            const { scope, content, images } = req.body;
+            const obj = {};
+            if (scope !== undefined && scope !== null && String(scope) !== '') {
+                const 별점잘못 = 별점검사(scope);
+                if (별점잘못) return response(req, res, -100, 별점잘못, false);
+                obj.scope = parseInt(scope, 10);
+            }
+            if (content !== undefined) {
+                const text = String(content ?? '').replace(/\r\n/g, '\n').trim();
+                if ([...text].length < settings.min_length) return response(req, res, -100, "후기가 너무 짧습니다. 조금 더 적어 주세요.", false);
+                if ([...text].length > settings.max_length) return response(req, res, -100, "후기는 1,000자 이내로 입력해 주세요.", false);
+                obj.content = text;
+            }
+            if (images !== undefined) {
+                let imgs = settings.allow_photo ? parseImages(images, 99) : [];
+                if (imgs.length > settings.max_images) return response(req, res, -100, "사진은 최대 5장까지 올릴 수 있습니다.", false);
+                imgs = imgs.slice(0, settings.max_images);
+                obj.images = JSON.stringify(imgs); obj.content_img = imgs[0] ?? null; obj.profile_img = null;
+            }
+            if (Object.keys(obj).length) await updateQuery(table_name, obj, reviewId);
+            await invalidateReviewCache(row.brand_id, row.product_id, reviewId);
+            return response(req, res, 100, "success", {});
+        } catch (err) {
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err));
+            return response(req, res, -200, "서버 에러 발생", false);
+        }
+    },
+
+    // 비회원 삭제(소프트). { guest }
+    guestRemove: async (req, res, next) => {
+        try {
+            const decode_dns = checkDns(req.cookies.dns);
+            const reviewId = parseInt(req.params.id, 10) || 0;
+            const row = await guestOwnedReview(decode_dns, reviewId, req);
+            if (row?.error) return response(req, res, -100, row.error, false);
             await deleteQuery(table_name, { id: reviewId });
             await invalidateReviewCache(row.brand_id, row.product_id, reviewId);
             return response(req, res, 100, "success", {});

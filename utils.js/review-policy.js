@@ -43,6 +43,9 @@ export const reviewSettings = (dns) => {
     return {
         enabled,
         allow_photo: (s.review_allow_photo === undefined || s.review_allow_photo === null || s.review_allow_photo === '') ? true : Number(s.review_allow_photo) === 1,
+        // 비회원 구매자 후기 — 비회원 주문조회(전화번호+주문비밀번호)로 본인을 확인하고 쓴다. 기본 켜짐(2026-10-29 사장님 결정:
+        // 9/15~10/27 결제 234건이 전부 비회원이라 회원만 받으면 후기가 쌓이지 않는다).
+        allow_guest: (s.review_allow_guest === undefined || s.review_allow_guest === null || s.review_allow_guest === '') ? true : Number(s.review_allow_guest) === 1,
         // 「도움돼요」 버튼(+도움순 정렬). 끄면 숨을 뿐 쌓인 수는 남는다(2026-09-14 사장님 결정: 선택 기능, 기본 켜짐).
         use_helpful: (s.review_use_helpful === undefined || s.review_use_helpful === null || s.review_use_helpful === '') ? true : Number(s.review_use_helpful) === 1,
         min_length: Math.min(200, Math.max(1, Math.floor(수(s.review_min_length, 10)))),
@@ -54,6 +57,13 @@ export const reviewSettings = (dns) => {
         notice: String(s.review_notice ?? '').slice(0, 300),
         ship_grace_days: 3, // 배송완료를 안 누르는 몰을 위해: 출고 뒤 이 날짜가 지나면 열린다
     };
+};
+
+// 비회원 작성자 표시: 주문자 이름 첫 글자 + 나머지 * (김철수 → 김**, 홍길 → 홍*). 이름이 없으면 '구매자'.
+export const maskGuestName = (name) => {
+    const s = [...String(name ?? '').trim()];
+    if (!s.length) return '구매자';
+    return s[0] + '*'.repeat(Math.max(1, Math.min(s.length - 1, 4)));
 };
 
 // 작성자 표시: 앞 두 글자 + ***. 닉네임이 없으면 아이디. (네이버는 아이디 일부 마스킹, 쿠팡은 이름 일부)
@@ -126,10 +136,15 @@ export const orderTimes = async (trx) => {
 // 한 주문 줄에 대해 '지금 이 회원이 후기를 쓸 수 있나'. 작성 API 와 주문내역 버튼이 같은 판정을 쓴다.
 // 반환 { ok, state, reason, deadline, review }
 //   state: off | not_owner | canceled | written | not_yet | expired | writable
-export const reviewState = async ({ brand, userId, line, trx, existing, times }) => {
+// guest=true 는 '호출한 쪽이 전화번호+주문비밀번호로 이 주문의 주인임을 이미 확인했다'는 뜻이다(비회원 주문만).
+export const reviewState = async ({ brand, userId, line, trx, existing, times, guest = false }) => {
     const s = reviewSettings(brand);
     if (!s.enabled) return { ok: false, state: 'off', reason: '후기 기능을 사용하지 않는 몰입니다.' };
-    if (!(Number(userId) > 0) || Number(trx?.user_id) !== Number(userId)) return { ok: false, state: 'not_owner', reason: '구매한 회원만 후기를 쓸 수 있습니다.' };
+    if (guest) {
+        if (!s.allow_guest) return { ok: false, state: 'off', reason: '이 몰은 회원 구매자만 후기를 받습니다.' };
+        if (Number(trx?.user_id) > 0) return { ok: false, state: 'not_owner', reason: '회원으로 주문하신 경우 로그인 후 주문내역에서 써 주세요.' };
+    }
+    if (!guest && (!(Number(userId) > 0) || Number(trx?.user_id) !== Number(userId))) return { ok: false, state: 'not_owner', reason: '구매한 회원만 후기를 쓸 수 있습니다.' };
     if (isAddonLine(line?.order_groups)) return { ok: false, state: 'not_owner', reason: '구매한 회원만 후기를 쓸 수 있습니다.' };
     const canceled = Number(trx?.is_cancel) === 1 || Number(trx?.is_cancel_trans) === 1
         || Number(line?.cancel_count || 0) >= Number(line?.order_count || 0);
@@ -195,4 +210,4 @@ export const hideReviewsForCanceled = async (trans_id) => {
     }
 };
 
-export default { REVIEW_DEFAULT_ON_SHOPGO, reviewSettings, maskWriter, parseImages, imagesOf, isAddonLine, optionTextOf, orderTimes, reviewState, invalidateReviewCache, hideReviewsForCanceled };
+export default { REVIEW_DEFAULT_ON_SHOPGO, reviewSettings, maskWriter, maskGuestName, parseImages, imagesOf, isAddonLine, optionTextOf, orderTimes, reviewState, invalidateReviewCache, hideReviewsForCanceled };

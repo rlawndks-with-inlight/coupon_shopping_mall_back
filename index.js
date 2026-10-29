@@ -89,6 +89,12 @@ const guestLookupLimiter = rateLimit({
     message: { result: -429, message: '조회 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.', data: false },
 });
 app.use('/api/transactions', guestLookupLimiter);
+// 비회원 후기(전화번호+주문비밀번호를 몸통으로 받는다) — 주문조회와 같은 이유로 IP당 10분 60회.
+const guestReviewLimiter = rateLimit({
+    ...리밋공통, windowMs: 10 * 60 * 1000, max: 60,
+    message: { result: -429, message: '시도가 너무 많습니다. 잠시 후 다시 시도해주세요.', data: false },
+});
+app.use('/api/product-reviews/guest', guestReviewLimiter);
 // express.json() 제거됨 - bodyParser.json()이 동일 역할 수행
 
 // 한글 자소 분리(NFD) → 조합형(NFC) 정규화 미들웨어
