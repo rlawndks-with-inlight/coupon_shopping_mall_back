@@ -1,19 +1,26 @@
 // 포스페이 상위(PG/포스페이) 취소 대사(reconcile).
 //
-//   node scripts/forspay-reconcile.mjs      (또는 npm run forspay-reconcile)
+//   node scripts/forspay-reconcile.mjs          (또는 npm run forspay-reconcile)
+//   node scripts/forspay-reconcile.mjs --all    오래된 결제 건(8~21일)까지 지금 바로 확인
 //   보통은 서버 크론이 3시간마다 돌린다.
 //
 // 왜 필요한가:
-//   우리가 취소를 안 눌렀는데 상위에서 취소된 거래(예: 테스트키 자동취소)를 우리는
-//   지금 감지하지 못한다. 원래는 noti_url 웹훅(forspayCallback)이 is_cancel=1 을 받아
-//   markCanceled 로 반영해야 하는데, 세션 생성 시 noti_url 을 넘긴 적이 없어 웹훅이
-//   한 번도 안 왔다(로그 'webhook body keys' 0건). 그래서 고객 브라우저 return 없이
-//   상위 자동취소가 나면 우리 DB 엔 결제완료로 남아 실제와 어긋난다.
+//   우리가 취소를 안 눌렀는데 상위에서 취소된 거래(포스페이 관리 화면에서 직접 취소, 테스트키 자동취소 등)를
+//   우리는 웹훅(noti_url)으로만 알 수 있다. 그런데 noti_url 이 등록되지 않아 웹훅이 한 번도 안 왔다.
+//   그래서 상위에서 취소돼도 우리 DB 엔 결제완료로 남는다(2026-10-30 실제 6건 — 다음 회차에 맞춰졌다).
 //   이 배치가 그 사각지대를 메운다. 웹훅을 붙인 뒤에도 '유실 대비 안전망'으로 계속 유효.
 //
-// 부하(설계상 무시 수준):
-//   대상 = trx_method=41 AND trx_status=5 AND is_cancel_trans=0 AND 최근 N일. 십수 건.
-//   순차 처리 + 건당 텀 + 건당 타임아웃 + 상한(LIMIT). 하루 몇 번. DB·포스페이 모두 부담 없음.
+// ── 부하: 포스페이 조회 한도(App key 당 분당 60회) ────────────────────────────────
+//   예전엔 0.25초 간격으로 연달아 불러 한 회차에 100회 넘게 몰렸다. 한도를 넘긴 조회는 포스페이가
+//   429 가 아니라 500 으로 돌려줘(2026-10-30 확인: 같은 주문을 2초 간격으로 물으면 정상) 매 회차 3~12건을
+//   건너뛰었고, 그 1~2분 동안은 같은 키를 쓰는 손님 흐름(결과 화면 확인·주문서 결제수단 확인)도 한도에 걸렸다.
+//   그리고 결제 건이 늘수록 21일치를 매번 다시 보는 구조라 회차마다 조회가 불어난다.
+//   그래서:
+//     · 조회와 조회 사이를 최소 2초(분당 30회) — 키 한도의 절반만 쓰고 나머지는 손님 몫으로 남긴다
+//     · 500·429 를 받으면 1분 쉬고 그 건만 한 번 더. 그래도 안 되면 건너뛴다(다음 회차 재시도)
+//     · 취소 확인: 최근 7일 결제 건은 매 회차, 8~21일 건은 하루 한 번(09:05 KST 회차)만
+//     · 승인 복구: 결제창 세션이 24시간이면 만료되므로 최근 2일만 본다(예전 3일)
+//     · 회차가 길어져 다음 크론과 겹치면 뒤의 것은 그냥 끝낸다(잠금 파일)
 //
 // 안전:
 //   - 포스페이가 '명시적으로 cancelled' 라고 할 때만 markCanceled 한다(fail-closed).
@@ -22,22 +29,61 @@
 //     즉 웹훅 경로와 완전히 같은 처리다.
 //   - 조회 한 건이 실패해도 배치를 멈추지 않는다.
 //
-// ⚠ 쓰기: markCanceled 만(이미 상위에서 끝난 취소를 우리 장부에 반영). .env 의 DB 를
-//    그대로 본다 — 운영 DB 를 향할 수 있다.
+// ⚠ 쓰기: markCanceled · settleForspayTransaction 만(이미 상위에서 끝난 취소·승인을 우리 장부에 반영).
+//    .env 의 DB 를 그대로 본다 — 운영 DB 를 향할 수 있다.
 
 import { readPool } from '../config/db-pool.js';
 import { markCanceled } from '../utils.js/cancel.js';
 import { getCancelRecords as forspayGetCancelRecords, getTransaction as forspayGetTransaction } from '../utils.js/payments/forspay.js';
 import { settleForspayTransaction } from '../controllers/pay.controller.js';
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
-const 최근일수   = parseInt(process.env.FORSPAY_RECONCILE_DAYS  ?? '21')  || 21;
+const 최근일수   = parseInt(process.env.FORSPAY_RECONCILE_DAYS  ?? '21')  || 21;  // 취소 확인을 하는 가장 오래된 결제
+const 매번일수   = parseInt(process.env.FORSPAY_RECONCILE_RECENT_DAYS ?? '7') || 7; // 이보다 최근 결제는 매 회차
 const 최대건수   = parseInt(process.env.FORSPAY_RECONCILE_LIMIT ?? '300') || 300;
-const 건당텀ms     = parseInt(process.env.FORSPAY_RECONCILE_GAP_MS ?? '250') || 250;
+const 호출간격ms   = parseInt(process.env.FORSPAY_RECONCILE_CALL_GAP_MS ?? '2000') || 2000;
+const 한도쉼ms     = 60_000;
 const 건당타임아웃ms = 8000;
+const 하루한번UTC시 = 0; // 크론 '5 */3 * * *' 중 00:05 UTC(= 09:05 KST) 회차
+const 오래된것도 = process.argv.includes('--all') || new Date().getUTCHours() === 하루한번UTC시;
 
 const now = () => new Date().toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[forspay-reconcile ${now()}]`, ...a);
+
+// ── 겹침 방지 ───────────────────────────────────────────────────────────────
+const 잠금 = join(tmpdir(), 'forspay-reconcile.lock');
+if (existsSync(잠금)) {
+    const pid = Number(readFileSync(잠금, 'utf8')) || 0;
+    let 살아있음 = false;
+    try { if (pid) { process.kill(pid, 0); 살아있음 = true; } } catch (e) { 살아있음 = false; }
+    if (살아있음) { log(`앞 회차(pid ${pid})가 아직 도는 중 — 이번 회차는 건너뜀`); process.exit(0); }
+}
+writeFileSync(잠금, String(process.pid));
+const 끝 = (code = 0) => { try { unlinkSync(잠금); } catch (e) { /* 이미 없음 */ } process.exit(code); };
+
+// ── 포스페이 조회 속도 조절 ──────────────────────────────────────────────────
+// 모든 조회(취소 레코드의 회차별 조회 포함)가 이 문을 지난다 — 직전 조회에서 호출간격ms 가 지나야 나간다.
+let 마지막호출 = 0, 호출수 = 0;
+const 천천히 = async () => {
+    const 남음 = 마지막호출 + 호출간격ms - Date.now();
+    if (남음 > 0) await sleep(남음);
+    마지막호출 = Date.now();
+    호출수++;
+};
+// 한도 초과(포스페이는 500, 문서상 429)면 1분 쉬고 한 번만 더. 409(거래 없음) 같은 정상 응답은 그대로 던진다.
+const 한도걸림 = (e) => [429, 500, 502, 503].includes(Number(e?.response?.status));
+const 조회 = async (fn) => {
+    try { return await fn(); }
+    catch (e) {
+        if (!한도걸림(e)) throw e;
+        log(`포스페이 ${e?.response?.status} — 1분 쉬고 다시 시도`);
+        await sleep(한도쉼ms);
+        return await fn();
+    }
+};
 
 // 브랜드별 app_key 캐시(payment_modules trx_type=41 의 pay_key). 같은 브랜드는 한 번만 조회.
 const keyCache = new Map();
@@ -52,19 +98,23 @@ async function getAppKey(brand_id) {
     return key;
 }
 
+const 시작 = Date.now();
+
+// ── 1부: 상위 취소 반영 ──────────────────────────────────────────────────────
 // trx_status: 5=결제완료, 1=취소요청(고객이 요청했으나 우리 실행 전/실패). 둘 다 대상 —
 //   전자는 '조용히 상위 취소된 결제완료 건', 후자는 '취소요청인데 상위가 이미 취소해 완결이 필요한 건'.
 //   어느 경우든 포스페이가 명시적으로 cancelled 라 할 때만 반영한다(아래 fail-closed).
+const 이번일수 = 오래된것도 ? 최근일수 : Math.min(매번일수, 최근일수);
 const [candidates] = await readPool.query(
     `SELECT id, ord_num, brand_id, amount FROM transactions
       WHERE trx_method=41 AND trx_status IN (1, 5) AND (is_cancel_trans=0 OR is_cancel_trans IS NULL)
         AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
       ORDER BY id DESC
       LIMIT ?`,
-    [최근일수, 최대건수]
+    [이번일수, 최대건수]
 );
 
-log(`대상 ${candidates.length}건 (최근 ${최근일수}일, 상한 ${최대건수})`);
+log(`대상 ${candidates.length}건 (최근 ${이번일수}일${오래된것도 ? ' — 하루 한 번 오래된 결제까지' : ''}, 상한 ${최대건수}, 조회 간격 ${호출간격ms}ms)`);
 
 let 확인 = 0, 취소반영 = 0, 스킵 = 0;
 
@@ -82,12 +132,11 @@ for (const t of candidates) {
         // 2026-09-03 협력사 답변). 그래서 취소 레코드를 1부터 읽어 합계로 판단한다.
         let cancelledTotal;
         try {
-            ({ cancelledTotal } = await forspayGetCancelRecords({ app_key, ord_num: t.ord_num, timeout: 건당타임아웃ms }));
+            ({ cancelledTotal } = await 조회(() => forspayGetCancelRecords({ app_key, ord_num: t.ord_num, timeout: 건당타임아웃ms, beforeEach: 천천히 })));
         } catch (e) {
             // 조회 실패는 '취소'가 아니다. 절대 취소로 처리하지 않는다(fail-closed). 다음 회차 재시도.
             스킵++;
             log(`skip id=${t.id} ord=${t.ord_num} (조회실패: ${e?.response?.status || e?.code || e?.message})`);
-            await sleep(건당텀ms);
             continue;
         }
 
@@ -105,7 +154,6 @@ for (const t of candidates) {
         스킵++;
         log(`skip id=${t.id} (예외: ${e?.message})`);
     }
-    await sleep(건당텀ms);
 }
 
 log(`완료 — 확인 ${확인} / 취소반영 ${취소반영} / 스킵 ${스킵}`);
@@ -120,7 +168,8 @@ log(`완료 — 확인 ${확인} / 취소반영 ${취소반영} / 스킵 ${스�
 //   - 확정은 settleForspayTransaction 하나로만 한다 — status=approved + 주문번호 같음 + 금액 같음일 때만,
 //     0·-1 인 행만 원자적으로 5 로 바꾼다(웹훅·결과페이지와 같은 규칙). 늦은 승인의 재고는 늦은승인정리가 다시 잡는다.
 //   - 조회 실패·없음(409)은 건드리지 않는다. 방금 결제창을 연 주문과 겹치지 않게 15분 지난 것만 본다.
-const 복구일수 = parseInt(process.env.FORSPAY_RECOVER_DAYS ?? '3') || 3;
+//   - 결제창 세션은 24시간 뒤 만료된다(포스페이 문서) — 그보다 늦은 승인은 없으니 2일이면 넉넉하다.
+const 복구일수 = parseInt(process.env.FORSPAY_RECOVER_DAYS ?? '2') || 2;
 const [pendings] = await readPool.query(
     `SELECT id, ord_num, brand_id FROM transactions
       WHERE trx_method=41 AND trx_status IN (0, -1)
@@ -140,11 +189,10 @@ for (const t of pendings) {
         if (!app_key) { 복구스킵++; continue; }
         let txn = null;
         try {
-            txn = await forspayGetTransaction({ app_key, ord_num: t.ord_num, timeout: 건당타임아웃ms });
+            txn = await 조회(async () => { await 천천히(); return forspayGetTransaction({ app_key, ord_num: t.ord_num, timeout: 건당타임아웃ms }); });
         } catch (e) {
             const st = e?.response?.status;
             if (st === 409 || st === 404) { 미승인++; } else { 복구스킵++; log(`skip(복구) id=${t.id} (조회실패: ${st || e?.code || e?.message})`); }
-            await sleep(건당텀ms);
             continue;
         }
         if (txn?.status === 'approved') {
@@ -158,7 +206,7 @@ for (const t of pendings) {
         복구스킵++;
         log(`skip(복구) id=${t.id} (예외: ${e?.message})`);
     }
-    await sleep(건당텀ms);
 }
 log(`승인 복구 완료 — 복구 ${복구} / 미승인 ${미승인} / 스킵 ${복구스킵}`);
-process.exit(0);
+log(`회차 끝 — 포스페이 조회 ${호출수}회, ${Math.round((Date.now() - 시작) / 1000)}초`);
+끝(0);

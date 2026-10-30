@@ -110,11 +110,13 @@ export const getTransaction = async ({ app_key, base = FORSPAY_API_BASE, ord_num
 // cxl_seq=1,2,… 에 별도 레코드(status=cancelled, amount 음수)로 INSERT 한다(2026-09-03 협력사 답변).
 // 그래서 cxl_seq=0 만 봐서는 취소를 절대 알 수 없다. 1부터 차례로 읽고 없으면(409 not_found) 멈춘다.
 //   반환: { records: [...], cancelledTotal: 취소 합계(양수) }
-export const getCancelRecords = async ({ app_key, base = FORSPAY_API_BASE, ord_num, max = 20, timeout = 8000 } = {}) => {
+// beforeEach: 조회 한 번마다 먼저 기다릴 함수(선택). 대사 스크립트가 포스페이 분당 한도를 넘지 않게 쓴다.
+export const getCancelRecords = async ({ app_key, base = FORSPAY_API_BASE, ord_num, max = 20, timeout = 8000, beforeEach = null } = {}) => {
     const records = [];
     for (let seq = 1; seq <= max; seq++) {
         let rec;
         try {
+            if (beforeEach) await beforeEach();
             rec = await getTransaction({ app_key, base, ord_num, cxl_seq: seq, timeout });
         } catch (e) {
             const status = e?.response?.status;
