@@ -103,6 +103,30 @@ const 결제창사유정리 = (v) => {
 };
 const 결제창사유최대 = 3;      // 한 주문에 남기는 사유 줄 수
 const 결제창사유유효시간 = 3;  // 주문 후 몇 시간까지 받는가
+const 결제창코드꼴 = /^[A-Za-z0-9_-]{1,20}$/;
+// 사유를 주문 이력에 한 줄 남기고, 손님 화면에 보여 줄 결제창 문구를 돌려준다. 주문 상태는 바꾸지 않는다.
+// PC(결과 화면이 보냄)와 모바일(복귀 주소에 실려 옴)이 함께 쓴다.
+const 결제창사유저장 = async (ord, code, message) => {
+  if (!ord || !결제창코드꼴.test(code) || ['0000', '0001'].includes(code)) return '';
+  const [[trx]] = await readPool.query(
+    `SELECT id, brand_id FROM transactions
+     WHERE ord_num=? AND trx_method=41 AND trx_status IN (0, -1) AND IFNULL(is_cancel,0)=0 AND IFNULL(is_cancel_trans,0)=0
+       AND created_at >= DATE_SUB(NOW(), INTERVAL ? HOUR) ORDER BY id DESC LIMIT 1`, [ord, 결제창사유유효시간]);
+  if (!trx) return '';
+  const 문구 = 결제창사유정리(message);
+  const 머리 = `${code} · `;
+  const note = 머리 + (문구 || 결제창코드뜻[code] || '사유 없음');
+  const [이전] = await readPool.query(`SELECT note FROM transaction_status_logs WHERE trans_id=? AND kind='pay_fail' ORDER BY id`, [trx.id]);
+  const 같은코드 = 이전.filter((r) => String(r.note ?? '').startsWith(머리));
+  // 모바일은 복귀 때 서버가 먼저 남기고, 결과 화면이 문구 없이 한 번 더 보낸다 — 그 호출로 줄을 늘리지 않는다
+  if (이전.length < 결제창사유최대 && !이전.some((r) => r.note === note) && (문구 || 같은코드.length === 0)) {
+    await logTrx({ trans_id: trx.id, brand_id: trx.brand_id, kind: 'pay_fail', actor: { type: 'customer' }, note });
+  }
+  if (문구) return 문구;
+  const 저장문구 = 같은코드.map((r) => r.note.slice(머리.length)).reverse()
+    .find((m) => m !== '사유 없음' && !Object.values(결제창코드뜻).includes(m));
+  return 저장문구 ?? '';
+};
 
 const 결제실패정리 = async (trans_id) => {
   try {
@@ -1561,16 +1585,29 @@ const payCtrl = {
         }).toString();
         return res.redirect(302, `${resultBase}?${q}`);
       }
+      // 복귀 주소에 결제창 결과(result_cd·result_msg)가 실려 온다(2026-10-22 운영 로그). 손님 브라우저를 거친 값이라
+      // 위에서 보듯 승인 판단에는 쓰지 않고, 실패·취소 구분과 사유 표시에만 쓴다(포스페이 요청 2026-11-04 ④).
+      // 문구는 주소로 넘기지 않는다 — 결과 화면이 서버에서 받아 간다.
+      const 복귀코드 = 결제창코드꼴.test(String(data.result_cd ?? '')) ? String(data.result_cd) : '';
+      const 복귀실패 = !!복귀코드 && !['0000', '0001'].includes(복귀코드);
+      if (복귀실패) {
+        try { await 결제창사유저장(ord, 복귀코드, data.result_msg); } catch (e) { logger.error(errText(e)); }
+      }
       // 거래조회가 늦거나(시간초과) 아직 승인 전이면 '실패'라고 단정하지 않는다 — 결과 화면이 잠시 더 확인한다(0001).
       // 예전엔 바로 '결제에 실패하였습니다'를 보여 줘서, 실제로는 결제된 손님이 다시 결제(이중결제)할 수 있었다.
-      if (조회실패 || (!없음 && !txn?.status) || ['ready', 'pending', 'processing', 'waiting'].includes(String(txn.status))) {
+      // 결제창은 성공(0000)이라는데 거래가 아직 안 보이는 경우도 '취소'가 아니라 확인 중이다.
+      if (조회실패 || (!없음 && !txn?.status) || (없음 && 복귀코드 === '0000') || ['ready', 'pending', 'processing', 'waiting'].includes(String(txn.status))) {
         return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: '0001', ord_num: ord }).toString()}`);
+      }
+      // 거래가 없고 결제창이 실패 코드를 줬다 → 그 코드 그대로. 예전엔 전부 CANCEL 이라 잔액부족 같은 실패도 '취소'로 보였다.
+      if (복귀실패) {
+        return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: 복귀코드, ord_num: ord }).toString()}`);
       }
       // 거래가 아예 없다 = 손님이 결제창을 닫거나 취소했다 → 결과 화면이 '결제가 취소되었습니다'로 보여 준다.
       if (없음) {
         return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: 'CANCEL', ord_num: ord }).toString()}`);
       }
-      return res.redirect(302, `${resultBase}?result_cd=9999`);
+      return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: '9999', ord_num: ord }).toString()}`);
     } catch (err) {
       console.log(err);
       logger.error(errText(err));
@@ -1681,17 +1718,8 @@ const payCtrl = {
     try {
       const ord = (req.body?.ord_num ?? '').toString().slice(0, 100);
       const code = (req.body?.code ?? '').toString();
-      if (!ord || !/^[A-Za-z0-9_-]{1,20}$/.test(code) || ['0000', '0001'].includes(code)) return response(req, res, 100, 'success', {});
-      const [[trx]] = await readPool.query(
-        `SELECT id, brand_id FROM transactions
-         WHERE ord_num=? AND trx_method=41 AND trx_status IN (0, -1) AND IFNULL(is_cancel,0)=0 AND IFNULL(is_cancel_trans,0)=0
-           AND created_at >= DATE_SUB(NOW(), INTERVAL ? HOUR) ORDER BY id DESC LIMIT 1`, [ord, 결제창사유유효시간]);
-      if (!trx) return response(req, res, 100, 'success', {});
-      const note = `${code} · ${결제창사유정리(req.body?.message) || 결제창코드뜻[code] || '사유 없음'}`;
-      const [이전] = await readPool.query(`SELECT note FROM transaction_status_logs WHERE trans_id=? AND kind='pay_fail'`, [trx.id]);
-      if (이전.length >= 결제창사유최대 || 이전.some((r) => r.note === note)) return response(req, res, 100, 'success', {});
-      await logTrx({ trans_id: trx.id, brand_id: trx.brand_id, kind: 'pay_fail', actor: { type: 'customer' }, note });
-      return response(req, res, 100, 'success', {});
+      const message = await 결제창사유저장(ord, code, req.body?.message);
+      return response(req, res, 100, 'success', { message });
     } catch (err) {
       logger.error(errText(err));
       return response(req, res, 100, 'success', {});
