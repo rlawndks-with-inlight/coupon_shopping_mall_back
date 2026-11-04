@@ -89,6 +89,21 @@ const 결제실패응답 = async (trans_id, req, res, code, msg, data) => {
 // ⚠ 협력사 응답 문자열을 이 자리에 다시 끌어다 쓰지 말 것. 검사 scripts/checks/pg-message.mjs 가 막는다.
 const 결제시작실패문구 = '결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.';
 
+// 포스페이 승인 전(0)·실패(-1) 주문 — 돌려줄 돈이 없고, 늦은 승인은 거래조회가 살린다. 가맹점은 취소할 일이 없다(포스페이 요청 2026-11-04 ④).
+const 결제확인전 = (trx) => Number(trx?.trx_method) === 41 && Number(trx?.trx_status) <= 0;
+const 결제확인전문구 = '결제가 완료되지 않은 주문이라 취소할 금액이 없습니다.';
+
+// 결제창이 알려 준 실패 사유(포스페이 요청 2026-11-04 ④). 손님 브라우저를 거쳐 오는 값이라 **표시용**이다 — 결제 확정에 쓰지 않는다.
+// 포스페이가 SQL 원문을 메시지로 보낸 적이 있어(scripts/checks/pg-message.mjs) 시스템 오류처럼 보이면 버리고 코드만 남긴다.
+const 결제창코드뜻 = { CANCEL: '손님이 결제창을 닫음', PV999: '손님이 결제를 취소함', PV500: '결제사 통신 오류' };
+const 결제창사유정리 = (v) => {
+  const s = (typeof v === 'string' ? v : '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (!s || /SQLSTATE|\bSQL\b|\bselect\s|exception|stack|[{}]/i.test(s)) return '';
+  return s;
+};
+const 결제창사유최대 = 3;      // 한 주문에 남기는 사유 줄 수
+const 결제창사유유효시간 = 3;  // 주문 후 몇 시간까지 받는가
+
 const 결제실패정리 = async (trans_id) => {
   try {
     await applyCancelEffects(trans_id);
@@ -1243,6 +1258,9 @@ const payCtrl = {
         if (Number(trx.is_cancel_trans) === 1 || Number(trx.is_cancel) === 1) {
           return response(req, res, -100, "이미 취소된 주문입니다.", false);
         }
+        if (결제확인전(trx) && Number(decode_user?.level) < 50) {
+          return response(req, res, -100, 결제확인전문구, false);
+        }
         const [[부분]] = await readPool.query(`SELECT COUNT(*) AS n FROM transaction_cancels WHERE trans_id=?`, [trx.id]);
         if (Number(부분?.n) > 0) {
           return response(req, res, -100, "부분취소한 주문입니다. 「부분취소」 창에서 남은 수량을 모두 선택해 취소해 주세요.", false);
@@ -1420,6 +1438,9 @@ const payCtrl = {
       const state = await getCancelState(id);
       if (!state) return response(req, res, -100, "주문을 찾을 수 없습니다.", false);
       if (!canWriteBrand(decode_user, state.trx?.brand_id)) return lowLevelException(req, res);
+      if (결제확인전(state.trx) && Number(decode_user?.level) < 50) {
+        return response(req, res, -100, 결제확인전문구, false);
+      }
 
       const method = Number(state.trx?.trx_method);
       if (!PARTIAL_CANCEL_METHODS.includes(method)) {
@@ -1503,6 +1524,8 @@ const payCtrl = {
     let front = (data.front || "").toString().trim();
     if (front && !/^https?:\/\//.test(front)) front = `https://${front}`;
     const resultBase = `${front}/shop/auth/pay-result`;
+    // [진단·임시] 모바일 복귀에 실패 코드·사유가 실리는지 확인용 — 키 이름만 기록(값 없음). 확인 후 제거.
+    try { logger.info('[forspay-diag] return keys: ' + Object.keys(data).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
     try {
       const transId = data.trans;
       const ord = (data.ord || data.ord_num || '').toString();
@@ -1649,6 +1672,29 @@ const payCtrl = {
     } catch (err) {
       logger.error(errText(err));
       return response(req, res, 100, 'success', { settled: false, result_cd: '9999' });
+    }
+  },
+  forspayFailReason: async (req, res, next) => {
+    // 결제결과 페이지가 보내는 '결제창 실패 사유'. 주문 이력에 한 줄 남겨 「결제실패/미완료」 목록에 보여 준다.
+    // 주문 상태는 바꾸지 않는다. 비회원도 부르므로 로그인을 요구하지 않는 대신,
+    // 포스페이 미결제 주문·주문 직후·몇 줄까지만 받는다. 항상 성공으로 답한다(손님 화면에 오류를 띄우지 않게).
+    try {
+      const ord = (req.body?.ord_num ?? '').toString().slice(0, 100);
+      const code = (req.body?.code ?? '').toString();
+      if (!ord || !/^[A-Za-z0-9_-]{1,20}$/.test(code) || ['0000', '0001'].includes(code)) return response(req, res, 100, 'success', {});
+      const [[trx]] = await readPool.query(
+        `SELECT id, brand_id FROM transactions
+         WHERE ord_num=? AND trx_method=41 AND trx_status IN (0, -1) AND IFNULL(is_cancel,0)=0 AND IFNULL(is_cancel_trans,0)=0
+           AND created_at >= DATE_SUB(NOW(), INTERVAL ? HOUR) ORDER BY id DESC LIMIT 1`, [ord, 결제창사유유효시간]);
+      if (!trx) return response(req, res, 100, 'success', {});
+      const note = `${code} · ${결제창사유정리(req.body?.message) || 결제창코드뜻[code] || '사유 없음'}`;
+      const [이전] = await readPool.query(`SELECT note FROM transaction_status_logs WHERE trans_id=? AND kind='pay_fail'`, [trx.id]);
+      if (이전.length >= 결제창사유최대 || 이전.some((r) => r.note === note)) return response(req, res, 100, 'success', {});
+      await logTrx({ trans_id: trx.id, brand_id: trx.brand_id, kind: 'pay_fail', actor: { type: 'customer' }, note });
+      return response(req, res, 100, 'success', {});
+    } catch (err) {
+      logger.error(errText(err));
+      return response(req, res, 100, 'success', {});
     }
   },
 };

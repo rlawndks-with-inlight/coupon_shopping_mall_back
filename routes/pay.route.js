@@ -36,6 +36,9 @@ router
     .get(payCtrl.forspayConfirm)
     .post(payCtrl.forspayConfirm);
 router
+    .route('/forspay/fail-reason')
+    .post(payCtrl.forspayFailReason);
+router
     .route('/:trx_type')
     .post(payCtrl.ready);
 

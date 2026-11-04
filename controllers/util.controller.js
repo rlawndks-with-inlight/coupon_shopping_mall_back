@@ -175,9 +175,13 @@ const utilCtrl = {
                 if (!(Number(value) > 0)) {
                     return response(req, res, -100, "결제대기로는 되돌릴 수 없습니다. 결제가 안 된 주문이면 취소 처리해 주세요.", false);
                 }
-                const [[이전]] = await readPool.query(`SELECT trx_status, trx_method FROM transactions WHERE id=? ${scope.sql}`, [id, ...scope.params]);
+                const [[이전]] = await readPool.query(`SELECT trx_status, trx_method, is_cancel, is_cancel_trans FROM transactions WHERE id=? ${scope.sql}`, [id, ...scope.params]);
                 if (!이전) return lowLevelException(req, res);
                 이전상태 = Number(이전.trx_status);
+                // 취소 완료된 주문은 「전체」 목록에 남지만 진행 상태를 다시 매길 수 없다. 본사(50 이상)는 막지 않는다.
+                if ((Number(이전.is_cancel) === 1 || Number(이전.is_cancel_trans) === 1) && Number(decode_user?.level) < 50) {
+                    return response(req, res, -100, "취소 완료된 주문은 상태를 바꿀 수 없습니다.", false);
+                }
                 if (이전상태 < 0) {
                     return response(req, res, -100, "결제실패/미완료 주문은 상태를 바꿀 수 없습니다. 결제가 안 된 주문이라 손님이 다시 결제해야 합니다.", false);
                 }

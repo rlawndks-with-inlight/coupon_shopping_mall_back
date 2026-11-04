@@ -58,7 +58,7 @@ const transactionCtrl = {
             if (decode_dns?.seller_id > 0) {
                 sql += ` AND transactions.seller_id=? `;
                 params.push(decode_dns?.seller_id);
-            } else if (decode_user?.level == 10) {
+            } else if (decode_user?.level == 10 && type != 'user') {
                 sql += ` AND transactions.seller_id=? `;
                 params.push(decode_user?.id);
             }
@@ -70,13 +70,17 @@ const transactionCtrl = {
             // → 프론트가 무엇을 보내든 서버에서 고객 등급(level<10)은 항상 본인 것만 보도록 강제한다.
             //   판매자(10)·영업자(15)·관리자(40+)의 기존 동작은 그대로 둔다.
             const isCustomer = !(decode_user?.level >= 10);
-            if (type == 'user' || isCustomer) {
+            // 쇼핑몰 주문조회 화면(판매 중인 프레임은 type=user 를 보낸다, 2026-11-04).
+            // 관리자 계정으로 열어도 그 화면은 '내 주문' 이다 — 예전엔 등급 40 이 열면 몰 전체 주문과
+            // 실패 건까지 보여서, 포스페이 시험에서 '실패 건이 손님 내역에 보인다'고 읽혔다.
+            const 손님화면 = type == 'user' || isCustomer;
+            if (손님화면) {
                 sql += ` AND user_id=? `;
                 params.push(decode_user?.id ?? -1);
             }
-            // 고객이 볼 때만 '버려진 결제대기'(결제창만 열고 승인 안 난 카드/간편/휴대폰 결제)를 숨긴다.
-            // 관리자·판매자(level>=10)는 정산·확인을 위해 전부 본다.
-            if (isCustomer) {
+            // 손님 화면에서는 '버려진 결제대기'(결제창만 열고 승인 안 난 카드/간편/휴대폰 결제)를 숨긴다.
+            // 관리자 페이지(level>=10)는 정산·확인을 위해 전부 본다.
+            if (손님화면) {
                 sql += HIDE_ABANDONED_PENDING;
                 // 「결제실패/미완료」(-1, cleanup-abandoned 가 정리한 건)도 손님에게는 주문이 아니다
                 sql += ` AND ${table_name}.trx_status >= 0 `;
@@ -84,10 +88,13 @@ const transactionCtrl = {
             // kind — 관리자 「결제실패/미완료」·「결제대기」 나누기(가맹점 요청서 2026-09-11 ①).
             //   failed  : -1(정리된 건) + 아직 정리 전인 버려진 결제대기(카드/간편 창만 열고 승인 안 남)
             //   waiting : 결제대기 중 진짜 대기(무통장·상품권·수기·가상계좌 발급)
+            //   settled : 샵고 가맹점 「전체」 — 결제가 된 주문 + 취소된 주문. 실패·미완료는 뺀다(포스페이 요청 2026-11-04 ④⑤)
             // trx_status 필터와 같이 오면 이쪽이 우선한다.
             const { kind } = req.query;
             if (kind === 'failed') {
                 sql += ` AND (${table_name}.trx_status = -1 OR (${table_name}.trx_status=0 AND (${table_name}.appr_num IS NULL OR ${table_name}.appr_num='') AND (${table_name}.virtual_acct_num IS NULL OR ${table_name}.virtual_acct_num='') AND ${table_name}.trx_method IN (2,4,21,30,31,40,41))) `;
+            } else if (kind === 'settled') {
+                sql += ` AND (${table_name}.trx_status >= 1 OR ${table_name}.is_cancel_trans = 1) `;
             } else if (kind === 'waiting') {
                 sql += ` AND ${table_name}.trx_status = 0 ` + HIDE_ABANDONED_PENDING;
             } else if (trx_status) {
@@ -106,7 +113,13 @@ const transactionCtrl = {
                 // 취소된 원주문(is_cancel_trans=1)은 고객이 상태를 확인해야 하므로 남긴다.
                 sql += ` AND is_cancel=0 `;
             }
-            if (cancel_status) {
+            if (kind === 'settled' || type == 'user') {
+                // 취소된 원주문(is_cancel_trans=1)도 보여 준다. 취소 원장 행(is_cancel=1, 금액 음수)만 뺀다 —
+                // 둘 다 넣으면 같은 취소가 두 줄로 보인다. 결제완료·배송중 탭은 아래 기본 조건 그대로라
+                // 취소 건이 섞이지 않는다(발송 실수 방지).
+                // 판매 중단 프레임은 type 을 안 보내므로 이 분기를 타지 않는다.
+                sql += ` AND is_cancel=0 `;
+            } else if (cancel_status) {
                 if (cancel_status == 1) {
                     // ⚠ is_cancel_trans=0 이 빠지면 '취소요청' 탭에서 영영 안 사라진다.
                     // 취소를 실행해도 trx_status 는 1 그대로고 is_cancel 도 0 이라
@@ -141,6 +154,18 @@ const transactionCtrl = {
             //console.log(sql)
 
             let data = await getSelectQueryList(sql, columns, req.query, [], params);
+            // 「결제실패/미완료」 목록에는 결제창이 알려 준 사유를 붙인다(포스페이 요청 2026-11-04 ④). 실패해도 목록은 뜨게 한다.
+            if (kind === 'failed' && !손님화면 && data?.content?.length > 0) {
+                try {
+                    const [사유줄] = await readPool.query(
+                        `SELECT trans_id, note FROM transaction_status_logs WHERE kind='pay_fail' AND trans_id IN (?) ORDER BY id ASC`,
+                        [data.content.map((trx) => trx.id)]);
+                    const 사유 = Object.fromEntries(사유줄.map((r) => [r.trans_id, r.note]));
+                    for (const trx of data.content) trx.fail_reason = 사유[trx.id] ?? null;
+                } catch (e) {
+                    console.error('결제 실패 사유 조회 실패(무시하고 진행):', e?.sqlMessage || e?.message || e);
+                }
+            }
             let trx_ids = data?.content.map(trx => {
                 return trx?.is_cancel == 1 ? (trx?.transaction_id ?? 0) : trx?.id
             })
