@@ -314,10 +314,12 @@ export const markCanceled = async (trans_id, { column = 'is_cancel_trans', actor
     if (!tid) return false;
     let 이전상태 = null;
     try {
-        const [[이전]] = await readPool.query(`SELECT trx_status, brand_id, amount FROM transactions WHERE id=?`, [tid]);
+        const [[이전]] = await readPool.query(`SELECT trx_status, brand_id, amount, ${column} AS canceled FROM transactions WHERE id=?`, [tid]);
         이전상태 = 이전 ? Number(이전.trx_status) : null;
         await writePool.query(`UPDATE transactions SET ${column}=1 WHERE id=?`, [tid]);
-        await logTrx({ trans_id: tid, brand_id: 이전?.brand_id, kind: 'cancel', from_status: 이전상태, to_status: null,
+        // 이미 취소된 주문이면 이력을 또 쓰지 않는다 — 어드민 취소 약 1분 뒤 포스페이 통지가 돌아와 같은 취소가 두 줄이 됐다.
+        // 아래 원장·재고·포인트는 그대로 돈다(멱등이라 앞에서 실패한 몫만 메운다).
+        if (Number(이전?.canceled) !== 1) await logTrx({ trans_id: tid, brand_id: 이전?.brand_id, kind: 'cancel', from_status: 이전상태, to_status: null,
             actor: actor || { type: 'system' },
             // 이력의 일시는 반영 시각이다 — 포스페이가 먼저 취소한 건은 실제 시각을 내용에 같이 적는다
             note: (note || `전체 취소 (${Number(이전?.amount) || 0}원)`) + (시각꼴.test(cancelled_at ?? '') ? ` · 실제 취소 ${cancelled_at}` : '') });
