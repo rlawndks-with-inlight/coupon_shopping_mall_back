@@ -267,7 +267,18 @@ export const calcDeliveryAdjust = ({ 전체취소, 취소후남은상품가, 총
 //
 // 헥토가 만들던 것과 같은 모양으로 맞춘다 — 원거래를 복사하고 금액만 음수로.
 // 그래야 이미 쌓인 81만 건과 같은 화면에서 같은 방식으로 읽힌다.
-const 취소원장행쓰기 = async (tid) => {
+//
+// cxl_dt·cxl_tm 은 '실제 취소 시각'(한국 시각)이다. 대조·웹훅은 포스페이가 알려 준 시각을 넘기고,
+// 관리자가 바로 취소하면 지금 시각을 쓴다. created_at 은 우리가 반영한 시각이라 대조 주기만큼 늦을 수 있다.
+// 서버 시계는 UTC 라 new Date() 의 시·분을 그대로 쓰면 9시간 어긋난다.
+const 시각꼴 = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+const 한국시각 = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+// 집계·검색에서 쓰는 '실제 취소 시각' 식. 시각이 없는 옛 행은 반영 시각으로 대신한다.
+export const 실제취소시각식 = (table = '') => {
+    const 앞 = table ? `${table}.` : '';
+    return `COALESCE(TIMESTAMP(${앞}cxl_dt, ${앞}cxl_tm), ${앞}created_at)`;
+};
+const 취소원장행쓰기 = async (tid, cancelled_at = null) => {
     try {
         // 이미 있으면 만들지 않는다. 웹훅이 두 번 오거나 관리자가 두 번 눌러도
         // 취소가 두 건으로 보이면 안 된다. (transaction_id 에 인덱스가 있어 싸다)
@@ -277,13 +288,12 @@ const 취소원장행쓰기 = async (tid) => {
         const [rows] = await readPool.query(`SELECT * FROM transactions WHERE id=?`, [tid]);
         const 원거래 = rows[0];
         if (!원거래) return;
-        const 이제 = new Date();
-        const 두자리 = (n) => String(n).padStart(2, '0');
+        const [취소일, 취소시] = (시각꼴.test(cancelled_at ?? '') ? cancelled_at : 한국시각()).split(' ');
         const obj = {
             ...원거래,
             ori_trx_id: 원거래.trx_id,
-            cxl_dt: `${이제.getFullYear()}-${두자리(이제.getMonth() + 1)}-${두자리(이제.getDate())}`,
-            cxl_tm: `${두자리(이제.getHours())}:${두자리(이제.getMinutes())}:${두자리(이제.getSeconds())}`,
+            cxl_dt: 취소일,
+            cxl_tm: 취소시,
             is_cancel: 1,
             // 금액은 음수다. 이 부호가 '취소분'이라는 표시이자 상계 근거다.
             amount: -Math.abs(Number(원거래.amount) || 0),
@@ -299,7 +309,7 @@ const 취소원장행쓰기 = async (tid) => {
     }
 };
 
-export const markCanceled = async (trans_id, { column = 'is_cancel_trans', actor = null, note = null } = {}) => {
+export const markCanceled = async (trans_id, { column = 'is_cancel_trans', actor = null, note = null, cancelled_at = null } = {}) => {
     const tid = Number(trans_id) || 0;
     if (!tid) return false;
     let 이전상태 = null;
@@ -308,13 +318,15 @@ export const markCanceled = async (trans_id, { column = 'is_cancel_trans', actor
         이전상태 = 이전 ? Number(이전.trx_status) : null;
         await writePool.query(`UPDATE transactions SET ${column}=1 WHERE id=?`, [tid]);
         await logTrx({ trans_id: tid, brand_id: 이전?.brand_id, kind: 'cancel', from_status: 이전상태, to_status: null,
-            actor: actor || { type: 'system' }, note: note || `전체 취소 (${Number(이전?.amount) || 0}원)` });
+            actor: actor || { type: 'system' },
+            // 이력의 일시는 반영 시각이다 — 포스페이가 먼저 취소한 건은 실제 시각을 내용에 같이 적는다
+            note: (note || `전체 취소 (${Number(이전?.amount) || 0}원)`) + (시각꼴.test(cancelled_at ?? '') ? ` · 실제 취소 ${cancelled_at}` : '') });
     } catch (e) {
         logger.error(`[취소] 상태 표시 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
     }
     // 핀트리는 원주문 자체에 is_cancel=1 을 찍는다(column 을 바꿔 부른다).
     // 그 행이 곧 취소완료 행이므로 따로 만들면 같은 취소가 두 줄로 보인다.
-    if (column === 'is_cancel_trans') await 취소원장행쓰기(tid);
+    if (column === 'is_cancel_trans') await 취소원장행쓰기(tid, cancelled_at);
     await applyCancelEffects(tid);
     // 전액 취소된 주문의 후기는 손님 화면에서 내린다(설계 §4.6). 절대 던지지 않는다.
     await hideReviewsForCanceled(tid);

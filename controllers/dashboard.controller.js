@@ -5,6 +5,7 @@ import { checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelExc
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
+import { 실제취소시각식 } from "../utils.js/cancel.js";
 
 const table_name = 'transactions';
 
@@ -104,15 +105,16 @@ const dashboardCtrl = {
             if (s_dt) {
                 trx_counts_sql += ` AND ${table_name}.created_at >= ? `;
                 trx_counts_params.push(`${s_dt} 00:00:00`);
-                trx_cancel_counts_sql += ` AND ${table_name}.created_at >= ? `;
-                trx_cancel_counts_params.push(`${s_dt} 00:00:00`);
+                // 취소 건수는 실제 취소일 기준. 반영은 실제 취소보다 늦으므로 시작일은 created_at 으로도 걸어 인덱스를 태운다.
+                trx_cancel_counts_sql += ` AND ${table_name}.created_at >= ? AND ${실제취소시각식(table_name)} >= ? `;
+                trx_cancel_counts_params.push(`${s_dt} 00:00:00`, `${s_dt} 00:00:00`);
                 trx_amounts_sql += ` AND ${table_name}.created_at >= ? `
                 trx_amounts_params.push(`${s_dt} 00:00:00`);
             }
             if (e_dt) {
                 trx_counts_sql += ` AND ${table_name}.created_at <= ? `;
                 trx_counts_params.push(`${e_dt} 23:59:59`);
-                trx_cancel_counts_sql += ` AND ${table_name}.created_at <= ? `;
+                trx_cancel_counts_sql += ` AND ${실제취소시각식(table_name)} <= ? `;
                 trx_cancel_counts_params.push(`${e_dt} 23:59:59`);
                 trx_amounts_sql += ` AND ${table_name}.created_at <= ? `
                 trx_amounts_params.push(`${e_dt} 23:59:59`);

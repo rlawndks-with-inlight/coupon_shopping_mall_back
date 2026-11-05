@@ -3,6 +3,7 @@ import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
 import { logTrx, actorOf, listTrxLogs } from "../utils.js/trx-log.js";
+import { 실제취소시각식 } from "../utils.js/cancel.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
@@ -153,7 +154,42 @@ const transactionCtrl = {
 
             //console.log(sql)
 
-            let data = await getSelectQueryList(sql, columns, req.query, [], params);
+            // 「취소완료」 목록의 기간 검색은 실제 취소 시각으로 한다. 반영(created_at)은 실제 취소보다 늦으므로
+            // 시작일은 created_at 으로도 걸어 인덱스를 태운다. 종료일은 걸면 늦게 반영된 건이 빠진다.
+            const 취소완료목록 = cancel_status == 2 && !손님화면;
+            let 조회조건 = req.query;
+            if (취소완료목록) {
+                const { s_dt: 시작일, e_dt: 종료일 } = req.query;
+                if (시작일) {
+                    sql += ` AND ${table_name}.created_at >= ? AND ${실제취소시각식(table_name)} >= ? `;
+                    params.push(`${시작일} 00:00:00`, `${시작일} 00:00:00`);
+                }
+                if (종료일) {
+                    sql += ` AND ${실제취소시각식(table_name)} <= ? `;
+                    params.push(`${종료일} 23:59:59`);
+                }
+                조회조건 = { ...req.query, s_dt: undefined, e_dt: undefined };
+            }
+            let data = await getSelectQueryList(sql, columns, 조회조건, [], params);
+            // 관리자 목록·엑셀의 「취소시간」. 시각은 취소 원장 행에 있어서 원주문 행은 원장에서 찾아 붙인다. 실패해도 목록은 뜨게 한다.
+            if (!손님화면 && data?.content?.length > 0) {
+                try {
+                    const 취소된원주문 = data.content.filter((trx) => Number(trx.is_cancel_trans) === 1 && Number(trx.is_cancel) !== 1).map((trx) => trx.id);
+                    const 취소된원장 = data.content.filter((trx) => Number(trx.is_cancel) === 1).map((trx) => trx.id);
+                    if (취소된원주문.length + 취소된원장.length > 0) {
+                        const [원장] = await readPool.query(
+                            `SELECT id, transaction_id, ${실제취소시각식()} AS 취소시각 FROM transactions WHERE is_cancel=1 AND (transaction_id IN (?) OR id IN (?))`,
+                            [취소된원주문.length ? 취소된원주문 : [0], 취소된원장.length ? 취소된원장 : [0]]);
+                        const 원주문별 = Object.fromEntries(원장.map((r) => [r.transaction_id, r.취소시각]));
+                        const 원장별 = Object.fromEntries(원장.map((r) => [r.id, r.취소시각]));
+                        for (const trx of data.content) {
+                            trx.cancelled_at = (Number(trx.is_cancel) === 1 ? 원장별[trx.id] : 원주문별[trx.id]) ?? null;
+                        }
+                    }
+                } catch (e) {
+                    console.error('취소 시각 조회 실패(무시하고 진행):', e?.sqlMessage || e?.message || e);
+                }
+            }
             // 「결제실패/미완료」 목록에는 결제창이 알려 준 사유를 붙인다(포스페이 요청 2026-11-04 ④). 실패해도 목록은 뜨게 한다.
             if (kind === 'failed' && !손님화면 && data?.content?.length > 0) {
                 try {

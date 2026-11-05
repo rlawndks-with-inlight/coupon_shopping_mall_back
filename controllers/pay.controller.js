@@ -1639,10 +1639,11 @@ const payCtrl = {
         // 취소 통지. 부분취소도 같은 모양(is_cancel=1, amount 음수)으로 오므로 금액을 봐야 한다 —
         // 예전엔 무조건 markCanceled(전체취소) 라, 우리가 부분취소한 뒤 되돌아온 웹훅이 주문 전체를 취소시켰을 것이다.
         // 서명키가 없는 동안엔 위조가 가능하므로, 포스페이 취소 레코드(cxl_seq≥1)로 실제 취소 합계를 확인한 뒤에만 반영한다.
-        let cancelledTotal = null;
+        let cancelledTotal = null, cancelledAt = null;
         try {
           const r = await forspayGetCancelRecords({ app_key: creds?.app_key, ord_num: ord });
           cancelledTotal = r.cancelledTotal;
+          cancelledAt = r.cancelledAt;
         } catch (e) {
           logger.error(`[forspay webhook] 취소 레코드 조회 실패 — 반영 보류 ord=${ord}: ${errText(e)}`);
           return res.status(200).send({ ok: true }); // 대사 배치가 다시 본다
@@ -1650,7 +1651,7 @@ const payCtrl = {
         const orderAmount = Math.abs(Number(trx.amount) || 0);
         if (cancelledTotal >= orderAmount && orderAmount > 0) {
           // 전액 취소 확인 → 관리자 취소와 똑같이 처리(부수처리는 멱등이라 겹쳐도 두 번 움직이지 않는다)
-          await markCanceled(trx.id, { actor: { type: 'system' }, note: '포스페이 취소 통지(전액)' });
+          await markCanceled(trx.id, { actor: { type: 'system' }, note: '포스페이 취소 통지(전액)', cancelled_at: cancelledAt });
         } else if (cancelledTotal > 0) {
           // 부분취소: 우리 쪽에서 실행한 것이면 이미 cancelLines 가 반영했다(멱등). 상위(OMS)에서 한 부분취소는
           // 어느 줄인지 알 수 없으므로 자동 반영하지 않고 기록만 남긴다 — 사람이 확인해 처리한다.

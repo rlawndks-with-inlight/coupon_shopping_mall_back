@@ -4,6 +4,7 @@ import { checkLevel, checkDns, response, createHashedPassword } from "../utils.j
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
+import { 실제취소시각식 } from "../utils.js/cancel.js";
 import { sendMail } from "../utils.js/mail.js";
 import { seedDefaultBoards } from "../utils.js/seed-boards.js";
 import { encForSave, decRow, decRows } from "../utils.js/pii.js";
@@ -708,10 +709,14 @@ const merchantApplicationCtrl = {
             ))[0];
             const status = {};
             statusRows.forEach((r) => { status[r.trx_status] = { cnt: Number(r.cnt) || 0, amt: Number(r.amt) || 0 }; });
-            // 취소 건수
+            // 취소 건수 — 실제 취소일 기준. 반영은 실제 취소보다 늦으므로 시작일은 created_at 으로도 걸어 인덱스를 태운다.
+            let cancelWhere = '';
+            const cancelParams = [];
+            if (s_dt) { cancelWhere += ` AND created_at >= ? AND ${실제취소시각식()} >= ? `; cancelParams.push(`${s_dt} 00:00:00`, `${s_dt} 00:00:00`); }
+            if (e_dt) { cancelWhere += ` AND ${실제취소시각식()} <= ? `; cancelParams.push(`${e_dt} 23:59:59`); }
             const cancelRow = (await readPool.query(
-                `SELECT COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND is_cancel=1 AND is_delete=0${dateWhere}`,
-                [brand.id, ...dateParams]
+                `SELECT COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND is_cancel=1 AND is_delete=0${cancelWhere}`,
+                [brand.id, ...cancelParams]
             ))[0][0];
             // 총 매출/주문(결제완료 이후, 미취소)
             const totalRow = (await readPool.query(
