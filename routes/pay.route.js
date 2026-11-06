@@ -36,6 +36,9 @@ router
     .get(payCtrl.forspayConfirm)
     .post(payCtrl.forspayConfirm);
 router
+    .route('/forspay/verify')
+    .post(payCtrl.forspayVerify);
+router
     .route('/forspay/fail-reason')
     .post(payCtrl.forspayFailReason);
 router

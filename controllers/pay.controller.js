@@ -128,6 +128,46 @@ const 결제창사유저장 = async (ord, code, message) => {
   return 저장문구 ?? '';
 };
 
+// 결제창이 끝난 뒤 손님 화면에 무엇을 보여 줄지 정한다. 모바일 복귀(forspayReturn)와 PC 팝업 확인(forspayVerify)이 함께 쓴다.
+// 예전엔 PC 는 팝업 메시지만 보고 성공·실패를 띄워서, 승인된 결제가 「실패」로(→ 다시 결제), 승인 안 된 결제가 「성공」으로 보일 수 있었다(2026-11-06).
+// 결제창이 준 코드(복귀코드원본)는 손님 브라우저를 거친 값이라 **승인 판단에 쓰지 않는다** — 실패·취소 구분과 사유 표시에만.
+// 반환 result_cd: '0000' 성공 · '0001' 확인 중 · 결제창 실패 코드 · 'CANCEL' 결제 안 됨 · '9999' 그 밖의 실패
+const 포스페이결과판정 = async (trx, { 복귀코드원본 = '', 복귀문구 = '' } = {}) => {
+  const ord = String(trx?.ord_num ?? '');
+  const creds = await getForspayCreds(trx.brand_id);
+  // 포스페이는 결제가 안 된(손님이 결제창에서 취소·뒤로가기한) 주문을 조회하면 409 not_found 를 준다
+  // (2026-10-22 운영 확인: 미결제 세션 전부 409 validation.not_found_obj).
+  // 그건 '모름'이 아니라 '결제 안 됨'이다 — 확인 중(0001)으로 보내면 취소한 손님이 18초 기다린 뒤
+  // "결제 확인이 늦어지고 있습니다"를 본다(10/22 포스몰 실제 2건). 승인 직후 반영이 늦을 수 있어 1.5초 뒤 한 번만 다시 묻는다.
+  // 통신 오류·시간초과만 '모름'(0001)으로 둔다.
+  let txn = {}; let 조회실패 = false; let 없음 = false;
+  const 조회 = async () => {
+    try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); 조회실패 = false; 없음 = false; }
+    catch (e) { txn = {}; const st = e?.response?.status; 없음 = st === 409 || st === 404; 조회실패 = !없음; }
+  };
+  await 조회();
+  if (없음) { await new Promise((r) => setTimeout(r, 1500)); await 조회(); }
+  const 확정 = txn?.status === 'approved' ? await settleForspayTransaction(trx.id, txn) : false;
+  if (확정 || Number(trx.trx_status) >= 5) return { result_cd: '0000', txn };
+  // 결제창 결과 코드 — 승인 판단 뒤에만 본다. 문구는 주소로 넘기지 않는다(결과 화면이 서버에서 받아 간다).
+  const 복귀코드 = 결제창코드꼴.test(String(복귀코드원본 ?? '')) ? String(복귀코드원본) : '';
+  const 복귀실패 = !!복귀코드 && !['0000', '0001'].includes(복귀코드);
+  if (복귀실패) {
+    try { await 결제창사유저장(ord, 복귀코드, 복귀문구); } catch (e) { logger.error(errText(e)); }
+  }
+  // 거래조회가 늦거나(시간초과) 아직 승인 전이면 '실패'라고 단정하지 않는다 — 결과 화면이 잠시 더 확인한다(0001).
+  // 예전엔 바로 '결제에 실패하였습니다'를 보여 줘서, 실제로는 결제된 손님이 다시 결제(이중결제)할 수 있었다.
+  // 결제창은 성공(0000)이라는데 거래가 아직 안 보이는 경우도 '취소'가 아니라 확인 중이다.
+  if (조회실패 || (!없음 && !txn?.status) || (없음 && 복귀코드 === '0000') || ['ready', 'pending', 'processing', 'waiting'].includes(String(txn.status))) {
+    return { result_cd: '0001', txn };
+  }
+  // 거래가 없고 결제창이 실패 코드를 줬다 → 그 코드 그대로. 예전엔 전부 CANCEL 이라 잔액부족 같은 실패도 '취소'로 보였다.
+  if (복귀실패) return { result_cd: 복귀코드, txn };
+  // 거래가 아예 없다 = 손님이 결제창을 닫거나 취소했다 → 결과 화면이 '결제가 취소되었습니다'로 보여 준다.
+  if (없음) return { result_cd: 'CANCEL', txn };
+  return { result_cd: '9999', txn };
+};
+
 const 결제실패정리 = async (trans_id) => {
   try {
     await applyCancelEffects(trans_id);
@@ -1562,52 +1602,12 @@ const payCtrl = {
         logger.error(`[forspay return] 주문 대조 실패 — ord=${ord} trans=${transId} 찾은주문=${trx?.id ?? '-'}`);
         return res.redirect(302, `${resultBase}?result_cd=9999`);
       }
-      const creds = await getForspayCreds(trx.brand_id);
-      // 포스페이는 결제가 안 된(손님이 결제창에서 취소·뒤로가기한) 주문을 조회하면 409 not_found 를 준다
-      // (2026-10-22 운영 확인: 미결제 세션 전부 409 validation.not_found_obj).
-      // 그건 '모름'이 아니라 '결제 안 됨'이다 — 확인 중(0001)으로 보내면 취소한 손님이 18초 기다린 뒤
-      // "결제 확인이 늦어지고 있습니다"를 본다(10/22 포스몰 실제 2건). 승인 직후 반영이 늦을 수 있어 1.5초 뒤 한 번만 다시 묻는다.
-      // 통신 오류·시간초과만 '모름'(0001)으로 둔다.
-      let txn = {}; let 조회실패 = false; let 없음 = false;
-      const 조회 = async () => {
-        try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); 조회실패 = false; 없음 = false; }
-        catch (e) { txn = {}; const st = e?.response?.status; 없음 = st === 409 || st === 404; 조회실패 = !없음; }
-      };
-      await 조회();
-      if (없음) { await new Promise((r) => setTimeout(r, 1500)); await 조회(); }
-      const 확정 = txn?.status === 'approved' ? await settleForspayTransaction(trx.id, txn) : false;
-      if (확정 || Number(trx.trx_status) >= 5) {
-        const q = new URLSearchParams({
-          result_cd: '0000',
-          ord_num: (ord || '').toString(),
-          buyer_name: (txn.buyer_name || '').toString(),
-          trx_dttm: (txn.trx_dttm || '').toString(),
-        }).toString();
-        return res.redirect(302, `${resultBase}?${q}`);
-      }
-      // 복귀 주소에 결제창 결과(result_cd·result_msg)가 실려 온다(2026-10-22 운영 로그). 손님 브라우저를 거친 값이라
-      // 위에서 보듯 승인 판단에는 쓰지 않고, 실패·취소 구분과 사유 표시에만 쓴다(포스페이 요청 2026-11-04 ④).
-      // 문구는 주소로 넘기지 않는다 — 결과 화면이 서버에서 받아 간다.
-      const 복귀코드 = 결제창코드꼴.test(String(data.result_cd ?? '')) ? String(data.result_cd) : '';
-      const 복귀실패 = !!복귀코드 && !['0000', '0001'].includes(복귀코드);
-      if (복귀실패) {
-        try { await 결제창사유저장(ord, 복귀코드, data.result_msg); } catch (e) { logger.error(errText(e)); }
-      }
-      // 거래조회가 늦거나(시간초과) 아직 승인 전이면 '실패'라고 단정하지 않는다 — 결과 화면이 잠시 더 확인한다(0001).
-      // 예전엔 바로 '결제에 실패하였습니다'를 보여 줘서, 실제로는 결제된 손님이 다시 결제(이중결제)할 수 있었다.
-      // 결제창은 성공(0000)이라는데 거래가 아직 안 보이는 경우도 '취소'가 아니라 확인 중이다.
-      if (조회실패 || (!없음 && !txn?.status) || (없음 && 복귀코드 === '0000') || ['ready', 'pending', 'processing', 'waiting'].includes(String(txn.status))) {
-        return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: '0001', ord_num: ord }).toString()}`);
-      }
-      // 거래가 없고 결제창이 실패 코드를 줬다 → 그 코드 그대로. 예전엔 전부 CANCEL 이라 잔액부족 같은 실패도 '취소'로 보였다.
-      if (복귀실패) {
-        return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: 복귀코드, ord_num: ord }).toString()}`);
-      }
-      // 거래가 아예 없다 = 손님이 결제창을 닫거나 취소했다 → 결과 화면이 '결제가 취소되었습니다'로 보여 준다.
-      if (없음) {
-        return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: 'CANCEL', ord_num: ord }).toString()}`);
-      }
-      return res.redirect(302, `${resultBase}?${new URLSearchParams({ result_cd: '9999', ord_num: ord }).toString()}`);
+      // 판정은 PC 팝업(forspayVerify)과 같은 함수 하나로 한다 — 두 방식이 같은 기준으로 결과를 보여 주게(2026-11-06).
+      const { result_cd, txn } = await 포스페이결과판정(trx, { 복귀코드원본: data.result_cd, 복귀문구: data.result_msg });
+      const 주소값 = result_cd === '0000'
+        ? { result_cd, ord_num: ord, buyer_name: (txn.buyer_name || '').toString(), trx_dttm: (txn.trx_dttm || '').toString() }
+        : { result_cd, ord_num: ord };
+      return res.redirect(302, `${resultBase}?${new URLSearchParams(주소값).toString()}`);
     } catch (err) {
       console.log(err);
       logger.error(errText(err));
@@ -1645,8 +1645,10 @@ const payCtrl = {
           cancelledTotal = r.cancelledTotal;
           cancelledAt = r.cancelledAt;
         } catch (e) {
-          logger.error(`[forspay webhook] 취소 레코드 조회 실패 — 반영 보류 ord=${ord}: ${errText(e)}`);
-          return res.status(200).send({ ok: true }); // 대사 배치가 다시 본다
+          // 조회 실패(한도 초과 500·통신 오류)는 '받았다'고 답하지 않는다 — 포스페이가 몇 분에 걸쳐 다시 보낸다.
+          // 예전엔 200 이라 재전송이 없어 3시간마다 도는 대조까지 밀렸다(2026-11-06).
+          logger.error(`[forspay webhook] 취소 레코드 조회 실패 — 재전송 요청(503) ord=${ord}: ${errText(e)}`);
+          return res.status(503).send({ ok: false });
         }
         const orderAmount = Math.abs(Number(trx.amount) || 0);
         if (cancelledTotal >= orderAmount && orderAmount > 0) {
@@ -1664,16 +1666,25 @@ const payCtrl = {
       // 승인: **거래조회 결과만** 믿는다. 예전엔 `|| body.result_cd === '0000'` 이 있어서
       // 위조 요청 { ord_num, result_cd:'0000' } 한 번으로 돈 없이 결제완료가 됐다(2026-10-19 점검).
       // 웹훅 본문에서는 카드번호(거래조회엔 없음)만 보강용으로 받는다.
+      // 조회 실패(한도 초과 500·통신 오류·시간초과)면 503 으로 답해 포스페이가 다시 보내게 한다(2026-11-06).
+      // 예전엔 실패해도 200 이라 재전송이 없어, 결제완료가 3시간마다 도는 대조까지 밀렸다(그 사이 1시간이면 미완료로 내려간다).
+      // 거래 없음(409/404)은 다시 물어도 같으니 200. 응답 기한(약 15초) 안에 끝나게 조회는 8초로 끊는다.
       let txn = {};
-      try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0 }); } catch (e) { txn = {}; }
+      try { txn = await forspayGetTransaction({ app_key: creds?.app_key, ord_num: ord, cxl_seq: 0, timeout: 8000 }); } catch (e) {
+        const st = e?.response?.status;
+        if (st === 409 || st === 404) return res.status(200).send({ ok: true });
+        logger.error(`[forspay webhook] 승인 조회 실패 — 재전송 요청(503) ord=${ord}: ${st ?? e?.code ?? ''}`);
+        return res.status(503).send({ ok: false });
+      }
       if (txn?.status === 'approved') {
         await settleForspayTransaction(trx.id, txn, { card_num: body.card_num });
       }
       return res.status(200).send({ ok: true });
     } catch (err) {
+      // DB 오류 등 — 확정·부수처리는 멱등이라 다시 받아도 두 번 움직이지 않는다. 재전송을 받는다.
       console.log(err);
       logger.error(errText(err));
-      return res.status(200).send({ ok: false });
+      return res.status(503).send({ ok: false });
     }
   },
   forspayConfirm: async (req, res, next) => {
@@ -1710,6 +1721,28 @@ const payCtrl = {
     } catch (err) {
       logger.error(errText(err));
       return response(req, res, 100, 'success', { settled: false, result_cd: '9999' });
+    }
+  },
+  forspayVerify: async (req, res, next) => {
+    // PC 팝업 결제의 결과 판정. 팝업은 결과를 주문서 화면에 메시지로 보내 우리 서버(forspayReturn)를 거치지 않는다 —
+    // 결과 화면이 이 API 를 불러 모바일과 **같은 판정(포스페이결과판정)**으로 보여 줄 코드를 받는다(2026-11-06).
+    // 팝업이 준 코드는 실패·취소 구분에만 쓰고, 승인은 거래조회로만 판단한다. 비회원도 부르므로 로그인을 요구하지 않는다.
+    // 항상 성공으로 답하고 판정은 data.result_cd 로 — 판정 자체가 실패하면 '모름'(0001)이다.
+    try {
+      const ord = (req.body?.ord_num ?? '').toString().slice(0, 100);
+      const 결과 = (result_cd, extra = {}) => response(req, res, 100, 'success', { result_cd, ...extra });
+      if (!ord) return 결과('9999');
+      const trx = (await readPool.query(
+        `SELECT * FROM transactions WHERE ord_num=? AND IFNULL(is_cancel,0)=0 ORDER BY id DESC LIMIT 1`, [ord]))[0][0];
+      if (!trx || Number(trx.trx_method) !== 41) return 결과('9999');
+      // 이미 결제완료 이후 단계(출고·배송·취소요청) — 다시 물을 것 없이 성공
+      if (Number(trx.trx_status) >= 5 || Number(trx.trx_status) === 1) return 결과('0000');
+      if (Number(trx.is_cancel_trans) === 1) return 결과('9999');
+      const { result_cd, txn } = await 포스페이결과판정(trx, { 복귀코드원본: req.body?.code, 복귀문구: req.body?.message });
+      return 결과(result_cd, result_cd === '0000' ? { trx_dttm: (txn?.trx_dttm || '').toString() } : {});
+    } catch (err) {
+      logger.error(errText(err));
+      return response(req, res, 100, 'success', { result_cd: '0001' });
     }
   },
   forspayFailReason: async (req, res, next) => {
