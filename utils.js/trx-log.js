@@ -62,13 +62,30 @@ export const listTrxLogs = async (trans_id) => {
     const tid = Number(trans_id) || 0;
     if (!tid) return [];
     try {
+        // SELECT * — 메모 수정 시각(edited_at, 2026-11-06 마이그레이션)이 아직 없는 DB 에서도 그대로 돈다.
         const [rows] = await readPool.query(
-            `SELECT id, kind, from_status, to_status, actor_type, actor_id, actor_name, note, created_at
-               FROM transaction_status_logs WHERE trans_id=? ORDER BY id ASC`, [tid]);
+            `SELECT * FROM transaction_status_logs WHERE trans_id=? ORDER BY id ASC`, [tid]);
         return rows.map((r) => ({ ...r, from_text: statusText(r.from_status), to_text: statusText(r.to_status) }));
     } catch (e) {
         if (e?.code === 'ER_NO_SUCH_TABLE') return [];
         logger.error(`[trx-log] 조회 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
         return [];
     }
+};
+
+// ── 취소 사유 ─────────────────────────────────────────────────────────────
+// 취소 이력(kind=cancel)의 note 는 `<금액·수량 설명>[ / 사유: <사유>][ / 출고 후 취소(회수 확인)]` 꼴이다(cancel.js).
+// 가맹점이 사유만 고칠 수 있게(2026-11-06 요청) 사유 부분만 떼고 붙인다 — 금액·수량 설명은 절대 바꾸지 않는다.
+const 사유머리 = ' / 사유: ';
+const 출고후꼬리 = ' / 출고 후 취소(회수 확인)';
+export const 취소사유나누기 = (note) => {
+    const s = String(note ?? '');
+    const 뒤 = s.endsWith(출고후꼬리) ? 출고후꼬리 : '';
+    const 몸 = 뒤 ? s.slice(0, -뒤.length) : s;
+    const i = 몸.indexOf(사유머리);
+    return i >= 0 ? { 앞: 몸.slice(0, i), 사유: 몸.slice(i + 사유머리.length), 뒤 } : { 앞: 몸, 사유: '', 뒤 };
+};
+export const 취소사유바꾸기 = (note, 새사유) => {
+    const { 앞, 뒤 } = 취소사유나누기(note);
+    return `${앞}${새사유 ? `${사유머리}${새사유}` : ''}${뒤}`;
 };

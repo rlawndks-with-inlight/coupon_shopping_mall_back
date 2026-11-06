@@ -11,6 +11,9 @@ router
     .route('/unipass')
     .post(utilCtrl.unipass);
 router
+    .route('/transactions/trx_status/bulk')
+    .post(utilCtrl.changeTrxStatusBulk);
+router
     .route('/:table/sort')
     .post(utilCtrl.sort);
 router

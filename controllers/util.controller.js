@@ -86,6 +86,32 @@ const invalidateStatusCache = async (table, id, brandId) => {
     }
 };
 
+// 주문 상태를 사람이 바꿀 때의 규칙 — 한 건(changeStatus)·일괄(changeTrxStatusBulk)이 같이 쓴다(2026-11-06).
+// 바꿀 수 있으면 { 이전상태 }, 아니면 { 거부: '사유' }. 없는 주문(다른 몰 포함)은 { 없음: true }.
+const 주문상태검사 = async ({ id, value, decode_user, scope }) => {
+    if (!(Number(value) > 0)) return { 거부: "결제대기로는 되돌릴 수 없습니다. 결제가 안 된 주문이면 취소 처리해 주세요." };
+    const [[이전]] = await readPool.query(`SELECT trx_status, trx_method, is_cancel, is_cancel_trans FROM transactions WHERE id=? ${scope.sql}`, [id, ...scope.params]);
+    if (!이전) return { 없음: true };
+    const 이전상태 = Number(이전.trx_status);
+    // 취소 완료된 주문은 「전체」 목록에 남지만 진행 상태를 다시 매길 수 없다. 본사(50 이상)는 막지 않는다.
+    if ((Number(이전.is_cancel) === 1 || Number(이전.is_cancel_trans) === 1) && Number(decode_user?.level) < 50) {
+        return { 거부: "취소 완료된 주문은 상태를 바꿀 수 없습니다.", 이전상태 };
+    }
+    if (이전상태 < 0) {
+        return { 거부: "결제실패/미완료 주문은 상태를 바꿀 수 없습니다. 결제가 안 된 주문이라 손님이 다시 결제해야 합니다.", 이전상태 };
+    }
+    // 포스페이(41) 결제대기 → 다른 상태로도 사람이 못 바꾼다. 승인은 포스페이 거래조회로만 확정한다
+    // (웹훅·결과페이지 confirm·대사 스크립트). 가맹점이 0 → 출고로 바꾸면 돈 안 받은 주문이 배송된다.
+    // 본사(50 이상)는 막지 않는다 — 수동 정리가 필요할 때가 있다. (2026-10-19 오픈 전 점검)
+    if (이전상태 === 0 && Number(이전.trx_method) === 41 && Number(decode_user?.level) < 50) {
+        return { 거부: "결제 확인 전(결제대기) 주문입니다. 결제가 확인되면 자동으로 결제완료로 바뀝니다.", 이전상태 };
+    }
+    return { 이전상태 };
+};
+// 일괄로 고를 수 있는 상태 — 취소요청(1)은 손님·취소 흐름의 상태라 일괄로는 안 연다(한 건씩은 그대로 된다).
+const 일괄상태 = [5, 10, 15, 20, 25];
+const 일괄최대 = 100;
+
 const utilCtrl = {
     sort: async (req, res, next) => {
         try {
@@ -172,25 +198,11 @@ const utilCtrl = {
             //   · 바꾸기 전 값을 읽어 이력에 남긴다(누가 언제 무엇을 → 무엇으로).
             let 이전상태 = null;
             if (table === 'transactions' && column_name === 'trx_status') {
-                if (!(Number(value) > 0)) {
-                    return response(req, res, -100, "결제대기로는 되돌릴 수 없습니다. 결제가 안 된 주문이면 취소 처리해 주세요.", false);
-                }
-                const [[이전]] = await readPool.query(`SELECT trx_status, trx_method, is_cancel, is_cancel_trans FROM transactions WHERE id=? ${scope.sql}`, [id, ...scope.params]);
-                if (!이전) return lowLevelException(req, res);
-                이전상태 = Number(이전.trx_status);
-                // 취소 완료된 주문은 「전체」 목록에 남지만 진행 상태를 다시 매길 수 없다. 본사(50 이상)는 막지 않는다.
-                if ((Number(이전.is_cancel) === 1 || Number(이전.is_cancel_trans) === 1) && Number(decode_user?.level) < 50) {
-                    return response(req, res, -100, "취소 완료된 주문은 상태를 바꿀 수 없습니다.", false);
-                }
-                if (이전상태 < 0) {
-                    return response(req, res, -100, "결제실패/미완료 주문은 상태를 바꿀 수 없습니다. 결제가 안 된 주문이라 손님이 다시 결제해야 합니다.", false);
-                }
-                // 포스페이(41) 결제대기 → 다른 상태로도 사람이 못 바꾼다. 승인은 포스페이 거래조회로만 확정한다
-                // (웹훅·결과페이지 confirm·대사 스크립트). 가맹점이 0 → 출고로 바꾸면 돈 안 받은 주문이 배송된다.
-                // 본사(50 이상)는 막지 않는다 — 수동 정리가 필요할 때가 있다. (2026-10-19 오픈 전 점검)
-                if (이전상태 === 0 && Number(이전.trx_method) === 41 && Number(decode_user?.level) < 50) {
-                    return response(req, res, -100, "결제 확인 전(결제대기) 주문입니다. 결제가 확인되면 자동으로 결제완료로 바뀝니다.", false);
-                }
+                // 규칙은 주문상태검사 한 곳에 — 일괄 변경도 같은 규칙을 쓴다
+                const 검사 = await 주문상태검사({ id, value, decode_user, scope });
+                if (검사.없음) return lowLevelException(req, res);
+                if (검사.거부) return response(req, res, -100, 검사.거부, false);
+                이전상태 = 검사.이전상태;
             }
             // 셀러상품: 셀러 본인(레벨 15 미만)은 자기 행만, 판매가는 본사 공급가(agent_price) 밑으로 못 내린다.
             // 화면(products/list.js changeSellerProducts)만 막고 있었다 — 같은 규칙을 서버에서도 본다.
@@ -233,6 +245,43 @@ const utilCtrl = {
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
+        }
+    },
+    // 주문 상태 일괄 변경(가맹점 요청 2026-11-06 — 체크한 주문을 고른 상태로 한꺼번에).
+    // 주문마다 한 건 변경과 같은 규칙(주문상태검사)을 보고, 지금 상태가 읽은 값 그대로일 때만 바꾼다(그 사이 바뀐 건은 건너뜀).
+    // 이력은 주문마다 한 줄. 결과로 바꾼 건수와 건너뛴 주문·사유를 돌려준다.
+    changeTrxStatusBulk: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 10);
+            const decode_dns = checkDns(req.cookies.dns);
+            if (!decode_user) return lowLevelException(req, res);
+            const value = Number(req.body?.value);
+            const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+            if (!일괄상태.includes(value)) return response(req, res, -100, "일괄로 바꿀 수 없는 상태입니다.", false);
+            if (!ids.length) return response(req, res, -100, "바꿀 주문을 선택해 주세요.", false);
+            if (ids.length > 일괄최대) return response(req, res, -100, "한 번에 100건까지 바꿀 수 있습니다.", false); // 일괄최대
+            const scope = buildTenantScope('transactions', decode_dns?.id ?? 0);
+            let 바꿈 = 0;
+            const 건너뜀 = [];
+            for (const id of ids) {
+                const 검사 = await 주문상태검사({ id, value, decode_user, scope });
+                if (검사.없음) { 건너뜀.push({ id, 사유: '주문을 찾을 수 없습니다.' }); continue; }
+                if (검사.거부) { 건너뜀.push({ id, 사유: 검사.거부 }); continue; }
+                if (검사.이전상태 === value) { 건너뜀.push({ id, 사유: '이미 그 상태입니다.' }); continue; }
+                // 취소요청은 손님이 취소를 원한 주문 — 일괄로 배송을 진행시키지 않는다. 한 건씩 확인해서 바꾼다.
+                if (검사.이전상태 === 1) { 건너뜀.push({ id, 사유: '취소요청 주문은 한 건씩 확인해 바꿔 주세요.' }); continue; }
+                const [r] = await writePool.query(
+                    `UPDATE transactions SET trx_status=? WHERE id=? AND trx_status=? AND IFNULL(is_cancel,0)=0 ${Number(decode_user?.level) >= 50 ? '' : 'AND IFNULL(is_cancel_trans,0)=0'} ${scope.sql}`,
+                    [value, id, 검사.이전상태, ...scope.params]);
+                if (!(r?.affectedRows > 0)) { 건너뜀.push({ id, 사유: '그 사이 상태가 바뀌었습니다.' }); continue; }
+                바꿈++;
+                await logTrx({ trans_id: id, brand_id: decode_dns?.id, kind: 'status', from_status: 검사.이전상태, to_status: value,
+                    actor: actorOf(decode_user, 'admin'), note: `${statusText(검사.이전상태)} → ${statusText(value)} (일괄)` });
+            }
+            return response(req, res, 100, "success", { changed: 바꿈, skipped: 건너뜀 });
+        } catch (err) {
+            logger.error(JSON.stringify(err?.response?.data || err?.message || err))
+            return response(req, res, -200, "서버 에러 발생", false)
         }
     },
     unipass: async (req, res, next) => {

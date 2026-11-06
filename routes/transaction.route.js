@@ -20,6 +20,14 @@ router
 router
     .route('/:id/logs')
     .get(transactionCtrl.logs)
+    .post(transactionCtrl.addLogMemo)
+router
+    .route('/:id/logs/:log_id')
+    .put(transactionCtrl.updateLogMemo)
+    .delete(transactionCtrl.deleteLogMemo)
+router
+    .route('/:id/logs/:log_id/reason')
+    .put(transactionCtrl.updateCancelReason)
 router
     .route('/:id/invoice')
     .post(transactionCtrl.changeInvoice)

@@ -2,7 +2,7 @@
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
-import { logTrx, actorOf, listTrxLogs } from "../utils.js/trx-log.js";
+import { logTrx, actorOf, listTrxLogs, 취소사유나누기, 취소사유바꾸기 } from "../utils.js/trx-log.js";
 import { 실제취소시각식 } from "../utils.js/cancel.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
@@ -18,6 +18,23 @@ const table_name = 'transactions';
 // 정당한 입금/확인 대기라 반드시 남긴다 — 그래서 카드/간편/휴대폰 창 결제수단만 콕 집어 제외한다.
 // (승인번호·가상계좌가 있으면 이미 진행된 것이라 예외로 남긴다. 관리자 목록에는 적용하지 않는다.)
 const HIDE_ABANDONED_PENDING = ` AND NOT (${table_name}.trx_status=0 AND (${table_name}.appr_num IS NULL OR ${table_name}.appr_num='') AND (${table_name}.virtual_acct_num IS NULL OR ${table_name}.virtual_acct_num='') AND ${table_name}.trx_method IN (2,4,21,30,31,40,41)) `;
+
+// 이력 메모 내용 — 앞뒤 공백·제어문자를 걷고 500자까지(note 칸 크기).
+const 메모정리 = (v) => (typeof v === 'string' ? v : '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, 500);
+// 고칠 수 있는 메모인지 — 자기 몰 주문의 메모(kind=memo)이고, 쓴 사람 본인이거나 본사(50 이상). 아니면 응답을 보내고 null.
+const 고칠메모 = async (req, res, decode_user) => {
+    const { id, log_id } = req.params;
+    if (!decode_user || decode_user?.level < 40) { lowLevelException(req, res); return null; }
+    const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+    if (!target) { lowLevelException(req, res); return null; }
+    const [[메모]] = await readPool.query(
+        `SELECT id, actor_id FROM transaction_status_logs WHERE id=? AND trans_id=? AND kind='memo'`, [log_id, id]);
+    if (!메모) { response(req, res, -100, "고칠 수 있는 메모가 아닙니다.", false); return null; }
+    if (Number(메모.actor_id) !== Number(decode_user.id) && Number(decode_user.level) < 50) {
+        response(req, res, -100, "본인이 쓴 메모만 고칠 수 있습니다.", false); return null;
+    }
+    return 메모;
+};
 
 const transactionCtrl = {
     list: async (req, res, next) => {
@@ -490,7 +507,13 @@ const transactionCtrl = {
             // 남의 브랜드 주문 이력을 볼 수 없다(remove 와 같은 소유 검증).
             const target = await loadOwnedRow(readPool, table_name, id, decode_user);
             if (!target) return lowLevelException(req, res);
-            const logs = await listTrxLogs(id);
+            // 메모(kind=memo)만 고칠 수 있다 — 쓴 사람 본인 또는 본사(50 이상). 자동 기록은 아무도 못 고친다(2026-11-06 결정).
+            const logs = (await listTrxLogs(id)).map((r) => ({
+                ...r,
+                can_edit: r.kind === 'memo' && (Number(r.actor_id) === Number(decode_user.id) || Number(decode_user.level) >= 50),
+                // 취소 사유는 그 몰 관리자(40 이상)가 고친다 — 금액·수량은 그대로, 고친 일은 「사유 수정」 줄로 따로 남는다
+                ...(r.kind === 'cancel' ? { cancel_reason: 취소사유나누기(r.note).사유, can_edit_reason: Number(decode_user.level) >= 40 } : {}),
+            }));
             return response(req, res, 100, "success", { logs, current_status: target?.trx_status });
         } catch (err) {
             console.log(err)
@@ -525,6 +548,94 @@ const transactionCtrl = {
 
         }
     },
+    // 이력 메모 — 가맹점이 이력에 직접 남기는 글(가맹점 요청 2026-11-06: "이력에서 추가·수정").
+    // 자동 기록(상태 변경·승인·취소·송장)은 그대로 두고 메모만 추가·수정·삭제한다. 분쟁 때 이력을 믿을 수 있어야 해서다.
+    //   추가: 관리자(40 이상)·자기 몰 주문 / 수정·삭제: 그 메모를 쓴 본인 또는 본사(50 이상)
+    addLogMemo: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const { id } = req.params;
+            if (!decode_user || decode_user?.level < 40) return lowLevelException(req, res);
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
+            const note = 메모정리(req.body?.note);
+            if (!note) return response(req, res, -100, "메모 내용을 입력해 주세요.", false);
+            const ok = await logTrx({ trans_id: id, brand_id: target.brand_id, kind: 'memo', actor: actorOf(decode_user, 'admin'), note });
+            if (!ok) return response(req, res, -200, "메모를 저장하지 못했습니다.", false);
+            return response(req, res, 100, "success", {})
+        } catch (err) {
+            logger.error(errText(err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        }
+    },
+    updateLogMemo: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const 메모 = await 고칠메모(req, res, decode_user);
+            if (!메모) return;
+            const note = 메모정리(req.body?.note);
+            if (!note) return response(req, res, -100, "메모 내용을 입력해 주세요.", false);
+            try {
+                await writePool.query(`UPDATE transaction_status_logs SET note=?, edited_at=NOW() WHERE id=? AND kind='memo'`, [note, 메모.id]);
+            } catch (e) {
+                // 마이그레이션 전(edited_at 없음) — 내용만 고친다
+                if (e?.code !== 'ER_BAD_FIELD_ERROR') throw e;
+                await writePool.query(`UPDATE transaction_status_logs SET note=? WHERE id=? AND kind='memo'`, [note, 메모.id]);
+            }
+            return response(req, res, 100, "success", {})
+        } catch (err) {
+            logger.error(errText(err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        }
+    },
+    deleteLogMemo: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const 메모 = await 고칠메모(req, res, decode_user);
+            if (!메모) return;
+            await writePool.query(`DELETE FROM transaction_status_logs WHERE id=? AND kind='memo'`, [메모.id]);
+            return response(req, res, 100, "success", {})
+        } catch (err) {
+            logger.error(errText(err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        }
+    },
+    // 취소 사유 고치기(가맹점 요청 2026-11-06 "취소 시 적은 사유를 고칠 수 있어야"). 취소 이력 줄의 사유 부분만 바꾸고,
+    // 누가 무엇을 무엇으로 고쳤는지 「사유 수정」 줄을 따로 남긴다. 금액·수량·일시·처리자는 그대로다.
+    updateCancelReason: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            const { id, log_id } = req.params;
+            if (!decode_user || decode_user?.level < 40) return lowLevelException(req, res);
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
+            const [[줄]] = await readPool.query(
+                `SELECT id, note FROM transaction_status_logs WHERE id=? AND trans_id=? AND kind='cancel'`, [log_id, id]);
+            if (!줄) return response(req, res, -100, "사유를 고칠 수 있는 취소 기록이 아닙니다.", false);
+            const 새 = 메모정리(req.body?.reason).replace(/\s*\n\s*/g, ' ').slice(0, 200);
+            const 옛 = 취소사유나누기(줄.note).사유;
+            if (옛 === 새) return response(req, res, 100, "success", {});
+            const 새note = 취소사유바꾸기(줄.note, 새).slice(0, 500);
+            try {
+                await writePool.query(`UPDATE transaction_status_logs SET note=?, edited_at=NOW() WHERE id=? AND kind='cancel'`, [새note, 줄.id]);
+            } catch (e) {
+                if (e?.code !== 'ER_BAD_FIELD_ERROR') throw e; // 마이그레이션 전(edited_at 없음)
+                await writePool.query(`UPDATE transaction_status_logs SET note=? WHERE id=? AND kind='cancel'`, [새note, 줄.id]);
+            }
+            // 취소 원장(transaction_cancels)의 사유도 맞춘다 — 같은 주문에서 옛 사유가 같은 가장 최근 줄(이력 note 는 120자로 잘려 있다)
+            if (옛) {
+                try {
+                    await writePool.query(`UPDATE transaction_cancels SET reason=? WHERE trans_id=? AND LEFT(IFNULL(reason,''),120)=? ORDER BY id DESC LIMIT 1`, [새 || null, id, 옛]);
+                } catch (e) { logger.error(`[취소 사유] 원장 반영 실패 trans_id=${id}: ${e?.sqlMessage || e?.message || e}`); }
+            }
+            await logTrx({ trans_id: id, brand_id: target.brand_id, kind: 'reason_edit', actor: actorOf(decode_user, 'admin'),
+                note: !옛 ? `취소 사유 입력: ${새}` : !새 ? `취소 사유 삭제 (이전: ${옛})` : `취소 사유 수정: ${옛} → ${새}` });
+            return response(req, res, 100, "success", {})
+        } catch (err) {
+            logger.error(errText(err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        }
+    },
     changeInvoice: async (req, res, next) => {
         try {
 
@@ -539,9 +650,18 @@ const transactionCtrl = {
             // 송장변경도 id 만으로 동작해 다른 가맹점 주문의 송장번호를 덮어쓸 수 있었다.
             const target = await loadOwnedRow(readPool, table_name, id, decode_user);
             if (!target) return lowLevelException(req, res);
+            const [[이전]] = await readPool.query(`SELECT invoice_num, trx_status FROM ${table_name} WHERE id=?`, [id]);
             let result = await updateQuery(`${table_name}`, {
                 invoice_num
             }, id)
+            // 송장 변경도 이력에 남긴다(가맹점 요청 2026-11-06) — 같은 값으로 다시 저장한 것은 남기지 않는다.
+            const 전 = String(이전?.invoice_num ?? '').trim();
+            const 후 = String(invoice_num ?? '').trim();
+            if (전 !== 후) {
+                await logTrx({ trans_id: id, brand_id: target.brand_id, kind: 'invoice', from_status: null, to_status: null,
+                    actor: actorOf(decode_user, 'admin'),
+                    note: !전 ? `송장 입력: ${후}` : !후 ? `송장 삭제 (이전: ${전})` : `송장 변경: ${전} → ${후}` });
+            }
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)
