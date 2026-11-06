@@ -453,7 +453,8 @@ const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason 
         // 돈이 안 움직였으니 원장을 지워 같은 키로 다시 시도할 수 있게 한다.
         await writePool.query(`DELETE FROM transaction_cancels WHERE id=?`, [cancel_id]);
         const msg = e?.response?.data?.message || e?.message || 'PG 취소에 실패했습니다.';
-        logger.error(`[부분취소] PG 실패 trans_id=${tid}: ${JSON.stringify(e?.response?.data || msg)}`);
+        // 응답 통째로 남기지 않는다 — 포스페이 취소 응답의 temp 에 손님 이름·연락처가 실려 와 오류 로그에 전화번호가 남았다(2026-11-06).
+        logger.error(`[부분취소] PG 실패 trans_id=${tid}: ${e?.response?.data?.code ?? e?.response?.status ?? ''} ${String(msg).slice(0, 200)}`);
         return { ok: false, message: msg };
     }
 
