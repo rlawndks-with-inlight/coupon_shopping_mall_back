@@ -1,6 +1,7 @@
 'use strict';
 import axios from 'axios';
 import crypto from 'crypto';
+import { 수단거절안내 } from './fail-reason.js';
 
 /**
  * 포스페이(Forspay) External API (SAMW) 연동 헬퍼 — 인증결제(direct_pg_ui)
@@ -190,13 +191,8 @@ export const 거절코드 = (body) => {
         return null;
     }
 };
-export const 거절안내 = (code) => ({
-    PV408: '결제 가능한 금액을 넘었습니다. 금액을 줄이거나 다른 결제수단을 선택해 주세요.',
-    PV407: '지금 이 결제수단으로 결제할 수 없습니다. 잠시 후 다시 시도하거나 다른 결제수단을 선택해 주세요.',
-    PV413: '선택하신 결제수단은 지금 사용할 수 없습니다. 다른 결제수단을 선택해 주세요.',
-    PV433: '선택하신 결제수단은 지금 사용할 수 없습니다. 다른 결제수단을 선택해 주세요.',
-    PV9999: '선택하신 결제수단은 지금 사용할 수 없습니다. 다른 결제수단을 선택해 주세요.',
-}[code] ?? null);
+// 문구 원본은 fail-reason.js 한 곳 — 결제창 실패 사유와 같은 이유면 같은 문구(2026-11-11).
+export const 거절안내 = (code) => 수단거절안내(code);
 
 export const getAvailability = async ({ app_key, base = FORSPAY_API_BASE } = {}) => {
     if (!app_key || !base || String(base).includes('REPLACE')) return null;

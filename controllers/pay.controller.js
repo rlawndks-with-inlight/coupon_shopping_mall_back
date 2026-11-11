@@ -21,6 +21,7 @@ import { requestPayment, getStatusByOrderNo, cancelPayment } from "../utils.js/p
 import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, getTransaction as forspayGetTransaction, getCancelRecords as forspayGetCancelRecords, cancelTransaction as forspayCancelTransaction, verifyWebhookSignature as forspayVerifySig, getForspayMethod, FORSPAY_API_BASE, 거절코드, 거절안내 } from "../utils.js/payments/forspay.js";
 import { encForSave } from "../utils.js/pii.js";
 import { 실패후대분류다시확인 } from "../utils.js/payments/forspay-allowed.js";
+import { 실패사유분류 } from "../utils.js/payments/fail-reason.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
 import { applyCancelEffects, markCanceled, getCancelState, cancelLines, withCancelLock } from "../utils.js/cancel.js";
@@ -118,14 +119,16 @@ const 결제창사유저장 = async (ord, code, message) => {
   const note = 머리 + (문구 || 결제창코드뜻[code] || '사유 없음');
   const [이전] = await readPool.query(`SELECT note FROM transaction_status_logs WHERE trans_id=? AND kind='pay_fail' ORDER BY id`, [trx.id]);
   const 같은코드 = 이전.filter((r) => String(r.note ?? '').startsWith(머리));
-  // 모바일은 복귀 때 서버가 먼저 남기고, 결과 화면이 문구 없이 한 번 더 보낸다 — 그 호출로 줄을 늘리지 않는다
-  if (이전.length < 결제창사유최대 && !이전.some((r) => r.note === note) && (문구 || 같은코드.length === 0)) {
+  // 모바일은 복귀 때 서버가 먼저 남기고, 결과 화면이 문구 없이 한 번 더 보낸다 — 그 호출로 줄을 늘리지 않는다.
+  // 결제창이 실패 코드(30563 등)를 줬는데 판정이 취소(CANCEL)로 바꾼 경우, 결과 화면이 CANCEL 로 한 번 더 보낸다 — 이미 남긴 줄이 있으면 또 쓰지 않는다.
+  if (이전.length < 결제창사유최대 && !이전.some((r) => r.note === note) && (문구 || 같은코드.length === 0) && (code !== 'CANCEL' || 이전.length === 0)) {
     await logTrx({ trans_id: trx.id, brand_id: trx.brand_id, kind: 'pay_fail', actor: { type: 'customer' }, note });
   }
-  if (문구) return 문구;
-  const 저장문구 = 같은코드.map((r) => r.note.slice(머리.length)).reverse()
+  // 손님에게는 원문이 아니라 뜻으로 묶은 문구를 돌려준다 — 같은 실패가 결제수단마다 다르게 보이지 않게(utils.js/payments/fail-reason.js).
+  // 이력에는 위에서 원문을 그대로 남겼다(문의 대응용).
+  const 저장문구 = 문구 || 같은코드.map((r) => r.note.slice(머리.length)).reverse()
     .find((m) => m !== '사유 없음' && !Object.values(결제창코드뜻).includes(m));
-  return 저장문구 ?? '';
+  return 실패사유분류(code, 저장문구 ?? '').문구;
 };
 
 // 결제창이 끝난 뒤 손님 화면에 무엇을 보여 줄지 정한다. 모바일 복귀(forspayReturn)와 PC 팝업 확인(forspayVerify)이 함께 쓴다.
@@ -162,7 +165,12 @@ const 포스페이결과판정 = async (trx, { 복귀코드원본 = '', 복귀�
     return { result_cd: '0001', txn };
   }
   // 거래가 없고 결제창이 실패 코드를 줬다 → 그 코드 그대로. 예전엔 전부 CANCEL 이라 잔액부족 같은 실패도 '취소'로 보였다.
-  if (복귀실패) return { result_cd: 복귀코드, txn };
+  // 단 「결제 취소 또는 결제시간 초과」(카카오페이 30563)처럼 손님이 멈춘 경우는 취소 화면으로,
+  // 위챗페이 「결제됐는지 앱에서 확인하라」(9998)는 결과를 모르는 상태라 확인 중(0001)으로 보낸다 — 실패로 보여 주면 다시 결제(이중결제)할 수 있다(2026-11-11).
+  if (복귀실패) {
+    const 사유분류 = 실패사유분류(복귀코드, 복귀문구);
+    return { result_cd: 사유분류.취소 ? 'CANCEL' : 사유분류.확인필요 ? '0001' : 복귀코드, txn };
+  }
   // 거래가 아예 없다 = 손님이 결제창을 닫거나 취소했다 → 결과 화면이 '결제가 취소되었습니다'로 보여 준다.
   if (없음) return { result_cd: 'CANCEL', txn };
   return { result_cd: '9999', txn };
