@@ -19,6 +19,31 @@ const table_name = 'transactions';
 // (승인번호·가상계좌가 있으면 이미 진행된 것이라 예외로 남긴다. 관리자 목록에는 적용하지 않는다.)
 const HIDE_ABANDONED_PENDING = ` AND NOT (${table_name}.trx_status=0 AND (${table_name}.appr_num IS NULL OR ${table_name}.appr_num='') AND (${table_name}.virtual_acct_num IS NULL OR ${table_name}.virtual_acct_num='') AND ${table_name}.trx_method IN (2,4,21,30,31,40,41)) `;
 
+// 관리자 엑셀 내려받기의 「상태」 여러 개 고르기(가맹점 요청 2026-11-12).
+// 열쇠마다 관리자 메뉴 하나와 같은 조건이다 — 메뉴에서 보던 것과 엑셀에 담기는 것이 달라지면 안 된다.
+//   취소 원장 줄(is_cancel=1, 금액 음수)은 어느 열쇠에도 안 걸린다. 취소된 주문은 원주문 줄(cancelled)로 받는다 —
+//   받는사람·주소가 원주문에 있고, 같은 취소가 두 줄로 들어가지 않는다.
+const t_ = table_name;
+const 정상줄 = ` ${t_}.is_cancel=0 AND ${t_}.is_cancel_trans=0 `;
+export const 엑셀상태조건 = {
+  waiting: `(${t_}.trx_status=0 AND ${정상줄} ${HIDE_ABANDONED_PENDING})`,   // 샵고 가맹점 「결제대기」(무통장·상품권 등 진짜 대기)
+  0: `(${t_}.trx_status=0 AND ${정상줄})`,                                  // 그 밖 가맹점 「결제대기」(전부)
+  1: `(${t_}.trx_status=1 AND ${정상줄})`,                                  // 취소요청
+  5: `(${t_}.trx_status=5 AND ${정상줄})`,
+  10: `(${t_}.trx_status=10 AND ${정상줄})`,
+  15: `(${t_}.trx_status=15 AND ${정상줄})`,
+  20: `(${t_}.trx_status=20 AND ${정상줄})`,
+  25: `(${t_}.trx_status=25 AND ${정상줄})`,
+  cancelled: `(${t_}.is_cancel_trans=1 AND ${t_}.is_cancel=0)`,             // 취소완료(원주문 줄)
+  failed: `((${t_}.trx_status=-1 OR (${t_}.trx_status=0 AND (${t_}.appr_num IS NULL OR ${t_}.appr_num='') AND (${t_}.virtual_acct_num IS NULL OR ${t_}.virtual_acct_num='') AND ${t_}.trx_method IN (2,4,21,30,31,40,41))) AND ${정상줄})`,
+};
+// '5,10,cancelled' → 아는 열쇠만, 겹침 없이. 값이 아예 없으면 null(이 기능을 안 쓰는 조회).
+export const 엑셀상태읽기 = (v) => {
+  if (v === undefined || v === null) return null;
+  const 목록 = (Array.isArray(v) ? v : String(v).split(',')).map((s) => String(s).trim()).filter((s) => Object.prototype.hasOwnProperty.call(엑셀상태조건, s));
+  return [...new Set(목록)];
+};
+
 // 이력 메모 내용 — 앞뒤 공백·제어문자를 걷고 500자까지(note 칸 크기).
 const 메모정리 = (v) => (typeof v === 'string' ? v : '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, 500);
 // 고칠 수 있는 메모인지 — 자기 몰 주문의 메모(kind=memo)이고, 쓴 사람 본인이거나 본사(50 이상). 아니면 응답을 보내고 null.
@@ -109,7 +134,14 @@ const transactionCtrl = {
             //   settled : 샵고 가맹점 「전체」 — 결제가 된 주문 + 취소된 주문. 실패·미완료는 뺀다(포스페이 요청 2026-11-04 ④⑤)
             // trx_status 필터와 같이 오면 이쪽이 우선한다.
             const { kind } = req.query;
-            if (kind === 'failed') {
+            // 엑셀 내려받기에서 상태를 여러 개 골랐으면(statuses) 그것만 본다 — 아래 kind·trx_status·cancel_status 는 건너뛴다.
+            // 관리자 화면에서만. 손님 화면은 위의 본인 주문 조건 그대로다.
+            const 엑셀상태 = 손님화면 ? null : 엑셀상태읽기(req.query.statuses);
+            if (엑셀상태) {
+                sql += 엑셀상태.length
+                    ? ` AND (${엑셀상태.map((k) => 엑셀상태조건[k]).join(' OR ')}) `
+                    : ` AND 1=0 `; // 아는 상태가 하나도 없으면 아무것도 주지 않는다(조건이 빠져 전부 나가면 안 된다)
+            } else if (kind === 'failed') {
                 sql += ` AND (${table_name}.trx_status = -1 OR (${table_name}.trx_status=0 AND (${table_name}.appr_num IS NULL OR ${table_name}.appr_num='') AND (${table_name}.virtual_acct_num IS NULL OR ${table_name}.virtual_acct_num='') AND ${table_name}.trx_method IN (2,4,21,30,31,40,41))) `;
             } else if (kind === 'settled') {
                 sql += ` AND (${table_name}.trx_status >= 1 OR ${table_name}.is_cancel_trans = 1) `;
@@ -119,7 +151,7 @@ const transactionCtrl = {
                 sql += ` AND trx_status=? `;
                 params.push(trx_status);
             }
-            if (is_confirm) {
+            if (is_confirm && !엑셀상태) {
                 // 고객의 '주문/배송조회' 목록. 취소 목록(cancel_status)과 구분하려는 필터다.
                 //
                 // 예전엔 `trx_status>=1` 이었는데 그러면 결제대기(0)가 통째로 빠진다.
@@ -131,7 +163,9 @@ const transactionCtrl = {
                 // 취소된 원주문(is_cancel_trans=1)은 고객이 상태를 확인해야 하므로 남긴다.
                 sql += ` AND is_cancel=0 `;
             }
-            if (kind === 'settled' || type == 'user') {
+            if (엑셀상태) {
+                // 취소 구분까지 위 엑셀상태조건에 다 들어 있다
+            } else if (kind === 'settled' || type == 'user') {
                 // 취소된 원주문(is_cancel_trans=1)도 보여 준다. 취소 원장 행(is_cancel=1, 금액 음수)만 뺀다 —
                 // 둘 다 넣으면 같은 취소가 두 줄로 보인다. 결제완료·배송중 탭은 아래 기본 조건 그대로라
                 // 취소 건이 섞이지 않는다(발송 실수 방지).
@@ -173,7 +207,7 @@ const transactionCtrl = {
 
             // 「취소완료」 목록의 기간 검색은 실제 취소 시각으로 한다. 반영(created_at)은 실제 취소보다 늦으므로
             // 시작일은 created_at 으로도 걸어 인덱스를 태운다. 종료일은 걸면 늦게 반영된 건이 빠진다.
-            const 취소완료목록 = cancel_status == 2 && !손님화면;
+            const 취소완료목록 = cancel_status == 2 && !손님화면 && !엑셀상태;
             let 조회조건 = req.query;
             if (취소완료목록) {
                 const { s_dt: 시작일, e_dt: 종료일 } = req.query;
@@ -208,7 +242,8 @@ const transactionCtrl = {
                 }
             }
             // 「결제실패/미완료」 목록에는 결제창이 알려 준 사유를 붙인다(포스페이 요청 2026-11-04 ④). 실패해도 목록은 뜨게 한다.
-            if (kind === 'failed' && !손님화면 && data?.content?.length > 0) {
+            // 엑셀 창에서 「결제실패/미완료」를 넣어 받을 때도 같다.
+            if ((kind === 'failed' || 엑셀상태?.includes('failed')) && !손님화면 && data?.content?.length > 0) {
                 try {
                     const [사유줄] = await readPool.query(
                         `SELECT trans_id, note FROM transaction_status_logs WHERE kind='pay_fail' AND trans_id IN (?) ORDER BY id ASC`,
