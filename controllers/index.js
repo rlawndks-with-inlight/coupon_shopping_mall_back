@@ -35,6 +35,7 @@ import sellerAdjustmentsCtrl from './seller_adjustments.controller.js';
 import sellerProductsCtrl from './seller_products.controller.js';
 import phoneRegistrationCtrl from './phone_registration.controller.js';
 import merchantApplicationCtrl from './merchant_application.controller.js';
+import excelLogCtrl from './excel_log.controller.js';
 
 export {
     brandCtrl,
@@ -72,4 +73,5 @@ export {
     sellerProductsCtrl,
     phoneRegistrationCtrl,
     merchantApplicationCtrl,
+    excelLogCtrl,
 };

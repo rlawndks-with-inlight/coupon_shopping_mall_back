@@ -12,6 +12,10 @@ router
     .route('/noti/') //클플에서 /noti로 보낼 시 자동으로 뒤에 /를 붙이면서 308 redirect가 발생해 nginx에 도달하기 전에 차단됨
     .get(transactionCtrl.noti)
     .post(transactionCtrl.noti);
+// 송장 엑셀 일괄 등록 — '/:id' 보다 위에 둔다
+router
+    .route('/invoice-bulk')
+    .post(transactionCtrl.invoiceBulk);
 router
     .route('/:id')
     .get(transactionCtrl.get)

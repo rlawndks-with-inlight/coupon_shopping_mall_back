@@ -1,7 +1,8 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
+import { canWriteBrand, checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
+import { 일괄판정, 택배사목록, 최대줄 } from "../utils.js/invoice-bulk.js";
 import { logTrx, actorOf, listTrxLogs, 취소사유나누기, 취소사유바꾸기 } from "../utils.js/trx-log.js";
 import { 실제취소시각식 } from "../utils.js/cancel.js";
 import 'dotenv/config';
@@ -704,6 +705,60 @@ const transactionCtrl = {
             return response(req, res, -200, "서버 에러 발생", false)
         } finally {
 
+        }
+    },
+    // 송장 엑셀 일괄 등록(가맹점 요청 2026-11-12). 판정 규칙은 utils.js/invoice-bulk.js.
+    //   body: { rows: [{ row, ord_num, invoice, courier }], apply }
+    //   apply 가 아니면 미리 확인만 한다(아무것도 저장하지 않는다). apply 면 같은 판정을 지금 값으로 다시 하고 등록·변경 줄만 저장한다.
+    //   권한은 한 건씩 저장(changeInvoice)과 같다 — 관리자(40 이상), 자기 몰 주문만(최상위 관리자는 어느 몰이든).
+    invoiceBulk: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 40, res);
+            const decode_dns = checkDns(req.cookies.dns);
+            if (!decode_user) return lowLevelException(req, res);
+            const brand_id = Number(decode_dns?.id) || 0;
+            if (!(brand_id > 0) || !canWriteBrand(decode_user, brand_id)) return lowLevelException(req, res);
+            const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+            if (!rows.length) return response(req, res, -100, '올린 파일에서 주문을 찾지 못했습니다. 「주문번호」와 「송장번호」 칸이 있는지 확인해 주세요.', false);
+            if (rows.length > 최대줄) return response(req, res, -100, '한 번에 1,000줄까지 올릴 수 있습니다. 나눠서 올려 주세요.', false);
+            const 저장 = req.body?.apply === true || req.body?.apply === 1 || req.body?.apply === '1';
+
+            const [[브랜드]] = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [brand_id]);
+            let 기본택배사 = '';
+            try { 기본택배사 = JSON.parse(브랜드?.setting_obj ?? '{}')?.default_courier ?? ''; } catch (e) { 기본택배사 = ''; }
+            if (!택배사목록.includes(기본택배사)) 기본택배사 = '';
+
+            const 번호들 = [...new Set(rows.map((r) => String(r?.ord_num ?? '').trim()).filter(Boolean))];
+            let 찾은것 = [];
+            if (번호들.length) {
+                // 취소 원장 줄(is_cancel=1)은 원주문을 복사한 것이라 주문번호가 같다 — 원주문만 본다.
+                let sql = `SELECT id, ord_num, invoice_num, trx_status, is_cancel_trans FROM ${table_name}
+                            WHERE brand_id=? AND is_cancel=0 AND is_delete=0 AND ord_num IN (?)`;
+                const params = [brand_id, 번호들];
+                if (Number(decode_dns?.seller_id) > 0) { sql += ` AND seller_id=? `; params.push(decode_dns.seller_id); }
+                [찾은것] = await readPool.query(sql, params);
+            }
+            const 판정 = 일괄판정(rows, new Map(찾은것.map((r) => [String(r.ord_num), r])), 기본택배사);
+
+            if (저장) {
+                const actor = actorOf(decode_user, 'admin');
+                let 저장됨 = 0;
+                for (const x of 판정.결과) {
+                    if (!(x.결과 === '등록' || x.결과 === '변경') || !x.id) continue;
+                    const [r] = await writePool.query(`UPDATE ${table_name} SET invoice_num=? WHERE id=? AND brand_id=?`, [x.새값, x.id, brand_id]);
+                    if (!r?.affectedRows) continue;
+                    저장됨++;
+                    await logTrx({ trans_id: x.id, brand_id, kind: 'invoice', actor,
+                        note: x.이전 ? `송장 변경(엑셀): ${x.이전} → ${x.새값}` : `송장 입력(엑셀): ${x.새값}` });
+                }
+                판정.요약.저장됨 = 저장됨;
+            }
+            // id 는 화면에 줄 필요가 없다
+            const 결과 = 판정.결과.map(({ id, ...x }) => x);
+            return response(req, res, 100, "success", { 결과, 요약: 판정.요약, 저장: 저장, 기본택배사 });
+        } catch (err) {
+            logger.error(errText(err));
+            return response(req, res, -200, "서버 에러 발생", false);
         }
     },
     cancelRequest: async (req, res, next) => {

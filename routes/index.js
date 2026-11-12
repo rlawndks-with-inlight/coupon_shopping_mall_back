@@ -34,6 +34,7 @@ import sellerAdjustmentsRoutes from "./seller_adjustments.route.js"
 import sellerProductsRoutes from "./seller_products.route.js";
 import phoneRegistrationRoutes from "./phone_registration.route.js";
 import merchantApplicationRoutes from "./merchant_application.route.js";
+import excelLogRoutes from "./excel_log.route.js";
 
 const router = express.Router(); // eslint-disable-line new-cap
 
@@ -79,6 +80,7 @@ router.use("/third-parties", thirdPartyRoutes);
 router.use("/dashboards", dashboardRoutes);
 router.use("/phone-registration", phoneRegistrationRoutes);
 router.use("/merchant-application", merchantApplicationRoutes);
+router.use("/excel-logs", excelLogRoutes);
 
 //user
 router.use("/shop", shopRoutes);
