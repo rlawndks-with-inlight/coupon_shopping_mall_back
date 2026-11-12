@@ -1,4 +1,5 @@
 "use strict";
+import { 섬설정검사 } from "../utils.js/island-fee.js";
 import {
   deleteQuery,
   getSelectQueryList,
@@ -333,6 +334,13 @@ const brandCtrl = {
           if (isNaN(n)) return response(req, res, -100, '배송비 설정은 숫자로만 입력해 주세요.', false);
           if (n < 0) return response(req, res, -100, '배송비 설정은 0 이상으로 입력해 주세요.', false);
           if (n > 배송비상한) return response(req, res, -100, '배송비 설정 금액이 너무 큽니다. 다시 확인해 주세요.', false);
+        }
+        // 제주·도서산간 추가배송비(2026-11-12) — 결제 재계산이 그대로 읽으므로 저장 전에 모양과 금액을 막는다.
+        //   보낸 값을 정리된 값으로 바꿔 저장한다(문자 금액 → 숫자, 「전라남도」 → 「전남」 등).
+        if (설정.island_fee !== undefined) {
+          const 검사 = 섬설정검사(설정.island_fee);
+          if (검사.오류) return response(req, res, -100, 검사.오류, false);
+          obj.setting_obj = JSON.stringify({ ...설정, island_fee: 검사.값 });
         }
       }
 

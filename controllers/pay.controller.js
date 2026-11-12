@@ -22,6 +22,7 @@ import { createSession as forspayCreateSession, getLaunch as forspayGetLaunch, g
 import { encForSave } from "../utils.js/pii.js";
 import { 실패후대분류다시확인 } from "../utils.js/payments/forspay-allowed.js";
 import { 실패사유분류 } from "../utils.js/payments/fail-reason.js";
+import { 추가배송비, 추가비줄 } from "../utils.js/island-fee.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
 import { applyCancelEffects, markCanceled, getCancelState, cancelLines, withCancelLock } from "../utils.js/cancel.js";
@@ -207,7 +208,9 @@ const 결제실패정리 = async (trans_id) => {
 // 셀러가 ≠ 본사가인 셀러몰 주문이 전부 '결제금액이 변경되었습니다' 로 거절된다 — 2026-08-07
 // 재계산 도입 이후 thegrazia(74) 셀러몰이 이 상태였다(2026-10-10 발견).
 // 화면과 같은 규칙: 셀러가 행이 없으면 본사가 그대로.
-const recalcOrderAmount = async (brand_id, products, use_point, seller_id = 0) => {
+// 배송지(zonecode·addr·country_code)를 받으면 제주·도서산간 추가배송비를 더한다(utils.js/island-fee.js, 2026-11-12).
+//   설정 안 한 몰은 0원이라 예전과 같다. 「배송 안 함」 지역이면 { blocked: true, region } 을 돌려준다.
+const recalcOrderAmount = async (brand_id, products, use_point, seller_id = 0, 배송지 = null) => {
   const lines = Array.isArray(products) ? products : [products];
 
   const product_ids = [...new Set(
@@ -362,21 +365,28 @@ const recalcOrderAmount = async (brand_id, products, use_point, seller_id = 0) =
     ? ((shipFreeMin > 0 && merchTotal >= shipFreeMin) ? 0 : shipBase)
     : 0;
 
+  // 3) 제주·도서산간 추가배송비 — 주문당 한 번, 첫 본상품 줄의 배송비에 얹는다(무료배송이어도 붙는다).
+  //    줄 배송비에 합쳐 두면 전체취소 환불(cancel.js 총배송비)이 그대로 맞는다. 얼마가 추가비인지는 주문(island_fee)에 따로 남긴다.
+  const 섬 = 배송지 ? 추가배송비(배송지, setting) : { region: 'normal', fee: 0, blocked: false };
+  if (섬.blocked) return { blocked: true, region: 섬.region };
+  const 섬줄 = 추가비줄(lines);
+
   let amount = 0;
   const expectedLines = [];
   for (let i = 0; i < lines.length; i++) {
     const p = productById.get(parseInt(lines[i]?.id));
     // 상품별 배송비(정책 안 쓰는 몰)는 본상품 줄에만 붙는다 — 추가상품 줄에 또 붙으면 배송비가 두 번이다.
-    const lineDelivery = shipActive
+    const lineDelivery = (shipActive
       ? (i === 0 ? shipFee : 0)
-      : (Number(lines[i]?.addon_line) === 1 ? 0 : (Number(p.delivery_fee) || 0));
+      : (Number(lines[i]?.addon_line) === 1 ? 0 : (Number(p.delivery_fee) || 0)))
+      + (i === 섬줄 ? 섬.fee : 0);
     const order_amount = merchByIdx[i] + lineDelivery;
     amount += order_amount;
     expectedLines.push({ id: parseInt(lines[i]?.id), order_amount, delivery_fee: lineDelivery });
   }
 
   const point = Math.max(0, parseInt(use_point) || 0);
-  return { amount: amount - point, lines: expectedLines, merchTotal, usedPoint: point };
+  return { amount: amount - point, lines: expectedLines, merchTotal, usedPoint: point, island: { region: 섬.region, fee: 섬.fee } };
 };
 
 const payCtrl = {
@@ -385,6 +395,7 @@ const payCtrl = {
     //인증결제
     // ⚠ trans_id 를 try 밖에 둔다. catch 에서 재고를 놓아주려면 여기서 보여야 한다
     //   (try 안에 let 으로 두면 catch 에서 ReferenceError 가 난다).
+    let island = null;   // 제주·도서산간 추가배송비 판정(recalcOrderAmount)
     let trans_id = 0;
     try {
       const decode_user = checkLevel(req.cookies.token, 0, res);
@@ -582,10 +593,17 @@ const payCtrl = {
       // ── 결제금액 검증(서버 재계산) ────────────────────────────────────
       // 여기까지는 '살 수 있는 상품인가'만 봤다. '얼마인가'를 서버가 직접 계산해 대조한다.
       {
-        const expected = await recalcOrderAmount(brand_id, products, use_point, seller_id);
+        const expected = await recalcOrderAmount(brand_id, products, use_point, seller_id, { zonecode, addr, country_code });
         if (!expected) {
           return response(req, res, -100, "주문 상품 정보가 올바르지 않습니다.", false);
         }
+        // 「배송 안 함」 지역 — 화면이 결제 전에 막지만, 화면을 거치지 않은 요청도 여기서 막는다
+        if (expected.blocked) {
+          return response(req, res, -100, expected.region === 'jeju'
+            ? "이 쇼핑몰은 제주 지역으로 배송하지 않습니다. 다른 주소를 선택해 주세요."
+            : "이 쇼핑몰은 도서산간 지역으로 배송하지 않습니다. 다른 주소를 선택해 주세요.", false);
+        }
+        island = expected.island;
 
         // 포인트는 서버에서 본다. 예전엔 프론트(OrderSheet)에서만 확인했다.
         //
@@ -674,6 +692,11 @@ const payCtrl = {
         }
       }
       let obj = {
+        // 제주·도서산간 추가배송비 — 주문할 때의 판정과 금액을 남긴다(기준표가 바뀌어도 지난 주문은 그대로).
+        // 칸이 없으면(마이그레이션 전) 건너뛴다 — 없는 칸을 넣으면 주문 저장이 통째로 실패한다.
+        ...(await hasColumn('transactions', 'island_fee')
+            ? { island_region: ['jeju', 'island'].includes(island?.region) ? island.region : null, island_fee: Number(island?.fee) || 0 }
+            : {}),
         brand_id,
         user_id,
         // 비회원 주문조회 비밀번호는 평문으로 저장하지 않는다.

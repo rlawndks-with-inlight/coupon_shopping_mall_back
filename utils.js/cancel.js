@@ -1,5 +1,5 @@
 import { readPool, writePool } from "../config/db-pool.js";
-import { insertQuery } from "./query-util.js";
+import { insertQuery, hasColumn } from "./query-util.js";
 import { restoreStock, restoreStockPartial } from "./product-options.js";
 import logger from "./winston/index.js";
 import { logTrx, statusText } from "./trx-log.js";
@@ -164,6 +164,12 @@ export const getCancelState = async (trans_id) => {
                 is_cancel, is_cancel_trans, ord_num
            FROM transactions WHERE id=?`, [tid]);
     if (!trx) return null;
+    // 제주·도서산간 추가배송비(2026-11-12) — 칸이 있을 때만 따로 읽는다(마이그레이션 전에도 취소가 죽지 않게).
+    //   부분취소의 「원래 무료배송이었나」 판정(calcDeliveryAdjust)에서 뺀다.
+    if (await hasColumn('transactions', 'island_fee')) {
+        const [[섬]] = await readPool.query(`SELECT island_fee FROM transactions WHERE id=?`, [tid]);
+        trx.island_fee = Number(섬?.island_fee) || 0;
+    }
     const [rows] = await readPool.query(
         `SELECT * FROM transaction_orders WHERE trans_id=? ORDER BY id ASC`, [tid]);
     const lines = rows.map((l) => {
@@ -237,14 +243,17 @@ export const calcCancelAmount = (line, qty) => {
 //   · 이미상계: 앞선 부분취소에서 이미 뺀 배송비(양수). 한 주문에 배송비는 한 번만 뺀다 —
 //     예전엔 기준 미달 상태에서 부분취소할 때마다 또 뺐다. 전부 취소되면 뺐던 것도 돌려준다(아무것도 안 보내므로).
 //     (2026-10-19 오픈 전 점검)
-export const calcDeliveryAdjust = ({ 전체취소, 취소후남은상품가, 총배송비, setting, 이미상계 = 0 }) => {
+// 섬추가비: 제주·도서산간 추가배송비(transactions.island_fee). 줄 배송비(총배송비)에 들어 있지만 「원래 무료배송이었나」를
+//   볼 때는 빼야 한다 — 무료배송 + 제주 3,000원 주문의 총배송비는 3,000원이라, 빼지 않으면 무료배송이 아니었던 것으로 읽혀
+//   부분취소로 무료 기준이 깨져도 기본 배송비를 상계하지 않는다(2026-11-12 추가배송비 도입 때 막음).
+export const calcDeliveryAdjust = ({ 전체취소, 취소후남은상품가, 총배송비, setting, 이미상계 = 0, 섬추가비 = 0 }) => {
     const 뺀것 = Math.max(0, Number(이미상계) || 0);
     if (전체취소) return 총배송비 + 뺀것;                 // 양수 = 환불
     const base = parseInt(setting?.delivery_fee_default || 0) || 0;
     const freeMin = parseInt(setting?.free_ship_min || 0) || 0;
     const 정책켜짐 = base > 0 || freeMin > 0;
     if (!정책켜짐 || freeMin <= 0) return 0;             // 무료배송 정책이 없으면 조정 없음
-    const 원래무료 = Number(총배송비) === 0;              // 무료배송으로 결제된 주문이었나
+    const 원래무료 = Number(총배송비) - (Number(섬추가비) || 0) <= 0;   // 무료배송으로 결제된 주문이었나(추가배송비는 빼고 본다)
     if (!원래무료) return 0;
     if (뺀것 > 0) return 0;                              // 이미 한 번 뺐다
     // 무료였는데 취소 후 기준에 미달 → 배송비를 받아야 한다(환불액에서 뺀다)
@@ -405,7 +414,7 @@ const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason 
     // 앞선 부분취소에서 이미 뺀 배송비(transaction_cancels.delivery_fee 음수 합)
     const [[상계]] = await readPool.query(
         `SELECT COALESCE(SUM(CASE WHEN delivery_fee < 0 THEN -delivery_fee ELSE 0 END), 0) AS s FROM transaction_cancels WHERE trans_id=?`, [tid]);
-    const 배송비조정 = calcDeliveryAdjust({ 전체취소, 취소후남은상품가, 총배송비, setting, 이미상계: Number(상계?.s) || 0 });
+    const 배송비조정 = calcDeliveryAdjust({ 전체취소, 취소후남은상품가, 총배송비, setting, 이미상계: Number(상계?.s) || 0, 섬추가비: Number(state.trx?.island_fee) || 0 });
     const 환불액 = Math.max(0, 이번상품가 + 배송비조정);
     if (환불액 <= 0) {
         return { ok: false, message: '환불할 금액이 없습니다. (남은 상품이 무료배송 기준에 미달해 배송비가 상계됩니다)' };
