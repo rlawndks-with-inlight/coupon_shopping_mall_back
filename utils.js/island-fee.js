@@ -12,7 +12,10 @@
 import { 제주범위, 제주섬, 도서산간, 연륙도서 } from './island-zips.js';
 
 export const 추가비상한 = 50000;   // 「넉넉하게」(사장님) — 쿠팡은 8,000원까지. 냉동·대형 상품 몰을 생각해 넉넉히 둔다
-export const 규칙최대 = 300;
+// 직접 고친 지역 개수 상한. 몰 정보 저장이 multipart 라 칸 수 제한(multerConfig parts 500)에 걸린다 —
+//   우편번호 규칙 하나가 4칸이고, 설정 30칸 + 다른 칸 20칸이면 110개까지 저장되고 120개부터 저장 전체가 실패했다(11/12 실측).
+//   다른 설정이 늘어날 여유를 두고 80개로 둔다. 구간(시작~끝)으로 넣으면 80개로 충분하다.
+export const 규칙최대 = 80;
 export const 지역이름 = { jeju: '제주', island: '제주 외 도서산간' };
 export const 방식들 = ['none', 'charge', 'block'];
 
@@ -51,12 +54,23 @@ const 규칙맞음 = (r, zip, addr) => {
     return !!zip && zip >= r?.from && zip <= r?.to;
 };
 
+// 해외로 표시됐지만 실제로는 국내 주소인지 — 나라 이름이 한국이거나, 주소가 국내 시·도 이름으로 시작하면 국내.
+//   해외배송을 고르고 나라에 「대한민국」, 주소에 「제주특별자치도 …」를 적으면 해외로 판정돼
+//   추가비와 「배송 안 함」을 그대로 피할 수 있었다(11/12 점검). 우편번호는 보지 않는다 — 프랑스 63000 같은 해외 번호와 겹친다.
+const 한국이름 = /^(대한민국|한국|남한|korea|southkorea|republicofkorea|rok|kr|韓国|韩国|大韓民国|大韩民国|corea|coreadelsur)$/i;
+const 국내주소같음 = (addr, country_name) => {
+    if (한국이름.test(String(country_name ?? '').replace(/[\s.,()\-]/g, ''))) return true;
+    const 첫말 = 주소정리(addr).split(' ')[0] || '';
+    return 시도들.has(첫말) || 첫말.startsWith('제주');
+};
+
 // 배송지 → 'jeju' | 'island' | 'normal' | 'overseas'
-//   ① 해외 주소는 대상 아님 ② 몰이 「일반으로 뺀」 규칙 ③ 몰이 「도서산간에 더한」 규칙 ④ 기본 기준표
+//   ① 해외 주소는 대상 아님(해외로 표시돼도 국내 주소 꼴이면 국내로 본다) ② 몰이 「일반으로 뺀」 규칙
+//   ③ 몰이 「도서산간에 더한」 규칙 ④ 기본 기준표
 //   제주는 우편번호(63000~63644)와 주소(「제주…」) 중 하나라도 제주면 제주 — 우편번호만 바꿔 추가비를 피하지 못하게.
-export const 지역판정 = ({ zonecode, addr, country_code } = {}, 규칙 = []) => {
+export const 지역판정 = ({ zonecode, addr, country_code, country_name } = {}, 규칙 = []) => {
     const cc = String(country_code ?? '').trim().toUpperCase();
-    if (cc && cc !== 'KR') return 'overseas';
+    if (cc && cc !== 'KR' && !국내주소같음(addr, country_name)) return 'overseas';
     const zip = 우편번호(zonecode);
     const rules = Array.isArray(규칙) ? 규칙 : [];
     if (rules.some((r) => r?.kind === 'remove' && 규칙맞음(r, zip, addr))) return 'normal';

@@ -16,7 +16,15 @@ const table = 'excel_download_logs';
 const 종류들 = ['orders'];
 const 상태열쇠 = /^(waiting|cancelled|failed|0|1|5|10|15|20|25)$/;
 const 날짜꼴 = /^\d{4}-\d{2}-\d{2}$/;
-const 아이피 = (req) => String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim().slice(0, 64);
+// 받은 사람의 IP — index.js 의 손님IP 와 같은 방식.
+//   XFF 맨 왼쪽은 요청한 쪽이 헤더로 마음대로 넣을 수 있다(11/12 점검). 프론트 nginx 가 붙인 값은 오른쪽에서 두 번째라 바꿀 수 없다.
+const 내부IP = String(process.env.RATE_LIMIT_SKIP_IPS ?? '13.125.9.31,127.0.0.1,::1,::ffff:127.0.0.1')
+    .split(',').map((x) => x.trim()).filter(Boolean);
+const 아이피 = (req) => {
+    if (!내부IP.includes(req.ip)) return String(req.ip ?? '').slice(0, 64);
+    const xff = String(req.headers['x-forwarded-for'] || '').split(',').map((x) => x.trim()).filter(Boolean);
+    return String(xff.length >= 2 ? xff[xff.length - 2] : (req.ip ?? '')).slice(0, 64);
+};
 
 // 화면이 보낸 조건을 정해진 모양으로만 줄인다(모르는 값·긴 글은 버린다)
 export const 조건정리 = (v = {}) => {

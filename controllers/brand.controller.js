@@ -20,7 +20,7 @@ import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import { brandSettingLang } from "../utils.js/schedules/lang-process.js";
 import speakeasy from 'speakeasy';
-import { readPool } from "../config/db-pool.js";
+import { readPool, writePool } from "../config/db-pool.js";
 import { encForSave } from "../utils.js/pii.js";
 
 const table_name = "brands";
@@ -341,6 +341,15 @@ const brandCtrl = {
           const 검사 = 섬설정검사(설정.island_fee);
           if (검사.오류) return response(req, res, -100, 검사.오류, false);
           obj.setting_obj = JSON.stringify({ ...설정, island_fee: 검사.값 });
+        } else if (설정 && typeof 설정 === 'object' && !Array.isArray(설정)) {
+          // setting_obj 는 통째로 바뀐다. 다른 화면(대시보드 안내 접기·추천상품·홈 문구·고객센터 번호 등)이
+          // 화면을 열 때 받아 둔 setting_obj 로 저장하면, 그 사이 넣은 추가배송비가 조용히 사라졌다(11/12 점검).
+          // 추가배송비는 손님 청구액이라 보내지 않았으면 DB 값을 그대로 둔다. 「추가비 없음」은 화면이 명시적으로 보낸다.
+          // 방금 저장한 값을 읽어야 하므로 복제 지연이 있을 수 있는 읽기 DB 가 아니라 쓰기 DB 에서 읽는다.
+          const [기존] = await writePool.query(`SELECT JSON_EXTRACT(setting_obj, '$.island_fee') AS f FROM ${table_name} WHERE id=?`, [id]);
+          let 기존값 = 기존?.[0]?.f;
+          if (typeof 기존값 === 'string') { try { 기존값 = JSON.parse(기존값); } catch (e) { 기존값 = null; } }
+          if (기존값 && typeof 기존값 === 'object') obj.setting_obj = JSON.stringify({ ...설정, island_fee: 기존값 });
         }
       }
 

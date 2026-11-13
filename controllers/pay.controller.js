@@ -593,7 +593,7 @@ const payCtrl = {
       // ── 결제금액 검증(서버 재계산) ────────────────────────────────────
       // 여기까지는 '살 수 있는 상품인가'만 봤다. '얼마인가'를 서버가 직접 계산해 대조한다.
       {
-        const expected = await recalcOrderAmount(brand_id, products, use_point, seller_id, { zonecode, addr, country_code });
+        const expected = await recalcOrderAmount(brand_id, products, use_point, seller_id, { zonecode, addr, country_code, country_name });
         if (!expected) {
           return response(req, res, -100, "주문 상품 정보가 올바르지 않습니다.", false);
         }
