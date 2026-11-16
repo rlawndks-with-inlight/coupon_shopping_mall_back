@@ -574,18 +574,24 @@ const authCtrl = {
             let phone_token = await createHashedPassword(phone_num);
             phone_token = phone_token.hashedPassword;
             let rand_num = generateRandomCode(6);
+            // 문자 발송 키는 dns 쿠키에 싣지 않는다(쿠키 내용은 누구나 풀어 볼 수 있다) — 브랜드 행에서 직접 읽는다.
+            let bonaeja = {};
+            if (decode_dns?.id) {
+                const [키행] = await readPool.query(`SELECT bonaeja_obj FROM brands WHERE id=? AND is_delete=0`, [decode_dns.id]);
+                try { bonaeja = JSON.parse(키행?.[0]?.bonaeja_obj ?? '{}') || {}; } catch (e) { bonaeja = {}; }
+            }
             if (
-                !decode_dns?.bonaeja_obj?.api_key ||
-                !decode_dns?.bonaeja_obj?.user_id ||
-                !decode_dns?.bonaeja_obj?.sender
+                !bonaeja?.api_key ||
+                !bonaeja?.user_id ||
+                !bonaeja?.sender
             ) {
                 return response(req, res, -100, "인증번호 발송기능이 제공되지 않습니다. 본사에 문의해 주세요.", false)
             }
 
             let { data: send_message } = await axios.post(`${process.env.BONAEJA_URL}/api/msg/v1/send`, {
-                api_key: decode_dns?.bonaeja_obj?.api_key,
-                user_id: decode_dns?.bonaeja_obj?.user_id,
-                sender: decode_dns?.bonaeja_obj?.sender,
+                api_key: bonaeja.api_key,
+                user_id: bonaeja.user_id,
+                sender: bonaeja.sender,
                 receiver: phone_num.replaceAll(' ', '').replaceAll('-', ''),
                 msg: `[${decode_dns?.name}] 인증번호 ${rand_num}을(를) 입력해주세요.`,
             })

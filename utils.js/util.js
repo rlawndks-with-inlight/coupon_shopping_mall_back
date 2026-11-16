@@ -39,7 +39,15 @@ export const makeUserToken = (obj) => {
 // dns 쿠키 전용 토큰. 사용자 토큰과 같은 비밀키로 서명되므로 'kind' 로 종류를 박아 서로 바꿔 쓰지 못하게 한다.
 // (예전엔 GET /api/domain 이 주는 dns 쿠키(브랜드 payload)를 token 쿠키 자리에 넣으면, level 이 없어
 //  `level > undefined === false` 로 어떤 등급 검사든 통과했다 — 누구나 마스터 권한 API 를 부를 수 있었다.)
-export const makeDnsToken = (brand) => makeUserToken({ ...brand, kind: 'dns' });
+// dns 쿠키는 JWT 라 서명만 돼 있고 내용은 누구나 풀어 볼 수 있다(base64). 그래서 공개되면 안 되는 칸은 넣지 않는다.
+// (2026-11-17: 문자 발송 API 키(bonaeja_obj)·주민등록번호(resident_num)·관리 메모(note)가 쿠키와 /api/domain 응답에 실려 나가고 있었다)
+export const DNS_비공개칸 = ['bonaeja_obj', 'resident_num', 'note'];
+export const 공개용브랜드 = (brand) => {
+    const 사본 = { ...(brand || {}) };
+    for (const k of DNS_비공개칸) delete 사본[k];
+    return 사본;
+};
+export const makeDnsToken = (brand) => makeUserToken({ ...공개용브랜드(brand), kind: 'dns' });
 
 export const checkLevel = (token, level, res) => { //유저 정보 뿌려주기
     try {

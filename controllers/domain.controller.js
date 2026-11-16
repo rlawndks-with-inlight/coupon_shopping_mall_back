@@ -1,6 +1,6 @@
 "use strict";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { checkLevel, makeUserToken, makeDnsToken, response } from "../utils.js/util.js";
+import { checkLevel, makeUserToken, makeDnsToken, response, 공개용브랜드 } from "../utils.js/util.js";
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -33,7 +33,7 @@ const domainCtrl = {
         try {
           const cached = await redisClient.get(cacheKey);
           if (cached) {
-            const brand = JSON.parse(cached);
+            const brand = 공개용브랜드(JSON.parse(cached)); // 옛 캐시에 비공개 칸이 남아 있어도 내보내지 않는다
 
             const token = makeDnsToken(brand); // dns 전용 토큰(kind:'dns') — 사용자 토큰으로 못 쓰게
             await res.cookie("dns", token, {
@@ -65,12 +65,10 @@ const domainCtrl = {
         "theme_css",
         "setting_obj",
         "none_use_column_obj",
-        "bonaeja_obj",
         "seo_obj",
         "is_main_dns",
         "company_name",
         "business_num",
-        "resident_num",
         "ceo_name",
         "pvcy_rep_name",
         "addr",
@@ -137,11 +135,10 @@ const domainCtrl = {
 
       let brand = brandRows[0];
 
-      // JSON 파싱
+      // JSON 파싱 (문자 발송 키 bonaeja_obj·주민등록번호 resident_num 은 공개 응답이라 아예 읽지 않는다 — util.js DNS_비공개칸)
       brand.theme_css = JSON.parse(brand?.theme_css ?? "{}");
       brand.setting_obj = JSON.parse(brand?.setting_obj ?? "{}");
       brand.none_use_column_obj = JSON.parse(brand?.none_use_column_obj ?? "{}");
-      brand.bonaeja_obj = JSON.parse(brand?.bonaeja_obj ?? "{}");
       brand.seo_obj = JSON.parse(brand?.seo_obj ?? "{}");
 
       // 셀러몰인 경우 셀러 정보 반영
