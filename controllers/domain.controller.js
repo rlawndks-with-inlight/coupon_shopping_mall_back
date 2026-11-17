@@ -248,6 +248,40 @@ const domainCtrl = {
     } finally {
     }
   },
+
+  // 검색엔진에 알릴 몰 주소 목록 — 샵고 메인 사이트맵(sitemap.xml)이 각 몰 사이트맵을 묶는 데 쓴다.
+  //
+  // 대상: 본사(MAIN_FRONT_URL + is_main_dns=1) 아래 몰 중 지우지·닫지 않았고 「검색 노출」이 켜진 몰.
+  //   검색 노출 끔 = seo_obj.search_hidden 참(관리자 SEO설정 탭, 본사만). 값이 없으면 켜짐 — 새 몰은 기본 노출.
+  //   본사 아래로 한정하는 까닭: 이 DB 는 다른 프로젝트 브랜드와 함께 쓴다(그쪽 도메인은 우리 서버에 없다).
+  // 공개 응답이다 — 이미 누구나 열 수 있는 몰 주소만 내보내고 다른 칸은 싣지 않는다.
+  searchBrands: async (req, res, next) => {
+    try {
+      const 메인 = String(process.env.MAIN_FRONT_URL || '').replace(/^www\./, '');
+      if (!메인) return response(req, res, 100, "success", []);
+      const [rows] = await readPool.query(
+        `SELECT b.dns, b.seo_obj FROM brands b
+           JOIN brands m ON m.id = b.parent_id AND m.dns = ? AND m.is_main_dns = 1 AND m.is_delete = 0
+          WHERE b.is_delete = 0 AND b.is_closure = 0 AND b.dns IS NOT NULL AND b.dns != ''
+          ORDER BY b.id`, [메인]);
+      const 목록 = rows
+        .filter((r) => !검색막힘(r.seo_obj))
+        .map((r) => String(r.dns).trim().toLowerCase())
+        .filter((d) => /^[a-z0-9.-]+$/.test(d) && d.includes('.'));
+      return response(req, res, 100, "success", 목록);
+    } catch (err) {
+      logger.error(JSON.stringify(err?.response?.data || err));
+      return response(req, res, -200, "서버 에러 발생", false);
+    }
+  },
+};
+
+// seo_obj 는 문자열(varchar)로 저장돼 있다. 깨진 값이면 막지 않은 것으로 본다(기본=노출).
+export const 검색막힘 = (seo_obj) => {
+  let o = seo_obj;
+  if (typeof o === 'string') { try { o = JSON.parse(o); } catch { o = {}; } }
+  const v = o?.search_hidden;
+  return v === true || v === 1 || v === '1' || v === 'true';
 };
 
 export default domainCtrl;

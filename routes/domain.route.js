@@ -7,4 +7,8 @@ router
     .route('/')
     .get(domainCtrl.get)
 
+router
+    .route('/search-brands')
+    .get(domainCtrl.searchBrands)
+
 export default router;
