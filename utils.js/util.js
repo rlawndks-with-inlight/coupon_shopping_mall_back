@@ -47,7 +47,12 @@ export const 공개용브랜드 = (brand) => {
     for (const k of DNS_비공개칸) delete 사본[k];
     return 사본;
 };
-export const makeDnsToken = (brand) => makeUserToken({ ...공개용브랜드(brand), kind: 'dns' });
+// ssr_content(검색엔진용 상품명·소개·상품 목록)는 응답 본문에만 싣고 쿠키(토큰)에는 넣지 않는다.
+//   쿠키가 커지면 요청 헤더가 nginx 한도를 넘어 502 가 난다(api-nginx-header-limit, 2026-09-22). 쿠키로 읽는 곳도 없다.
+export const makeDnsToken = (brand) => {
+  const { ssr_content, ...나머지 } = 공개용브랜드(brand);
+  return makeUserToken({ ...나머지, kind: 'dns' });
+};
 
 export const checkLevel = (token, level, res) => { //유저 정보 뿌려주기
     try {

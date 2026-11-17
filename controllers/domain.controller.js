@@ -27,6 +27,8 @@ const domainCtrl = {
         Number(seller_id) <= 0;
 
       const cacheKey = `domain:${dns}`;
+      // 검색엔진용 상품 목록(몰 첫 화면·전체 상품 목록에서만 _app 이 요청). 쿠키·도메인 캐시에는 안 넣고 응답에만 붙인다.
+      const 상품목록포함 = Number(req.query.with_products) === 1;
 
       // 1) 캐시 먼저 조회
       if (CACHEABLE && redisClient?.isOpen) {
@@ -43,7 +45,7 @@ const domainCtrl = {
               secure: process.env.NODE_ENV !== 'development',
             });
 
-            return response(req, res, 100, "success(cache)", brand);
+            return response(req, res, 100, "success(cache)", 상품목록포함 ? await 상품목록붙이기(brand) : brand);
           }
         } catch (e) {
           console.error("Redis get error (domain):", e);
@@ -240,7 +242,7 @@ const domainCtrl = {
         }
       }
 
-      return response(req, res, 100, "success", brand);
+      return response(req, res, 100, "success", 상품목록포함 ? await 상품목록붙이기(brand) : brand);
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
@@ -274,6 +276,33 @@ const domainCtrl = {
       return response(req, res, -200, "서버 에러 발생", false);
     }
   },
+};
+
+// 검색엔진용 상품 목록 — 몰 첫 화면·전체 상품 목록의 서버 HTML 에 상품명·가격·링크를 글로 싣는 데 쓴다(_app 검색용본문).
+//   손님 화면에서 지운 상품·숨긴 상품(status 5)은 뺀다. 최신 40개. 「검색엔진 노출」을 끈 몰은 붙이지 않는다.
+//   몰마다 5분 캐시(상품을 고쳐도 최대 5분 뒤 반영 — 검색엔진용이라 충분하다).
+const 상품목록최대 = 40;
+const 상품목록붙이기 = async (brand) => {
+  if (!(brand?.id > 0) || 검색막힘(brand?.seo_obj)) return brand;
+  const 키 = `domain-products:${brand.id}`;
+  let 목록 = null;
+  if (redisClient?.isOpen) {
+    try { const c = await redisClient.get(키); if (c) 목록 = JSON.parse(c); } catch (e) { /* 캐시 문제면 DB 로 */ }
+  }
+  if (!목록) {
+    try {
+      const [rows] = await readPool.query(
+        `SELECT id, product_name, product_sale_price, product_price, status FROM products
+          WHERE brand_id = ? AND is_delete = 0 AND status != 5
+          ORDER BY id DESC LIMIT ?`, [brand.id, 상품목록최대]);
+      목록 = rows.map((p) => ({ id: p.id, name: p.product_name, price: Number(p.product_sale_price) || 0, list_price: Number(p.product_price) || 0, status: Number(p.status) }));
+      if (redisClient?.isOpen) { try { await redisClient.set(키, JSON.stringify(목록), { EX: 300 }); } catch (e) { /* 무시 */ } }
+    } catch (e) {
+      logger.error('domain products: ' + (e?.message || e));
+      return brand; // 목록을 못 만들어도 몰 정보는 그대로 준다
+    }
+  }
+  return { ...brand, ssr_content: { ...(brand.ssr_content || {}), products: 목록 } };
 };
 
 // seo_obj 는 문자열(varchar)로 저장돼 있다. 깨진 값이면 막지 않은 것으로 본다(기본=노출).
