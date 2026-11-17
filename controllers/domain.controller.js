@@ -170,15 +170,30 @@ const domainCtrl = {
       brand.ssr_content = {};
 
       if (product_id > 0) {
+        // 지운 상품·숨긴 상품(status 5)은 손님 화면에도 안 나오므로 제목·검색 정보도 만들지 않는다.
         const [productRows] = await readPool.query(
-          `SELECT * FROM products WHERE id = ? AND brand_id = ?`,
+          `SELECT id, product_name, product_img, product_comment, product_price, product_sale_price, status
+             FROM products WHERE id = ? AND brand_id = ? AND is_delete = 0 AND status != 5`,
           [product_id, brand.id]
         );
         const product = productRows[0];
         if (product) {
+          const 몰이름 = brand.name;
           brand.name = `${brand.name} - ${product.product_name}`;
-          brand.og_img = `${product.product_img}`;
-          brand.og_description = `${product.product_comment}`;
+          if (product.product_img) brand.og_img = `${product.product_img}`;
+          // 한 줄 소개가 비면(null 이면 예전엔 문자열 "null" 이 나갔다) 몰 소개를 그대로 둔다 — 화면(_app)이 다시 채운다.
+          if (String(product.product_comment ?? '').trim()) brand.og_description = `${product.product_comment}`;
+          // 검색엔진용 상품 정보(_app 이 schema.org Product 로 그린다). 가격은 손님 화면과 같은 판매가.
+          brand.ssr_content.product = {
+            id: product.id,
+            name: product.product_name,
+            img: product.product_img || '',
+            comment: String(product.product_comment ?? '').trim(),
+            price: Number(product.product_sale_price) || 0,
+            list_price: Number(product.product_price) || 0,
+            status: Number(product.status),
+            shop_name: 몰이름,
+          };
         }
       } else if (post_id > 0) {
         const [postRows] = await readPool.query(
