@@ -196,6 +196,11 @@ const domainCtrl = {
             status: Number(product.status),
             shop_name: 몰이름,
           };
+        } else {
+          // 없는 상품(지움·숨김·다른 몰 상품) — 프론트가 404 로 응답하게 알린다(2026-11-19).
+          // 상세 API(product.controller get, IS_RETURN)와 같은 조건이라 손님이 보는 상품을 404 로 만들 일은 없다.
+          // 그대로 두면 「상품을 찾을 수 없음」 화면이 200 으로 나가 구글이 soft 404 로 잡는다.
+          brand.ssr_content.product_missing = true;
         }
       } else if (post_id > 0) {
         const [postRows] = await readPool.query(
