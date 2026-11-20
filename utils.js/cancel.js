@@ -713,10 +713,31 @@ const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason 
 
 // ── 부분취소·일부 취소요청을 목록·대시보드에 드러내는 공용 함수(2026-11-20) ─────────────
 
-// 손님이 낸 아직 처리 안 한 취소요청이 있는 주문 — SQL 조각. 일부 상품만 요청하면 주문 상태는 그대로(결제완료 등)라
-//   「취소요청」 탭·엑셀·손님 반품/환불 조회가 trx_status=1 만 보면 그 주문을 놓친다.
-export const 요청대기식 = (t = 'transactions') =>
-    `EXISTS (SELECT 1 FROM transaction_cancel_requests tcr WHERE tcr.trans_id=${t}.id AND tcr.status=0)`;
+
+// 그 몰에서 처리 안 한 취소요청이 걸린 주문 / 일부만 취소된 주문의 id(살아 있는 주문만).
+//   목록 조건에 EXISTS 를 OR 로 붙였더니(요청대기식) 주문이 100만 건 넘는 몰에서 인덱스를 못 타 3ms → 5초가 됐다(2026-11-20 검토에서 발견).
+//   요청·취소 원장은 작은 테이블이라 먼저 id 를 찾고, 없으면 목록 조건을 예전 그대로 둔다(대부분의 몰).
+export const 요청대기주문 = async (brand_id) => {
+    try {
+        const [rows] = await readPool.query(
+            `SELECT r.trans_id FROM transaction_cancel_requests r JOIN transactions t ON t.id=r.trans_id
+              WHERE r.status=0 AND t.brand_id=? AND t.is_cancel=0 AND t.is_cancel_trans=0 GROUP BY r.trans_id LIMIT 2000`, [Number(brand_id) || 0]);
+        return rows.map((r) => Number(r.trans_id)).filter(Boolean);
+    } catch (e) { return []; }   // 테이블이 없으면 예전 조건으로
+};
+export const 부분취소주문 = async (brand_id) => {
+    try {
+        const [rows] = await readPool.query(
+            `SELECT tc.trans_id FROM transaction_cancels tc JOIN transactions t ON t.id=tc.trans_id
+              WHERE t.brand_id=? AND t.is_cancel=0 AND t.is_cancel_trans=0 GROUP BY tc.trans_id LIMIT 2000`, [Number(brand_id) || 0]);
+        return rows.map((r) => Number(r.trans_id)).filter(Boolean);
+    } catch (e) { return []; }
+};
+// id 목록 조건(숫자만 들어간다). 비면 null.
+export const 주문목록식 = (ids, t = 'transactions') => {
+    const 숫자 = [...new Set((ids ?? []).map((x) => Number(x) || 0).filter((x) => x > 0))];
+    return 숫자.length ? `${t}.id IN (${숫자.join(',')})` : null;
+};
 
 // 부분취소로 돌려준 **현금**(PG) — 주문별. 원장 환불액(cancel_amount)에는 포인트로 돌려준 몫도 들어 있어,
 //   결제금액(amount = Σ줄 − 사용 포인트, 현금)에서 빼려면 포인트 몫을 빼야 한다.

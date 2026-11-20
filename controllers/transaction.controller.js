@@ -4,7 +4,7 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { canWriteBrand, checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
 import { 일괄판정, 택배사목록, 최대줄 } from "../utils.js/invoice-bulk.js";
 import { logTrx, actorOf, listTrxLogs, 취소사유나누기, 취소사유바꾸기 } from "../utils.js/trx-log.js";
-import { 실제취소시각식, 요청대기식, 부분취소정보붙이기, 취소요청닫기 } from "../utils.js/cancel.js";
+import { 실제취소시각식, 요청대기주문, 부분취소주문, 주문목록식, 부분취소정보붙이기, 취소요청닫기 } from "../utils.js/cancel.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
@@ -29,7 +29,7 @@ const 정상줄 = ` ${t_}.is_cancel=0 AND ${t_}.is_cancel_trans=0 `;
 export const 엑셀상태조건 = {
   waiting: `(${t_}.trx_status=0 AND ${정상줄} ${HIDE_ABANDONED_PENDING})`,   // 샵고 가맹점 「결제대기」(무통장·상품권 등 진짜 대기)
   0: `(${t_}.trx_status=0 AND ${정상줄})`,                                  // 그 밖 가맹점 「결제대기」(전부)
-  1: `((${t_}.trx_status=1 OR ${요청대기식(t_)}) AND ${정상줄})`,          // 취소요청(일부 상품만 요청한 주문은 상태가 그대로라 요청 기록으로도 본다, 11/20)
+  1: `(${t_}.trx_status=1 AND ${정상줄})`,                                  // 취소요청 — 일부 상품만 요청한 주문(상태는 그대로)은 목록 조회가 id 목록으로 덧붙인다(요청대기주문)
   5: `(${t_}.trx_status=5 AND ${정상줄})`,
   10: `(${t_}.trx_status=10 AND ${정상줄})`,
   15: `(${t_}.trx_status=15 AND ${정상줄})`,
@@ -140,7 +140,11 @@ const transactionCtrl = {
             const 엑셀상태 = 손님화면 ? null : 엑셀상태읽기(req.query.statuses);
             if (엑셀상태) {
                 sql += 엑셀상태.length
-                    ? ` AND (${엑셀상태.map((k) => 엑셀상태조건[k]).join(' OR ')}) `
+                    ? ` AND (${(await Promise.all(엑셀상태.map(async (k) => {
+                        // 「취소요청」에는 일부 상품만 요청한 주문도 넣는다 — 있을 때만 id 목록으로(없으면 예전 조건 그대로)
+                        const 대기식 = String(k) === '1' ? 주문목록식(await 요청대기주문(decode_dns?.id), table_name) : null;
+                        return 대기식 ? `((${table_name}.trx_status=1 OR ${대기식}) AND ${정상줄})` : 엑셀상태조건[k];
+                    }))).join(' OR ')}) `
                     : ` AND 1=0 `; // 아는 상태가 하나도 없으면 아무것도 주지 않는다(조건이 빠져 전부 나가면 안 된다)
             } else if (kind === 'failed') {
                 sql += ` AND (${table_name}.trx_status = -1 OR (${table_name}.trx_status=0 AND (${table_name}.appr_num IS NULL OR ${table_name}.appr_num='') AND (${table_name}.virtual_acct_num IS NULL OR ${table_name}.virtual_acct_num='') AND ${table_name}.trx_method IN (2,4,21,30,31,40,41))) `;
@@ -178,15 +182,20 @@ const transactionCtrl = {
                     // 취소를 실행해도 trx_status 는 1 그대로고 is_cancel 도 0 이라
                     // 이 조건에 계속 맞는다. 실제로 취소된 6건 중 4건이 여기 박혀 있었다.
                     // 일부 상품만 요청한 주문은 상태가 결제완료 그대로다(2026-11-20) — 처리 안 한 요청 기록으로도 잡는다.
-                    sql += ` AND (trx_status=1 OR ${요청대기식(table_name)}) AND is_cancel=0 AND is_cancel_trans=0 `;
+                    //   EXISTS 를 OR 로 붙이면 큰 몰에서 인덱스를 못 탄다 — 요청 걸린 주문 id 를 먼저 찾아, 있을 때만 덧붙인다.
+                    const 대기식 = 주문목록식(await 요청대기주문(decode_dns?.id), table_name);
+                    sql += 대기식
+                        ? ` AND (trx_status=1 OR ${대기식}) AND is_cancel=0 AND is_cancel_trans=0 `
+                        : ` AND trx_status=1 AND is_cancel=0 AND is_cancel_trans=0 `;
                 } else if (cancel_status == 2) {
                     // 취소완료 — 전체취소(취소 원장 줄) + 일부만 취소된 주문(원주문 줄, 2026-11-20 사장님: 취소완료 탭에 함께).
                     //   cancel_kind: full(전체취소만) / partial(부분취소만) / 없음(둘 다). 부분취소 주문은 살아 있어 남은 상품을 더 취소할 수 있다.
-                    const 부분취소줄 = `(is_cancel=0 AND is_cancel_trans=0 AND EXISTS (SELECT 1 FROM transaction_cancels tc WHERE tc.trans_id=${table_name}.id))`;
+                    //   부분취소 주문 id 를 먼저 찾는다(작은 테이블) — 없는 몰은 예전 조건(is_cancel=1) 그대로라 느려지지 않는다.
+                    const 부분식 = 주문목록식(await 부분취소주문(decode_dns?.id), table_name);
                     const 취소구분 = req.query?.cancel_kind;
                     sql += 취소구분 === 'full' ? ` AND is_cancel=1 `
-                        : 취소구분 === 'partial' ? ` AND ${부분취소줄} `
-                        : ` AND (is_cancel=1 OR ${부분취소줄}) `;
+                        : 취소구분 === 'partial' ? (부분식 ? ` AND ${부분식} ` : ` AND 1=0 `)
+                        : (부분식 ? ` AND (is_cancel=1 OR ${부분식}) ` : ` AND is_cancel=1 `);
                 } else if (cancel_status == 5) {
                     // 고객 '반품/환불조회' — 취소요청(trx_status=1) + 취소완료(is_cancel/is_cancel_trans) 전부.
                     // 프론트(shop demo-4·5·9 history.js)가 예전부터 5를 보내왔는데 여기 분기가 없었다.
@@ -197,7 +206,8 @@ const transactionCtrl = {
                     // 둘 다 생긴다. 조건에 둘 다 넣으면 손님에게 **같은 취소가 두 줄로** 보인다.
                     // 손님에게 뜻이 있는 것은 원주문 쪽이다(금액이 양수고 주문 정보가 그대로 있다).
                     // 일부만 취소된 주문도 손님 반품/환불 조회에 보인다(2026-11-20)
-                    sql += ` AND (trx_status=1 OR is_cancel_trans=1 OR ${요청대기식(table_name)} OR EXISTS (SELECT 1 FROM transaction_cancels tc WHERE tc.trans_id=${table_name}.id)) AND is_cancel=0 `;
+                    const 덧붙임 = 주문목록식([...(await 요청대기주문(decode_dns?.id)), ...(await 부분취소주문(decode_dns?.id))], table_name);
+                    sql += ` AND (trx_status=1 OR is_cancel_trans=1${덧붙임 ? ` OR ${덧붙임}` : ''}) AND is_cancel=0 `;
                 } else if (cancel_status == 0) {
                     sql += ` AND is_cancel=0 AND is_cancel_trans=0 `;
                 } else {
