@@ -13,8 +13,13 @@
 -- ============================================================================
 SET @있음 := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'transactions' AND COLUMN_NAME = 'pay_group');
+-- ⚠ 글자 정렬 방식을 ord_num 과 같게 만든다 — 표 기본값(general_ci)으로 두면 ord_num(unicode_ci)과 비교할 때
+--   Illegal mix of collations 오류가 난다(처음엔 빠뜨려서 2026-11-20_pay_group_collation.sql 로 바로잡았다).
+SET @주문번호정렬 := (SELECT COLLATION_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'transactions' AND COLUMN_NAME = 'ord_num');
 SET @sql := IF(@있음 = 0,
-  'ALTER TABLE transactions ADD COLUMN pay_group VARCHAR(64) NULL COMMENT ''결제 묶음 주문번호(여러 곳으로 보내기)'', ALGORITHM=INSTANT',
+  CONCAT('ALTER TABLE transactions ADD COLUMN pay_group VARCHAR(64) CHARACTER SET utf8mb4 COLLATE ', @주문번호정렬,
+         ' NULL COMMENT ''결제 묶음 주문번호(여러 곳으로 보내기)'', ALGORITHM=INSTANT'),
   'SELECT ''pay_group 이미 있음'' AS 결과');
 PREPARE 문 FROM @sql; EXECUTE 문; DEALLOCATE PREPARE 문;
 
