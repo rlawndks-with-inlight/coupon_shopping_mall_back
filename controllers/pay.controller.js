@@ -106,7 +106,7 @@ const 포스페이취소대조 = async (trx, 이미현금) => {
   try {
     const creds = await getForspayCreds(trx.brand_id);
     if (!creds?.app_key) return { ok: true };   // 키가 없으면 취소 호출에서 같은 이유로 멈춘다
-    // 결제 묶음(여러 곳으로 보내기)이면 포스페이 취소 합계는 묶음 전체 것이다 — 우리 쪽도 묶음 전체 환불로 비교한다(2026-11-20).
+    // 결제 묶음(여러 곳으로 배송)이면 포스페이 취소 합계는 묶음 전체 것이다 — 우리 쪽도 묶음 전체 환불로 비교한다(2026-11-20).
     if (trx.pay_group) 이미현금 = await 묶음현금환불(await 묶음주문들(trx));
     const { cancelledTotal } = await forspayGetCancelRecords({ app_key: creds.app_key, ord_num: 결제주문번호(trx) });
     const 포스페이 = Number(cancelledTotal) || 0;
@@ -417,12 +417,12 @@ const recalcOrderAmount = async (brand_id, products, use_point, seller_id = 0, �
     shipPolicy: { base: shipBase, free_min: shipFreeMin } };
 };
 
-// ── 여러 곳으로 보내기(2026-11-20) ────────────────────────────────────────────
+// ── 여러 곳으로 배송(2026-11-20) ────────────────────────────────────────────
 //
 // 결제는 한 번(포스페이 주문번호 G), 주문은 배송지마다 따로 만든다 — 가맹점 화면의 송장·상태·취소가
 // 지금처럼 주문 한 줄씩 돌게. 묶음 규칙은 utils.js/pay-group.js.
 // 사장님 결정(11/20): 최대 10곳 · 무료배송 기준은 배송지별(그 배송지 상품 합으로) · 제주·도서산간 추가비도 그 배송지에만 ·
-//   비회원도 · 「선물하기」라고 부르지 않는다(주문서 단추는 「여러 곳으로 보내기」).
+//   비회원도 · 「선물하기」라고 부르지 않는다(주문서 단추는 「여러 곳으로 배송」).
 // 막는 것: 포스페이(41)가 아닌 결제 · 포인트 사용(묶음 환불을 현금으로만 세기 위해) · 해외 배송지 · 셀러몰.
 // 배송지 목록은 JSON 한 칸(destinations_json)으로 받는다 — 폼 칸으로 풀면 10곳 × 상품 줄 × 옵션 칸이라
 //   서버의 요청당 칸 한도(multer parts 500)에 걸린다.
@@ -437,16 +437,16 @@ async function 여러곳주문(req, res, ctx) {
   const { brand_id, user_id, password, ord_num, amount, item_name, buyer_name, buyer_phone, pay_method, trx_method, seller_id, use_point, decode_dns } = ctx;
   const 목록 = 여러곳읽기(req.body);
   if (!목록) return response(req, res, -100, "배송지 정보를 읽지 못했습니다. 주문서를 새로고침한 뒤 다시 시도해 주세요.", false);
-  if (목록.length < 2 || 목록.length > 묶음최대) return response(req, res, -100, `여러 곳으로 보내기는 2곳에서 ${묶음최대}곳까지 가능합니다.`, false);
-  if (Number(trx_method) !== 41) return response(req, res, -100, "여러 곳으로 보내기는 이 결제수단으로 할 수 없습니다.", false);
-  if (Number(seller_id) > 0) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 보내기를 할 수 없습니다.", false);
-  if ((parseInt(use_point) || 0) > 0) return response(req, res, -100, "여러 곳으로 보내기에서는 포인트를 사용할 수 없습니다.", false);
-  if (!(await hasColumn('transactions', 'pay_group'))) return response(req, res, -100, "여러 곳으로 보내기를 준비 중입니다. 잠시 후 다시 시도해 주세요.", false);
+  if (목록.length < 2 || 목록.length > 묶음최대) return response(req, res, -100, `여러 곳으로 배송은 2곳에서 ${묶음최대}곳까지 가능합니다.`, false);
+  if (Number(trx_method) !== 41) return response(req, res, -100, "여러 곳으로 배송은 이 결제수단으로 할 수 없습니다.", false);
+  if (Number(seller_id) > 0) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 배송할 수 없습니다.", false);
+  if ((parseInt(use_point) || 0) > 0) return response(req, res, -100, "여러 곳으로 배송할 때는 포인트를 사용할 수 없습니다.", false);
+  if (!(await hasColumn('transactions', 'pay_group'))) return response(req, res, -100, "여러 곳으로 배송을 준비 중입니다. 잠시 후 다시 시도해 주세요.", false);
   // 기본은 켜짐(사장님 2026-11-20). 몰 설정에서 명시적으로 끈 몰(multi_ship=0)만 막는다(기본설정 › 배송비설정 탭).
   {
     const [[b]] = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [brand_id]);
     let s = {}; try { s = JSON.parse(b?.setting_obj ?? '{}'); } catch (e) { s = {}; }
-    if ([0, '0', false, 'false'].includes(s?.multi_ship)) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 보내기를 할 수 없습니다.", false);
+    if ([0, '0', false, 'false'].includes(s?.multi_ship)) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 배송할 수 없습니다.", false);
   }
 
   // 배송지마다 금액을 서버가 다시 계산한다(무료배송·제주 추가비 모두 배송지별)
@@ -484,7 +484,7 @@ async function 여러곳주문(req, res, ctx) {
 
   // 결제 전 검사는 모든 배송지 줄을 합쳐서(재고는 같은 상품을 합산한다)
   const 모든줄 = 곳.flatMap((x) => x.줄);
-  // 구매 가능 상태(0 판매중, 3 새상품) — ready 의 상태 하드블록은 products 칸을 보는데 여러 곳 주문은 그 칸이 비어 있다
+  // 구매 가능 상태(0 판매중, 3 새상품) — ready 의 상태 하드블록은 products 칸을 보는데 여러 곳 배송은 그 칸이 비어 있다
   {
     const ids = [...new Set(모든줄.map((p) => parseInt(p?.id)).filter((v) => Number.isInteger(v) && v > 0))];
     const [상태] = await readPool.query(`SELECT id, status FROM products WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
@@ -817,7 +817,7 @@ const payCtrl = {
         }
       }
 
-      // ── 여러 곳으로 보내기 — 결제 한 번, 배송지마다 주문(2026-11-20). 위의 주체·결제수단·상품 상태 검사는 같이 거친다.
+      // ── 여러 곳으로 배송 — 결제 한 번, 배송지마다 주문(2026-11-20). 위의 주체·결제수단·상품 상태 검사는 같이 거친다.
       if (req.body?.destinations_json) {
         return await 여러곳주문(req, res, { brand_id, user_id, password, ord_num, amount, item_name, buyer_name, buyer_phone, pay_method, trx_method, seller_id, use_point, decode_dns });
       }
@@ -1604,7 +1604,7 @@ const payCtrl = {
           const [[지금]] = await readPool.query(`SELECT is_cancel_trans, is_cancel FROM transactions WHERE id=?`, [trx.id]);
           if (Number(지금?.is_cancel_trans) === 1 || Number(지금?.is_cancel) === 1) return { ok: false, message: "이미 취소된 주문입니다." };
           try {
-            // 묶음 주문이면 포스페이에는 묶음 번호로 이 주문 금액만큼 부분취소한다(여러 곳으로 보내기, 2026-11-20)
+            // 묶음 주문이면 포스페이에는 묶음 번호로 이 주문 금액만큼 부분취소한다(여러 곳으로 배송, 2026-11-20)
             if (현금 > 0) await forspayCancelTransaction({ app_key: creds.app_key, ord_num: 결제주문번호(trx), amount: 현금 });
           } catch (e) {
             logger.error(errText(e));
@@ -1956,7 +1956,7 @@ const payCtrl = {
           return res.status(503).send({ ok: false });
         }
         if (trx.pay_group) {
-          // 결제 묶음(여러 곳으로 보내기) — 포스페이 취소 합계는 묶음 전체 것이다(2026-11-20).
+          // 결제 묶음(여러 곳으로 배송) — 포스페이 취소 합계는 묶음 전체 것이다(2026-11-20).
           //   전액이면 묶음의 남은 주문을 모두 취소, 우리가 돌려준 것보다 많으면 확인 필요, 같으면 우리가 한 취소다.
           const 묶음 = await 묶음주문들(trx);
           const 합계 = 묶음금액(묶음);
@@ -2180,7 +2180,7 @@ async function settleForspayTransaction(transId, txn = {}, extra = {}) {
   // 값이 아니라 '키 이름'만 기록한다(개인정보 노출 없음). 필드명 확인 후 이 줄을 제거할 것.
   try { logger.info('[forspay-diag] settle data keys: ' + Object.keys(data || {}).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
   if (Number(trx.trx_method) !== 41 || Number(trx.is_cancel) === 1) return false;
-  // 결제 묶음(여러 곳으로 보내기) — 승인 하나로 묶음의 주문 전부를 확정한다(2026-11-20)
+  // 결제 묶음(여러 곳으로 배송) — 승인 하나로 묶음의 주문 전부를 확정한다(2026-11-20)
   if (trx.pay_group) return await 묶음정산(trx, txn, data);
   if (Number(trx.trx_status) >= 5) {
     // 이미 확정됐거나 그 뒤 단계(출고·배송) — 상태는 건드리지 않는다. 단, 카드번호는 거래조회 응답엔 없고

@@ -106,7 +106,7 @@ const 시작 = Date.now();
 //   전자는 '조용히 상위 취소된 결제완료 건', 후자는 '취소요청인데 상위가 이미 취소해 완결이 필요한 건'.
 //   어느 경우든 포스페이가 명시적으로 cancelled 라 할 때만 반영한다(아래 fail-closed).
 const 이번일수 = 오래된것도 ? 최근일수 : Math.min(매번일수, 최근일수);
-// 결제 묶음(여러 곳으로 보내기, 2026-11-20) — 칸이 있으면 함께 읽어 묶음마다 한 번만 포스페이에 묻는다.
+// 결제 묶음(여러 곳으로 배송, 2026-11-20) — 칸이 있으면 함께 읽어 묶음마다 한 번만 포스페이에 묻는다.
 const [[묶음칸]] = await readPool.query(
     `SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='transactions' AND COLUMN_NAME='pay_group'`);
 const 묶음열 = Number(묶음칸?.n) > 0 ? ', pay_group' : '';
