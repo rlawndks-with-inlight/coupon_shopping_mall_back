@@ -351,6 +351,15 @@ const brandCtrl = {
           if (typeof 기존값 === 'string') { try { 기존값 = JSON.parse(기존값); } catch (e) { 기존값 = null; } }
           if (기존값 && typeof 기존값 === 'object') obj.setting_obj = JSON.stringify({ ...설정, island_fee: 기존값 });
         }
+        // 「여러 곳으로 보내기」 스위치(multi_ship, 2026-11-20)도 같은 함정이다 — 다른 화면이 옛 setting_obj 로 저장하면 조용히 꺼진다.
+        //   배송비설정 화면은 켬(1)·끔(0)을 늘 명시적으로 보낸다. 값이 실려 오지 않았을 때만 DB 값을 그대로 둔다.
+        if (설정 && typeof 설정 === 'object' && !Array.isArray(설정) && 설정.multi_ship === undefined) {
+          const [켬] = await writePool.query(`SELECT JSON_EXTRACT(setting_obj, '$.multi_ship') AS m FROM ${table_name} WHERE id=?`, [id]);
+          if (Number(켬?.[0]?.m) === 1) {
+            let 지금 = {}; try { 지금 = JSON.parse(obj.setting_obj); } catch (e) { 지금 = { ...설정 }; }
+            obj.setting_obj = JSON.stringify({ ...지금, multi_ship: 1 });
+          }
+        }
       }
 
       let files = settingFiles(req.files);

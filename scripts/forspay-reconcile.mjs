@@ -36,6 +36,7 @@ import { readPool } from '../config/db-pool.js';
 import { markCanceled } from '../utils.js/cancel.js';
 import { getCancelRecords as forspayGetCancelRecords, getTransaction as forspayGetTransaction } from '../utils.js/payments/forspay.js';
 import { settleForspayTransaction } from '../controllers/pay.controller.js';
+import { 묶음주문들, 묶음금액, 묶음현금환불 } from '../utils.js/pay-group.js';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -105,14 +106,21 @@ const 시작 = Date.now();
 //   전자는 '조용히 상위 취소된 결제완료 건', 후자는 '취소요청인데 상위가 이미 취소해 완결이 필요한 건'.
 //   어느 경우든 포스페이가 명시적으로 cancelled 라 할 때만 반영한다(아래 fail-closed).
 const 이번일수 = 오래된것도 ? 최근일수 : Math.min(매번일수, 최근일수);
-const [candidates] = await readPool.query(
-    `SELECT id, ord_num, brand_id, amount FROM transactions
+// 결제 묶음(여러 곳으로 보내기, 2026-11-20) — 칸이 있으면 함께 읽어 묶음마다 한 번만 포스페이에 묻는다.
+const [[묶음칸]] = await readPool.query(
+    `SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='transactions' AND COLUMN_NAME='pay_group'`);
+const 묶음열 = Number(묶음칸?.n) > 0 ? ', pay_group' : '';
+const 결제번호 = (t) => String(t?.pay_group || t?.ord_num || '');
+const 한번만 = (rows) => { const 본 = new Set(); return rows.filter((t) => { const k = `${t.brand_id}/${결제번호(t)}`; if (본.has(k)) return false; 본.add(k); return true; }); };
+const [후보] = await readPool.query(
+    `SELECT id, ord_num, brand_id, amount${묶음열} FROM transactions
       WHERE trx_method=41 AND trx_status IN (1, 5) AND (is_cancel_trans=0 OR is_cancel_trans IS NULL)
         AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
       ORDER BY id DESC
       LIMIT ?`,
     [이번일수, 최대건수]
 );
+const candidates = 한번만(후보);
 
 log(`대상 ${candidates.length}건 (최근 ${이번일수}일${오래된것도 ? ' — 하루 한 번 오래된 결제까지' : ''}, 상한 ${최대건수}, 조회 간격 ${호출간격ms}ms)`);
 
@@ -132,7 +140,7 @@ for (const t of candidates) {
         // 2026-09-03 협력사 답변). 그래서 취소 레코드를 1부터 읽어 합계로 판단한다.
         let cancelledTotal, cancelledAt;
         try {
-            ({ cancelledTotal, cancelledAt } = await 조회(() => forspayGetCancelRecords({ app_key, ord_num: t.ord_num, timeout: 건당타임아웃ms, beforeEach: 천천히 })));
+            ({ cancelledTotal, cancelledAt } = await 조회(() => forspayGetCancelRecords({ app_key, ord_num: 결제번호(t), timeout: 건당타임아웃ms, beforeEach: 천천히 })));
         } catch (e) {
             // 조회 실패는 '취소'가 아니다. 절대 취소로 처리하지 않는다(fail-closed). 다음 회차 재시도.
             스킵++;
@@ -140,6 +148,23 @@ for (const t of candidates) {
             continue;
         }
 
+        if (t.pay_group) {
+            // 묶음: 포스페이 취소 합계는 묶음 전체 것 — 전액이면 남은 주문 모두 취소, 우리 기록보다 많으면 확인 필요
+            const 묶음 = await 묶음주문들(t);
+            const 합계 = 묶음금액(묶음);
+            const 우리 = await 묶음현금환불(묶음);
+            if (합계 > 0 && cancelledTotal >= 합계) {
+                for (const r of 묶음) {
+                    if (Number(r.is_cancel_trans) === 1) continue;
+                    await markCanceled(r.id, { cancelled_at: cancelledAt });
+                    취소반영++;
+                }
+                log(`★ 상위 전액취소 반영(묶음) 묶음=${t.pay_group} brand=${t.brand_id} 합계=${합계} 취소합계=${cancelledTotal}`);
+            } else if (cancelledTotal > 우리) {
+                log(`△ 묶음 부분취소가 우리 기록보다 큼 묶음=${t.pay_group} 포스페이=${cancelledTotal} 우리=${우리}/${합계} — 자동 반영 안 함(확인 필요)`);
+            }
+            continue;
+        }
         const orderAmount = Math.abs(Number(t.amount) || 0);
         if (orderAmount > 0 && cancelledTotal >= orderAmount) {
             await markCanceled(t.id, { cancelled_at: cancelledAt }); // 웹훅과 동일 경로: 취소표시 + 원장 + 재고/포인트(멱등, PG 재호출 없음)
@@ -170,8 +195,8 @@ log(`완료 — 확인 ${확인} / 취소반영 ${취소반영} / 스킵 ${스�
 //   - 조회 실패·없음(409)은 건드리지 않는다. 방금 결제창을 연 주문과 겹치지 않게 15분 지난 것만 본다.
 //   - 결제창 세션은 24시간 뒤 만료된다(포스페이 문서) — 그보다 늦은 승인은 없으니 2일이면 넉넉하다.
 const 복구일수 = parseInt(process.env.FORSPAY_RECOVER_DAYS ?? '2') || 2;
-const [pendings] = await readPool.query(
-    `SELECT id, ord_num, brand_id FROM transactions
+const [대기] = await readPool.query(
+    `SELECT id, ord_num, brand_id${묶음열} FROM transactions
       WHERE trx_method=41 AND trx_status IN (0, -1)
         AND IFNULL(is_cancel,0)=0 AND IFNULL(is_cancel_trans,0)=0 AND IFNULL(is_delete,0)=0
         AND ord_num IS NOT NULL AND ord_num <> ''
@@ -181,6 +206,7 @@ const [pendings] = await readPool.query(
       LIMIT ?`,
     [복구일수, 최대건수]
 );
+const pendings = 한번만(대기);   // 묶음은 한 번만 묻는다(정산이 묶음 전체를 확정한다)
 log(`승인 복구 대상 ${pendings.length}건 (결제대기·미완료, 최근 ${복구일수}일)`);
 let 복구 = 0, 미승인 = 0, 복구스킵 = 0;
 for (const t of pendings) {
@@ -189,7 +215,7 @@ for (const t of pendings) {
         if (!app_key) { 복구스킵++; continue; }
         let txn = null;
         try {
-            txn = await 조회(async () => { await 천천히(); return forspayGetTransaction({ app_key, ord_num: t.ord_num, timeout: 건당타임아웃ms }); });
+            txn = await 조회(async () => { await 천천히(); return forspayGetTransaction({ app_key, ord_num: 결제번호(t), timeout: 건당타임아웃ms }); });
         } catch (e) {
             const st = e?.response?.status;
             if (st === 409 || st === 404) { 미승인++; } else { 복구스킵++; log(`skip(복구) id=${t.id} (조회실패: ${st || e?.code || e?.message})`); }

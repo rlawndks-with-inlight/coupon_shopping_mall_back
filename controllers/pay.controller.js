@@ -26,6 +26,7 @@ import { 추가배송비, 추가비줄 } from "../utils.js/island-fee.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
 import { applyCancelEffects, markCanceled, getCancelState, cancelLines, withCancelLock, 추가상품줄인가, 취소미리보기 } from "../utils.js/cancel.js";
+import { 결제주문번호, 묶음주문들, 묶음금액, 묶음현금환불, 묶음주문번호, 묶음최대 } from "../utils.js/pay-group.js";
 import { logTrx, actorOf } from "../utils.js/trx-log.js";
 import { 늦은승인정리 } from "../utils.js/late-approve.js";
 
@@ -105,7 +106,9 @@ const 포스페이취소대조 = async (trx, 이미현금) => {
   try {
     const creds = await getForspayCreds(trx.brand_id);
     if (!creds?.app_key) return { ok: true };   // 키가 없으면 취소 호출에서 같은 이유로 멈춘다
-    const { cancelledTotal } = await forspayGetCancelRecords({ app_key: creds.app_key, ord_num: trx.ord_num });
+    // 결제 묶음(여러 곳으로 보내기)이면 포스페이 취소 합계는 묶음 전체 것이다 — 우리 쪽도 묶음 전체 환불로 비교한다(2026-11-20).
+    if (trx.pay_group) 이미현금 = await 묶음현금환불(await 묶음주문들(trx));
+    const { cancelledTotal } = await forspayGetCancelRecords({ app_key: creds.app_key, ord_num: 결제주문번호(trx) });
     const 포스페이 = Number(cancelledTotal) || 0;
     if (포스페이 > (Number(이미현금) || 0)) {
       logger.error(`[취소 대조] 포스페이 취소 합계가 우리 기록보다 큼 trans_id=${trx.id} 포스페이=${포스페이} 우리=${이미현금}`);
@@ -414,6 +417,204 @@ const recalcOrderAmount = async (brand_id, products, use_point, seller_id = 0, �
     shipPolicy: { base: shipBase, free_min: shipFreeMin } };
 };
 
+// ── 여러 곳으로 보내기(2026-11-20) ────────────────────────────────────────────
+//
+// 결제는 한 번(포스페이 주문번호 G), 주문은 배송지마다 따로 만든다 — 가맹점 화면의 송장·상태·취소가
+// 지금처럼 주문 한 줄씩 돌게. 묶음 규칙은 utils.js/pay-group.js.
+// 사장님 결정(11/20): 최대 10곳 · 무료배송 기준은 배송지별(그 배송지 상품 합으로) · 제주·도서산간 추가비도 그 배송지에만 ·
+//   비회원도 · 「선물하기」라고 부르지 않는다(주문서 단추는 「여러 곳으로 보내기」).
+// 막는 것: 포스페이(41)가 아닌 결제 · 포인트 사용(묶음 환불을 현금으로만 세기 위해) · 해외 배송지 · 셀러몰.
+// 배송지 목록은 JSON 한 칸(destinations_json)으로 받는다 — 폼 칸으로 풀면 10곳 × 상품 줄 × 옵션 칸이라
+//   서버의 요청당 칸 한도(multer parts 500)에 걸린다.
+const 여러곳읽기 = (body) => {
+  try {
+    const v = typeof body?.destinations_json === 'string' ? JSON.parse(body.destinations_json) : null;
+    return Array.isArray(v) ? v : null;
+  } catch (e) { return null; }
+};
+
+async function 여러곳주문(req, res, ctx) {
+  const { brand_id, user_id, password, ord_num, amount, item_name, buyer_name, buyer_phone, pay_method, trx_method, seller_id, use_point, decode_dns } = ctx;
+  const 목록 = 여러곳읽기(req.body);
+  if (!목록) return response(req, res, -100, "배송지 정보를 읽지 못했습니다. 주문서를 새로고침한 뒤 다시 시도해 주세요.", false);
+  if (목록.length < 2 || 목록.length > 묶음최대) return response(req, res, -100, `여러 곳으로 보내기는 2곳에서 ${묶음최대}곳까지 가능합니다.`, false);
+  if (Number(trx_method) !== 41) return response(req, res, -100, "여러 곳으로 보내기는 이 결제수단으로 할 수 없습니다.", false);
+  if (Number(seller_id) > 0) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 보내기를 할 수 없습니다.", false);
+  if ((parseInt(use_point) || 0) > 0) return response(req, res, -100, "여러 곳으로 보내기에서는 포인트를 사용할 수 없습니다.", false);
+  if (!(await hasColumn('transactions', 'pay_group'))) return response(req, res, -100, "여러 곳으로 보내기를 준비 중입니다. 잠시 후 다시 시도해 주세요.", false);
+  // 몰 설정에서 켠 몰만(설정관리 › 배송비설정 「여러 곳으로 보내기」)
+  {
+    const [[b]] = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [brand_id]);
+    let s = {}; try { s = JSON.parse(b?.setting_obj ?? '{}'); } catch (e) { s = {}; }
+    if (!(Number(s?.multi_ship) === 1 || s?.multi_ship === true)) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 보내기를 할 수 없습니다.", false);
+  }
+
+  // 배송지마다 금액을 서버가 다시 계산한다(무료배송·제주 추가비 모두 배송지별)
+  const 곳 = [];
+  for (let k = 0; k < 목록.length; k++) {
+    const d = 목록[k] ?? {};
+    const 이름 = String(d.receiver ?? '').trim();
+    const 전화 = String(d.addr_phone ?? '').trim();
+    const 우편 = String(d.zonecode ?? '').trim();
+    const 주소 = String(d.addr ?? '').trim();
+    if (!이름 || !전화 || !우편 || !주소) return response(req, res, -100, `${k + 1}번째 배송지의 받는 분·연락처·주소를 모두 입력해 주세요.`, false);
+    const 줄 = (Array.isArray(d.products) ? d.products : []).filter((p) => (parseInt(p?.order_count) || 0) > 0);
+    if (!줄.length) return response(req, res, -100, `${k + 1}번째 배송지에 보낼 상품이 없습니다.`, false);
+    const expected = await recalcOrderAmount(brand_id, 줄, 0, 0, { zonecode: 우편, addr: 주소, country_code: 'KR', country_name: null });
+    // null = 없는 상품·잘못된 옵션·본상품 없이 추가상품만(배송지마다 같은 규칙)
+    if (!expected) return response(req, res, -100, `${k + 1}번째 배송지의 상품 정보가 올바르지 않습니다. 추가상품은 본상품과 같은 곳으로 보내 주세요.`, false);
+    if (expected.blocked) {
+      return response(req, res, -100, `${k + 1}번째 배송지: ` + (expected.region === 'jeju'
+        ? "이 쇼핑몰은 제주 지역으로 배송하지 않습니다." : "이 쇼핑몰은 도서산간 지역으로 배송하지 않습니다."), false);
+    }
+    for (let i = 0; i < 줄.length; i++) {
+      줄[i].order_amount = expected.lines[i]?.order_amount ?? 0;
+      줄[i].delivery_fee = expected.lines[i]?.delivery_fee ?? 0;
+      줄[i].seller_id = 0;
+    }
+    곳.push({ d: { receiver: 이름, addr_phone: 전화, zonecode: 우편, addr: 주소, detail_addr: String(d.detail_addr ?? '').slice(0, 200),
+      delivery_memo: d.delivery_memo ? String(d.delivery_memo).slice(0, 255) : null }, 줄, expected });
+  }
+  const 합계 = 곳.reduce((s, x) => s + x.expected.amount, 0);
+  const client_amount = parseInt(amount);
+  if (!Number.isInteger(client_amount) || client_amount !== 합계) {
+    logger.error(`[pay.ready·여러곳] 결제금액 불일치 brand=${brand_id} client=${amount} server=${합계}`);
+    return response(req, res, -100, "결제금액이 변경되었습니다. 주문서를 새로고침한 뒤 다시 시도해 주세요.", false);
+  }
+
+  // 결제 전 검사는 모든 배송지 줄을 합쳐서(재고는 같은 상품을 합산한다)
+  const 모든줄 = 곳.flatMap((x) => x.줄);
+  // 구매 가능 상태(0 판매중, 3 새상품) — ready 의 상태 하드블록은 products 칸을 보는데 여러 곳 주문은 그 칸이 비어 있다
+  {
+    const ids = [...new Set(모든줄.map((p) => parseInt(p?.id)).filter((v) => Number.isInteger(v) && v > 0))];
+    const [상태] = await readPool.query(`SELECT id, status FROM products WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+    const 있는 = new Set(상태.map((r) => parseInt(r.id)));
+    if (상태.some((r) => !(r.status == 0 || r.status == 3)) || ids.some((id) => !있는.has(id))) {
+      return response(req, res, -100, "구매할 수 없는 상품이 포함되어 있습니다. (품절/판매중단)", false);
+    }
+  }
+  try {
+    const 빠진옵션 = await findMissingRequiredOption(모든줄);
+    if (빠진옵션) return response(req, res, -100, `${빠진옵션} 을(를) 선택해 주세요.`, false);
+    const 한정 = await checkPurchaseLimit(user_id, 모든줄);
+    if (!한정.ok) return response(req, res, -100, 한정.message, false);
+    const 부족 = await checkStock(모든줄);
+    if (!부족.ok) return response(req, res, -100, 부족.message, false);
+    const 빠진항목 = await findMissingOrderFormField(모든줄);
+    if (빠진항목) return response(req, res, -100, `${빠진항목}을(를) 입력해 주세요.`, false);
+  } catch (e) {
+    logger.error('주문 사전검사 실패(무시하고 진행): ' + (e?.sqlMessage || e?.message || e));
+  }
+
+  // 결제 주문번호 G — 묶음 주문번호(G-2 … G-10)가 칸(100자)에 들어가게 60자로 자른다
+  const G = String(ord_num || `FS${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 60);
+  {
+    const 번호 = 곳.map((_, k) => 묶음주문번호(G, k + 1));
+    const [[dup]] = await readPool.query(`SELECT id FROM transactions WHERE ord_num IN (${번호.map(() => '?').join(',')}) AND is_cancel=0 LIMIT 1`, 번호);
+    if (dup) return response(req, res, -100, "주문번호가 중복되었습니다. 다시 시도해 주세요.", false);
+  }
+
+  const 만든 = [];
+  const 정리 = async () => { for (const id of 만든) { try { await 결제실패정리(id); } catch (e) { /* 이미 로그 */ } } };
+  try {
+    const 공통 = {
+      brand_id, user_id, password: hashOrderPassword(password), item_name, buyer_name, buyer_phone,
+      trx_method, use_point: 0, seller_id: 0, pay_group: G,
+      ...(pay_method ? { pay_method } : {}),
+      ...((await hasColumn('transactions', 'country_code')) ? { country_code: 'KR', country_name: null, city: null, state_region: null } : {}),
+    };
+    const 섬칸 = await hasColumn('transactions', 'island_fee');
+    const 규칙칸 = await hasColumn('transactions', 'ship_policy');
+    const 메모칸 = await hasColumn('transactions', 'delivery_memo');
+    for (let k = 0; k < 곳.length; k++) {
+      const { d, 줄, expected } = 곳[k];
+      let obj = {
+        ...공통,
+        ord_num: 묶음주문번호(G, k + 1),
+        amount: expected.amount,
+        addr: d.addr, detail_addr: d.detail_addr, receiver: d.receiver, receiver_phone: d.addr_phone, zonecode: d.zonecode,
+        ...(메모칸 ? { delivery_memo: d.delivery_memo } : {}),
+        ...(섬칸 ? { island_region: ['jeju', 'island'].includes(expected.island?.region) ? expected.island.region : null, island_fee: Number(expected.island?.fee) || 0 } : {}),
+        ...(규칙칸 && expected.shipPolicy ? { ship_policy: JSON.stringify(expected.shipPolicy) } : {}),
+      };
+      obj = encForSave('transactions', obj);
+      const result = await insertQuery(`${table_name}`, obj);
+      const tid = result?.insertId;
+      if (!tid) throw new Error('주문 저장 실패');
+      만든.push(tid);
+      const 행 = 줄.map((p) => [tid, parseInt(p?.id), p?.order_name, parseInt(p?.order_amount), parseInt(p?.order_count),
+        JSON.stringify(p?.groups ?? []), (isNaN(p?.delivery_fee) ? 0 : p?.delivery_fee), 0, 0, 0]);
+      await writePool.query(
+        `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee, seller_trx_fee_type) VALUES ?`,
+        [행]);
+      try { await saveOrderFormValues(tid, 줄); } catch (e) { logger.error('order_form save failed: ' + (e?.message ?? e)); }
+      let 재고 = true;
+      try { 재고 = await decreaseStock(tid, 줄); } catch (e) { logger.error('재고 차감 실패(주문은 그대로 진행): ' + (e?.sqlMessage || e?.message || e)); }
+      if (재고 === false) {
+        await 정리();
+        return response(req, res, -100, "재고가 부족하여 주문할 수 없습니다. 수량을 확인해 주세요.", false);
+      }
+    }
+  } catch (e) {
+    logger.error(`[pay.ready·여러곳] 주문 저장 실패 brand=${brand_id} 묶음=${G}: ${errText(e)}`);
+    await 정리();
+    return response(req, res, -100, 결제시작실패문구, false);
+  }
+
+  // 포스페이 결제창 — 묶음 합계로 한 번
+  const 진단 = { method: '(미정)', pg_method_id: '-', route: '-', provider: '(자동)', app_key_len: 0 };
+  let 대분류다시확인 = () => {};
+  try {
+    const creds = await getForspayCreds(brand_id);
+    진단.app_key_len = String(creds?.app_key ?? '').length;
+    if (!creds?.app_key || !FORSPAY_API_BASE || FORSPAY_API_BASE.includes('REPLACE')) {
+      logger.error(`[forspay·여러곳] 결제모듈·Base URL 설정 누락 — brand_id=${brand_id}`);
+      await 정리();
+      return response(req, res, -100, 결제시작실패문구, false);
+    }
+    const fsMethod = getForspayMethod(pay_method) || getForspayMethod('card');
+    진단.method = fsMethod?.key ?? '(없음)'; 진단.pg_method_id = fsMethod?.pg_method_id ?? '-'; 진단.route = fsMethod?.route ?? '-';
+    if (fsMethod?.pending) { await 정리(); return response(req, res, -100, '아직 준비 중인 결제수단입니다. 다른 방법으로 결제해 주세요.', false); }
+    const routedProvider = creds?.method_provider?.[fsMethod.key];
+    const fsProvider = (routedProvider !== undefined && routedProvider !== null && String(routedProvider).trim() !== '') ? routedProvider : creds.pg_provider_id;
+    진단.provider = fsProvider ?? '(자동)';
+    대분류다시확인 = () => { 실패후대분류다시확인(brand_id, creds.app_key, fsMethod).catch(() => {}); };
+    const front_url = (req.body.front_url || "").toString().trim();
+    const backBase = `${req.protocol}://${req.get('host')}`;
+    const return_url = `${backBase}/api/pays/forspay/return?front=${encodeURIComponent(front_url)}&trans=${만든[0]}&ord=${encodeURIComponent(G)}`;
+    const requested_mode = (process.env.FORSPAY_CHECKOUT_MODE === 'forspay_ui') ? 'forspay_ui' : 'direct_pg_ui';
+    const session = await forspayCreateSession({
+      app_key: creds.app_key, amount: 합계, item_name: item_name || '상품', buyer_name, ord_num: G,
+      pg_method_id: fsMethod.pg_method_id, route: fsMethod.route, foreign_method: fsMethod.foreign_method, pg_provider_id: fsProvider,
+      return_url, user_agent: req.body.user_agent || 'WP', buyer_phone, buyer_email: req.body.buyer_email, billaddrcity: req.body.billaddrcity,
+      checkout_mode: requested_mode,
+    });
+    if (session?.embed?.popup_url) {
+      return response(req, res, 100, "success", { id: 만든[0], group_count: 만든.length, checkout_mode: 'forspay_ui', order_code: session?.order_code,
+        popup_url: session.embed.popup_url, init_payload: session.embed.init_payload });
+    }
+    let launch_page_url = session?.launch_page_url;
+    if (!launch_page_url && session?.order_code) {
+      const launched = await forspayGetLaunch({ app_key: creds.app_key, order_code: session.order_code, return_url, user_agent: req.body.user_agent || 'WP' });
+      launch_page_url = launched?.launch_page_url;
+    }
+    if (!launch_page_url) {
+      logger.error(`[forspay·여러곳] launch_page_url 없음 — resp=${JSON.stringify(session)}`);
+      대분류다시확인();
+      await 정리();
+      return response(req, res, -100, 거절안내(거절코드(session)) ?? 결제시작실패문구, false);
+    }
+    return response(req, res, 100, "success", { id: 만든[0], group_count: 만든.length, checkout_mode: 'direct_pg_ui', order_code: session?.order_code, launch_page_url });
+  } catch (e) {
+    logger.error('[forspay·여러곳] 세션 생성 실패'
+      + ` brand_id=${brand_id} 묶음=${G} 곳=${만든.length} amount=${합계} method=${진단.method} pg_method_id=${진단.pg_method_id}`
+      + ` route=${진단.route} pg_provider_id=${진단.provider} app_key_len=${진단.app_key_len} ${errText(e)}`);
+    대분류다시확인();
+    await 정리();
+    return response(req, res, -100, 거절안내(거절코드(e?.response?.data)) ?? 결제시작실패문구, false);
+  }
+}
+
 const payCtrl = {
 
   ready: async (req, res, next) => {
@@ -614,6 +815,11 @@ const payCtrl = {
             return response(req, res, -100, "구매할 수 없는 상품이 포함되어 있습니다. (품절/판매중단)", false);
           }
         }
+      }
+
+      // ── 여러 곳으로 보내기 — 결제 한 번, 배송지마다 주문(2026-11-20). 위의 주체·결제수단·상품 상태 검사는 같이 거친다.
+      if (req.body?.destinations_json) {
+        return await 여러곳주문(req, res, { brand_id, user_id, password, ord_num, amount, item_name, buyer_name, buyer_phone, pay_method, trx_method, seller_id, use_point, decode_dns });
       }
 
       // ── 결제금액 검증(서버 재계산) ────────────────────────────────────
@@ -1398,7 +1604,8 @@ const payCtrl = {
           const [[지금]] = await readPool.query(`SELECT is_cancel_trans, is_cancel FROM transactions WHERE id=?`, [trx.id]);
           if (Number(지금?.is_cancel_trans) === 1 || Number(지금?.is_cancel) === 1) return { ok: false, message: "이미 취소된 주문입니다." };
           try {
-            if (현금 > 0) await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount: 현금 });
+            // 묶음 주문이면 포스페이에는 묶음 번호로 이 주문 금액만큼 부분취소한다(여러 곳으로 보내기, 2026-11-20)
+            if (현금 > 0) await forspayCancelTransaction({ app_key: creds.app_key, ord_num: 결제주문번호(trx), amount: 현금 });
           } catch (e) {
             logger.error(errText(e));
             return { ok: false, code: -200, message: e?.response?.data?.message || "포스페이 취소 실패" };
@@ -1591,7 +1798,7 @@ const payCtrl = {
         pgCancel: async ({ trx, amount }) => {
           const creds = await getForspayCreds(trx.brand_id);
           if (!creds?.app_key) throw new Error("포스페이 결제모듈 설정이 없습니다.");
-          return await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount });
+          return await forspayCancelTransaction({ app_key: creds.app_key, ord_num: 결제주문번호(trx), amount });
         },
         // 포스페이 콘솔에서 따로 취소한 금액이 우리 기록보다 많으면 멈춘다(두 번 환불 방지, 2026-11-20).
         pgPrecheck: async ({ trx, 이미현금 }) => 포스페이취소대조(trx, 이미현금),
@@ -1747,6 +1954,22 @@ const payCtrl = {
           // 예전엔 200 이라 재전송이 없어 3시간마다 도는 대조까지 밀렸다(2026-11-06).
           logger.error(`[forspay webhook] 취소 레코드 조회 실패 — 재전송 요청(503) ord=${ord}: ${errText(e)}`);
           return res.status(503).send({ ok: false });
+        }
+        if (trx.pay_group) {
+          // 결제 묶음(여러 곳으로 보내기) — 포스페이 취소 합계는 묶음 전체 것이다(2026-11-20).
+          //   전액이면 묶음의 남은 주문을 모두 취소, 우리가 돌려준 것보다 많으면 확인 필요, 같으면 우리가 한 취소다.
+          const 묶음 = await 묶음주문들(trx);
+          const 합계 = 묶음금액(묶음);
+          const 우리 = await 묶음현금환불(묶음);
+          if (합계 > 0 && cancelledTotal >= 합계) {
+            for (const r of 묶음) {
+              if (Number(r.is_cancel_trans) === 1) continue;
+              await markCanceled(r.id, { actor: { type: 'system' }, note: '포스페이 취소 통지(묶음 전액)', cancelled_at: cancelledAt });
+            }
+          } else if (cancelledTotal > 우리) {
+            logger.error(`[forspay webhook] 묶음 부분취소가 우리 기록보다 큼 묶음=${trx.pay_group} 포스페이=${cancelledTotal} 우리=${우리}/${합계} — 자동 반영 안 함, 확인 필요`);
+          }
+          return res.status(200).send({ ok: true });
         }
         const orderAmount = Math.abs(Number(trx.amount) || 0);
         if (cancelledTotal >= orderAmount && orderAmount > 0) {
@@ -1957,6 +2180,8 @@ async function settleForspayTransaction(transId, txn = {}, extra = {}) {
   // 값이 아니라 '키 이름'만 기록한다(개인정보 노출 없음). 필드명 확인 후 이 줄을 제거할 것.
   try { logger.info('[forspay-diag] settle data keys: ' + Object.keys(data || {}).join(',')); } catch (e) { /* 진단 로그는 결제를 절대 막지 않는다 */ }
   if (Number(trx.trx_method) !== 41 || Number(trx.is_cancel) === 1) return false;
+  // 결제 묶음(여러 곳으로 보내기) — 승인 하나로 묶음의 주문 전부를 확정한다(2026-11-20)
+  if (trx.pay_group) return await 묶음정산(trx, txn, data);
   if (Number(trx.trx_status) >= 5) {
     // 이미 확정됐거나 그 뒤 단계(출고·배송) — 상태는 건드리지 않는다. 단, 카드번호는 거래조회 응답엔 없고
     // 웹훅에만 있으므로 리턴 경로가 먼저 확정해 카드번호가 비어있으면, 뒤늦게 온 웹훅 데이터로 1회 보강한다.
@@ -2018,6 +2243,50 @@ async function settleForspayTransaction(transId, txn = {}, extra = {}) {
       type: 0,
       trans_id: transId,
     });
+  }
+  return true;
+}
+
+// 묶음 정산 — settleForspayTransaction 과 같은 규칙을 묶음 기준으로(2026-11-20).
+//  ① 승인 주문번호 = 묶음 번호  ② 승인 금액 = 묶음 주문 금액 합  ③ 결제대기(0)·미완료(-1)인 주문만 원자적으로 5 로.
+//  적립·늦은승인정리는 「실제로 우리가 바꾼 주문」마다 한 번. 반환: 묶음 주문이 모두 결제완료(또는 그 뒤)면 true.
+async function 묶음정산(trx, txn, data) {
+  const rows = await 묶음주문들(trx);
+  if (!rows.length) return false;
+  const 다됨 = () => rows.every((r) => Number(r.trx_status) >= 5 || Number(r.trx_status) === 1 || Number(r.is_cancel_trans) === 1);
+  if (다됨()) return true;
+  if (txn?.status !== 'approved') return false;
+  if (String(txn?.ord_num ?? '') !== String(trx.pay_group)) {
+    logger.error(`[forspay 정산·묶음] 주문번호 불일치 — 거부 묶음=${trx.pay_group} 승인=${txn?.ord_num}`);
+    return false;
+  }
+  const 합계 = 묶음금액(rows);
+  if (Number(txn?.amount) !== 합계) {
+    logger.error(`[forspay 정산·묶음] 금액 불일치 — 거부 묶음=${trx.pay_group} 묶음합계=${합계} 승인금액=${txn?.amount}`);
+    return false;
+  }
+  const trx_dttm = (data.trx_dttm || '').toString();
+  const trx_dt = trx_dttm.includes(' ') ? trx_dttm.split(' ')[0] : trx_dttm;
+  const trx_tm = trx_dttm.includes(' ') ? trx_dttm.split(' ')[1] : '';
+  let setting = null;
+  for (const r of rows) {
+    if (![0, -1].includes(Number(r.trx_status)) || Number(r.is_cancel_trans) === 1) continue;
+    const [바꿈] = await writePool.query(
+      `UPDATE transactions SET trx_id=?, appr_num=?, card_num=?, trx_dt=?, trx_tm=?, trx_status=5
+        WHERE id=? AND trx_status IN (0, -1) AND IFNULL(is_cancel_trans,0)=0`,
+      [data.trx_id ?? r.trx_id, (data.appr_num ?? '').toString(), (data.card_num ?? '').toString(), trx_dt, trx_tm, r.id]);
+    if (!바꿈?.affectedRows) continue;
+    await logTrx({ trans_id: r.id, brand_id: r.brand_id, kind: 'approve', from_status: Number(r.trx_status), to_status: 5, actor: { type: 'system' },
+      note: `포스페이 승인 확정(묶음 ${rows.length}곳 중 ${rows.findIndex((x) => Number(x.id) === Number(r.id)) + 1})` });
+    await 늦은승인정리(r, { note: '포스페이' });
+    if (Number(r.user_id) > 0) {
+      if (!setting) {
+        const [[brand]] = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [r.brand_id]);
+        setting = JSON.parse(brand?.setting_obj ?? '{}');
+      }
+      const point = 적립예정({ dns: { setting_obj: setting }, 결제금액: r.amount });
+      if (point > 0) await insertQuery('points', { brand_id: r.brand_id, user_id: r.user_id, sender_id: 0, point, type: 0, trans_id: r.id });
+    }
   }
   return true;
 }

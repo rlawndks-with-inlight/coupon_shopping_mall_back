@@ -1,6 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
+import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery, hasColumn } from "../utils.js/query-util.js";
+import { 묶음첫줄식, 묶음요약붙이기 } from "../utils.js/pay-group.js";
 import { canWriteBrand, checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
 import { 일괄판정, 택배사목록, 최대줄 } from "../utils.js/invoice-bulk.js";
 import { logTrx, actorOf, listTrxLogs, 취소사유나누기, 취소사유바꾸기 } from "../utils.js/trx-log.js";
@@ -143,11 +144,15 @@ const transactionCtrl = {
                     ? ` AND (${(await Promise.all(엑셀상태.map(async (k) => {
                         // 「취소요청」에는 일부 상품만 요청한 주문도 넣는다 — 있을 때만 id 목록으로(없으면 예전 조건 그대로)
                         const 대기식 = String(k) === '1' ? 주문목록식(await 요청대기주문(decode_dns?.id), table_name) : null;
+                        // 「결제실패/미완료」는 여러 곳 주문을 첫 주문 한 줄로 접는다(메뉴와 같은 조건)
+                        if (String(k) === 'failed' && await hasColumn('transactions', 'pay_group')) return `(${엑셀상태조건[k]} AND ${묶음첫줄식(table_name)})`;
                         return 대기식 ? `((${table_name}.trx_status=1 OR ${대기식}) AND ${정상줄})` : 엑셀상태조건[k];
                     }))).join(' OR ')}) `
                     : ` AND 1=0 `; // 아는 상태가 하나도 없으면 아무것도 주지 않는다(조건이 빠져 전부 나가면 안 된다)
             } else if (kind === 'failed') {
                 sql += ` AND (${table_name}.trx_status = -1 OR (${table_name}.trx_status=0 AND (${table_name}.appr_num IS NULL OR ${table_name}.appr_num='') AND (${table_name}.virtual_acct_num IS NULL OR ${table_name}.virtual_acct_num='') AND ${table_name}.trx_method IN (2,4,21,30,31,40,41))) `;
+                // 여러 곳으로 보내기 — 결제 한 번이 실패하면 배송지 수만큼 줄이 생긴다. 첫 주문 한 줄만 보이고 「몇 곳 · 합계」를 붙인다(2026-11-20).
+                if (await hasColumn('transactions', 'pay_group')) sql += ` AND ${묶음첫줄식(table_name)} `;
             } else if (kind === 'settled') {
                 sql += ` AND (${table_name}.trx_status >= 1 OR ${table_name}.is_cancel_trans = 1) `;
             } else if (kind === 'waiting') {
@@ -319,6 +324,8 @@ const transactionCtrl = {
                 // 부분취소로 돌려준 금액·처리 안 한 취소요청(2026-11-20) — 목록 금액 칸 「환불·남은 금액」, 상품 줄 「취소요청」 표시, 엑셀.
                 //   주문 줄 수량은 그대로라(cancel_count 만 늘어난다) 목록만 보고 포장하면 취소한 상품까지 나갔다.
                 await 부분취소정보붙이기(data.content);
+                // 결제실패/미완료에서 접힌 여러 곳 주문에 「몇 곳 · 합계」를 붙인다
+                if (kind === 'failed' || 엑셀상태?.includes('failed')) await 묶음요약붙이기(data.content.filter((r) => Number(r?.trx_status) <= 0));
 
                 // 주문서 추가 입력항목(행사일·행사장소 등). 서식이 걸린 가맹점 주문에만 값이 있다.
                 // 전화·주소 유형은 암호화돼 있어 여기서 되돌린다.
