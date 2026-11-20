@@ -38,5 +38,8 @@ router
 router
     .route('/:id/cancel-request')
     .post(transactionCtrl.cancelRequest)
+router
+    .route('/:id/cancel-request/reject')
+    .post(transactionCtrl.rejectCancelRequest)
 
 export default router;

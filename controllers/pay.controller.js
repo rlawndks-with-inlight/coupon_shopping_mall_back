@@ -25,7 +25,7 @@ import { 실패사유분류 } from "../utils.js/payments/fail-reason.js";
 import { 추가배송비, 추가비줄 } from "../utils.js/island-fee.js";
 import { saveOrderFormValues, findMissingOrderFormField } from "../utils.js/order-form.js";
 import { checkStock, decreaseStock, restoreStock, findMissingRequiredOption, checkPurchaseLimit } from "../utils.js/product-options.js";
-import { applyCancelEffects, markCanceled, getCancelState, cancelLines, withCancelLock } from "../utils.js/cancel.js";
+import { applyCancelEffects, markCanceled, getCancelState, cancelLines, withCancelLock, 추가상품줄인가, 취소미리보기 } from "../utils.js/cancel.js";
 import { logTrx, actorOf } from "../utils.js/trx-log.js";
 import { 늦은승인정리 } from "../utils.js/late-approve.js";
 
@@ -94,6 +94,29 @@ const 결제시작실패문구 = '결제를 시작할 수 없습니다. 잠시 �
 // 포스페이 승인 전(0)·실패(-1) 주문 — 돌려줄 돈이 없고, 늦은 승인은 거래조회가 살린다. 가맹점은 취소할 일이 없다(포스페이 요청 2026-11-04 ④).
 const 결제확인전 = (trx) => Number(trx?.trx_method) === 41 && Number(trx?.trx_status) <= 0;
 const 결제확인전문구 = '결제가 완료되지 않은 주문이라 취소할 금액이 없습니다.';
+
+// 포스페이 쪽 취소 합계와 우리가 돌려준 현금을 맞춰 본다(2026-11-20).
+//   포스페이 콘솔에서 직접 부분취소하면 웹훅은 「기록만」 하고 주문 줄은 그대로라(forspayCallback),
+//   관리자 화면에서 같은 상품을 또 취소하면 포스페이에 남은 금액 안에서 그대로 두 번 환불된다.
+//   포스페이 취소 합계 > 우리 현금 환불 합계 → 멈추고 확인하게 한다. 조회가 안 되면 취소도 하지 않는다(어차피 취소 API 도 같은 서버다).
+//   반환: { ok: true } 또는 { ok: false, message }
+const 포스페이취소대조 = async (trx, 이미현금) => {
+  if (Number(trx?.trx_method) !== 41 || !trx?.ord_num) return { ok: true };
+  try {
+    const creds = await getForspayCreds(trx.brand_id);
+    if (!creds?.app_key) return { ok: true };   // 키가 없으면 취소 호출에서 같은 이유로 멈춘다
+    const { cancelledTotal } = await forspayGetCancelRecords({ app_key: creds.app_key, ord_num: trx.ord_num });
+    const 포스페이 = Number(cancelledTotal) || 0;
+    if (포스페이 > (Number(이미현금) || 0)) {
+      logger.error(`[취소 대조] 포스페이 취소 합계가 우리 기록보다 큼 trans_id=${trx.id} 포스페이=${포스페이} 우리=${이미현금}`);
+      return { ok: false, message: `포스페이에서 이미 ${포스페이.toLocaleString('ko-KR')}원이 취소되어 있습니다(이 화면에서 취소한 금액 ${(Number(이미현금) || 0).toLocaleString('ko-KR')}원). 포스페이 관리자 화면에서 취소 내역을 확인한 뒤 본사에 문의해 주세요. 그대로 취소하면 두 번 환불될 수 있습니다.` };
+    }
+    return { ok: true };
+  } catch (e) {
+    logger.error(`[취소 대조] 포스페이 취소 내역 조회 실패 trans_id=${trx?.id}: ${e?.response?.status ?? ''} ${e?.message ?? ''}`);
+    return { ok: false, message: '포스페이 취소 내역을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.' };
+  }
+};
 
 // 결제창이 알려 준 실패 사유(포스페이 요청 2026-11-04 ④). 손님 브라우저를 거쳐 오는 값이라 **표시용**이다 — 결제 확정에 쓰지 않는다.
 // 포스페이가 SQL 원문을 메시지로 보낸 적이 있어(scripts/checks/pg-message.mjs) 시스템 오류처럼 보이면 버리고 코드만 남긴다.
@@ -386,7 +409,9 @@ const recalcOrderAmount = async (brand_id, products, use_point, seller_id = 0, �
   }
 
   const point = Math.max(0, parseInt(use_point) || 0);
-  return { amount: amount - point, lines: expectedLines, merchTotal, usedPoint: point, island: { region: 섬.region, fee: 섬.fee } };
+  return { amount: amount - point, lines: expectedLines, merchTotal, usedPoint: point, island: { region: 섬.region, fee: 섬.fee },
+    // 주문할 때의 배송비 규칙 — 주문에 남겨 부분취소가 이 값으로 배송비를 판단한다(cancel.js 배송비규칙, 2026-11-20)
+    shipPolicy: { base: shipBase, free_min: shipFreeMin } };
 };
 
 const payCtrl = {
@@ -396,6 +421,7 @@ const payCtrl = {
     // ⚠ trans_id 를 try 밖에 둔다. catch 에서 재고를 놓아주려면 여기서 보여야 한다
     //   (try 안에 let 으로 두면 catch 에서 ReferenceError 가 난다).
     let island = null;   // 제주·도서산간 추가배송비 판정(recalcOrderAmount)
+    let shipPolicy = null;   // 주문할 때의 배송비 규칙(recalcOrderAmount)
     let trans_id = 0;
     try {
       const decode_user = checkLevel(req.cookies.token, 0, res);
@@ -604,6 +630,7 @@ const payCtrl = {
             : "이 쇼핑몰은 도서산간 지역으로 배송하지 않습니다. 다른 주소를 선택해 주세요.", false);
         }
         island = expected.island;
+        shipPolicy = expected.shipPolicy ?? null;
 
         // 포인트는 서버에서 본다. 예전엔 프론트(OrderSheet)에서만 확인했다.
         //
@@ -697,6 +724,8 @@ const payCtrl = {
         ...(await hasColumn('transactions', 'island_fee')
             ? { island_region: ['jeju', 'island'].includes(island?.region) ? island.region : null, island_fee: Number(island?.fee) || 0 }
             : {}),
+        // 주문할 때의 배송비 규칙(2026-11-20) — 뒤에 가맹점이 무료배송 기준을 바꿔도 부분취소는 이 값으로 판단한다. 칸이 없으면 건너뛴다.
+        ...(shipPolicy && await hasColumn('transactions', 'ship_policy') ? { ship_policy: JSON.stringify(shipPolicy) } : {}),
         brand_id,
         user_id,
         // 비회원 주문조회 비밀번호는 평문으로 저장하지 않는다.
@@ -1361,6 +1390,9 @@ const payCtrl = {
           return response(req, res, -100, "부분취소한 주문입니다. 「부분취소」 창에서 남은 수량을 모두 선택해 취소해 주세요.", false);
         }
         const 현금 = Math.max(0, Number(trx.amount) || 0);
+        // 콘솔에서 이미 일부를 취소했다면 전액 취소를 걸면 안 된다(남은 것보다 많이 건다). 우리 기록은 0원.
+        const 대조 = await 포스페이취소대조(trx, 0);
+        if (대조?.ok === false) return response(req, res, -100, 대조.message, false);
         const 결과 = await withCancelLock(trx.id, async () => {
           // 잠금 안에서 다시 읽는다 — 다른 요청이 방금 취소했을 수 있다
           const [[지금]] = await readPool.query(`SELECT is_cancel_trans, is_cancel FROM transactions WHERE id=?`, [trx.id]);
@@ -1509,6 +1541,8 @@ const payCtrl = {
           // (사과 중과 2개 / 사과 대과 1개) 이름이 똑같아서, 이게 없으면 관리자는
           // 어느 줄을 취소하는지 알 수 없다 — 2026-09-09 점검에서 드러남.
           order_groups: 옵션스냅샷(l.order_groups),
+          // 추가상품 줄 — 본상품을 다 고르면 화면이 함께 고른다(서버 cancel.js 추가상품함께 와 같은 규칙)
+          is_addon: 추가상품줄인가(l),
         })),
       });
     } catch (err) {
@@ -1528,7 +1562,7 @@ const payCtrl = {
       if (!decode_user || decode_user?.level < 10) return lowLevelException(req, res);
       const id = parseInt(req.params?.id) || 0;
       if (!id) return response(req, res, -100, "취소할 주문을 특정할 수 없습니다.", false);
-      const { items, reason, idem_key, shipped_confirm } = req.body;
+      const { items, reason, idem_key, shipped_confirm, fault, ship_choice } = req.body;
 
       const state = await getCancelState(id);
       if (!state) return response(req, res, -100, "주문을 찾을 수 없습니다.", false);
@@ -1550,15 +1584,48 @@ const payCtrl = {
         // 출고 이후 취소는 관리자가 확인 칸을 눌렀을 때만(cancel.js 가 다시 검사한다)
         allow_shipped: Number(shipped_confirm) === 1,
         actor: actorOf(decode_user, 'admin'),
+        // 취소 사유(손님/판매자 사정)·배송비 처리(받지 않음/환불 없이 빼기) — cancel.js 취소계산 참고(2026-11-20)
+        fault: fault === 'seller' ? 'seller' : 'buyer',
+        ship_choice: ['waive', 'no_refund'].includes(ship_choice) ? ship_choice : null,
         // PG 호출은 여기서 주입한다. cancel.js 는 PG 를 모른다.
         pgCancel: async ({ trx, amount }) => {
           const creds = await getForspayCreds(trx.brand_id);
           if (!creds?.app_key) throw new Error("포스페이 결제모듈 설정이 없습니다.");
           return await forspayCancelTransaction({ app_key: creds.app_key, ord_num: trx.ord_num, amount });
         },
+        // 포스페이 콘솔에서 따로 취소한 금액이 우리 기록보다 많으면 멈춘다(두 번 환불 방지, 2026-11-20).
+        pgPrecheck: async ({ trx, 이미현금 }) => 포스페이취소대조(trx, 이미현금),
       });
       if (!result?.ok) return response(req, res, -100, result?.message ?? "취소에 실패했습니다.", false);
       return response(req, res, 100, "success", result);
+    } catch (err) {
+      console.log(err);
+      logger.error(errText(err));
+      return response(req, res, -200, "서버 에러 발생", false);
+    }
+  },
+
+  // 부분취소 미리보기 — 확인 단계가 정확한 환불액과 배송비 차감을 보이게(2026-11-20). 아무것도 바꾸지 않는다.
+  //   빼야 할 배송비가 상품값보다 크면 need_ship_choice 를 실어 돌려준다(화면이 「배송비 받지 않음 / 환불 없이 빼기」를 고르게).
+  cancelPreview: async (req, res, next) => {
+    try {
+      const decode_user = checkLevel(req.cookies.token, 0, res);
+      if (!decode_user || decode_user?.level < 10) return lowLevelException(req, res);
+      const id = parseInt(req.params?.id) || 0;
+      if (!id) return response(req, res, -100, "주문을 특정할 수 없습니다.", false);
+      const state = await getCancelState(id);
+      if (!state) return response(req, res, -100, "주문을 찾을 수 없습니다.", false);
+      if (!canWriteBrand(decode_user, state.trx?.brand_id)) return lowLevelException(req, res);
+      const { items, fault, ship_choice } = req.body ?? {};
+      const r = await 취소미리보기(id, {
+        items,
+        fault: fault === 'seller' ? 'seller' : 'buyer',
+        ship_choice: ['waive', 'no_refund'].includes(ship_choice) ? ship_choice : null,
+      });
+      // 고를 것이 남은 경우도 화면이 읽어야 하므로 성공 응답에 싣는다
+      if (!r.ok && r.need_ship_choice) return response(req, res, 100, "success", { need_ship_choice: true, merch_amount: r.상품가, delivery_planned: r.배송비, message: r.message });
+      if (!r.ok) return response(req, res, -100, r.message ?? "계산하지 못했습니다.", false);
+      return response(req, res, 100, "success", r);
     } catch (err) {
       console.log(err);
       logger.error(errText(err));

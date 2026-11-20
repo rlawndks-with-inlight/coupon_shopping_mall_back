@@ -151,6 +151,39 @@ const 줄단가 = (line) => {
     return { 상품가, 수량, 단가: Math.floor(상품가 / 수량) };
 };
 
+// 추가상품 줄인가 — 주문 줄의 order_groups 스냅샷에 addon_line=1 이 실려 있다(pay.controller 가 주문 때 저장).
+export const 추가상품줄인가 = (line) => {
+    try {
+        const g = typeof line?.order_groups === 'string' ? JSON.parse(line.order_groups || '[]') : (line?.order_groups ?? []);
+        return Array.isArray(g) && g.some((x) => Number(x?.addon_line) === 1);
+    } catch (e) { return false; }
+};
+
+// 본상품을 다 취소하면 그 상품의 추가상품 줄도 남은 수량 전부를 취소 목록에 넣는다(2026-11-20).
+//   주문 때 규칙과 같다: 추가상품 줄은 같은 상품의 본상품 줄이 있어야 한다(pay.controller recalcOrderAmount).
+//   그대로 두면 본상품은 취소되고 소스·포장 같은 추가상품만 발송된다.
+//   lines: getCancelState 의 줄(remain_count 포함), 요청: [{ order_id, qty }] — 요청을 고쳐서 돌려준다.
+//   본상품 줄을 못 찾는 추가상품(옛 주문)은 건드리지 않는다.
+export const 추가상품함께 = (lines, 요청) => {
+    const 이번 = (id) => 요청.filter((r) => Number(r.order_id) === Number(id)).reduce((s, r) => s + (Number(r.qty) || 0), 0);
+    const 남음후 = (l) => (Number(l.remain_count) || 0) - Math.min(Number(l.remain_count) || 0, 이번(l.id));
+    for (const a of lines ?? []) {
+        if (!추가상품줄인가(a) || 남음후(a) <= 0) continue;
+        const 본상품들 = lines.filter((m) => !추가상품줄인가(m) && Number(m.product_id) === Number(a.product_id));
+        if (!본상품들.length || !본상품들.every((m) => 남음후(m) <= 0)) continue;
+        const 기존 = 요청.find((r) => Number(r.order_id) === Number(a.id));
+        if (기존) 기존.qty = Number(a.remain_count) || 0;
+        else 요청.push({ order_id: Number(a.id), qty: Number(a.remain_count) || 0 });
+    }
+    return 요청;
+};
+
+// 제주·도서산간 추가배송비가 얹힌 줄 — 첫 본상품 줄(pay.controller 의 추가비줄 과 같은 규칙, 줄은 id 오름차순 = 담은 순서).
+const 섬추가비줄id = (lines) => {
+    const 줄 = (lines ?? []).find((l) => !추가상품줄인가(l)) ?? (lines ?? [])[0];
+    return Number(줄?.id) || 0;
+};
+
 // 주문의 취소 가능 상태를 읽는다. 관리자 화면이 '몇 개까지 취소 가능한지' 보여줄 때 쓴다.
 export const getCancelState = async (trans_id) => {
     const tid = Number(trans_id) || 0;
@@ -169,6 +202,11 @@ export const getCancelState = async (trans_id) => {
     if (await hasColumn('transactions', 'island_fee')) {
         const [[섬]] = await readPool.query(`SELECT island_fee FROM transactions WHERE id=?`, [tid]);
         trx.island_fee = Number(섬?.island_fee) || 0;
+    }
+    // 주문할 때의 배송비 규칙(2026-11-20) — 칸이 있을 때만(배송비규칙 이 쓴다)
+    if (await hasColumn('transactions', 'ship_policy')) {
+        const [[규칙]] = await readPool.query(`SELECT ship_policy FROM transactions WHERE id=?`, [tid]);
+        trx.ship_policy = 규칙?.ship_policy ?? null;
     }
     const [rows] = await readPool.query(
         `SELECT * FROM transaction_orders WHERE trans_id=? ORDER BY id ASC`, [tid]);
@@ -246,13 +284,21 @@ export const calcCancelAmount = (line, qty) => {
 // 섬추가비: 제주·도서산간 추가배송비(transactions.island_fee). 줄 배송비(총배송비)에 들어 있지만 「원래 무료배송이었나」를
 //   볼 때는 빼야 한다 — 무료배송 + 제주 3,000원 주문의 총배송비는 3,000원이라, 빼지 않으면 무료배송이 아니었던 것으로 읽혀
 //   부분취소로 무료 기준이 깨져도 기본 배송비를 상계하지 않는다(2026-11-12 추가배송비 도입 때 막음).
-export const calcDeliveryAdjust = ({ 전체취소, 취소후남은상품가, 총배송비, setting, 이미상계 = 0, 섬추가비 = 0 }) => {
+// 상품별 배송비(몰 배송비 정책을 끈 몰, 2026-11-20):
+//   배송비가 상품마다 그 줄에 붙는다. 한 상품 줄을 통째로 취소하면 그 상품은 안 나가므로 그 줄 배송비를 돌려준다
+//   (다취소된줄배송비 — 이번 취소로 남은 수량이 0 이 되는 줄들의 배송비, 섬추가비는 뺀 값).
+//   예전엔 전체취소 때만 배송비를 돌려줘서, A·B 를 함께 사고 A 만 취소하면 A 배송비가 남았다.
+//   이미돌려준배송비: 앞선 부분취소에서 돌려준 배송비(transaction_cancels.delivery_fee 양수 합) — 전체취소 때 또 돌려주지 않게 뺀다.
+export const calcDeliveryAdjust = ({ 전체취소, 취소후남은상품가, 총배송비, setting, 이미상계 = 0, 섬추가비 = 0,
+                                     다취소된줄배송비 = 0, 이미돌려준배송비 = 0 }) => {
     const 뺀것 = Math.max(0, Number(이미상계) || 0);
-    if (전체취소) return 총배송비 + 뺀것;                 // 양수 = 환불
+    const 돌려준것 = Math.max(0, Number(이미돌려준배송비) || 0);
+    if (전체취소) return Math.max(0, 총배송비 + 뺀것 - 돌려준것);   // 양수 = 환불
     const base = parseInt(setting?.delivery_fee_default || 0) || 0;
     const freeMin = parseInt(setting?.free_ship_min || 0) || 0;
     const 정책켜짐 = base > 0 || freeMin > 0;
-    if (!정책켜짐 || freeMin <= 0) return 0;             // 무료배송 정책이 없으면 조정 없음
+    if (!정책켜짐) return Math.max(0, Number(다취소된줄배송비) || 0);   // 상품별 배송비 몰
+    if (freeMin <= 0) return 0;                          // 무료배송 기준이 없으면 조정 없음
     const 원래무료 = Number(총배송비) - (Number(섬추가비) || 0) <= 0;   // 무료배송으로 결제된 주문이었나(추가배송비는 빼고 본다)
     if (!원래무료) return 0;
     if (뺀것 > 0) return 0;                              // 이미 한 번 뺐다
@@ -338,6 +384,10 @@ export const markCanceled = async (trans_id, { column = 'is_cancel_trans', actor
     // 핀트리는 원주문 자체에 is_cancel=1 을 찍는다(column 을 바꿔 부른다).
     // 그 행이 곧 취소완료 행이므로 따로 만들면 같은 취소가 두 줄로 보인다.
     if (column === 'is_cancel_trans') await 취소원장행쓰기(tid, cancelled_at);
+    // 주문 전체가 취소됐으니 대기 중인 손님 취소요청도 처리됨으로 닫는다(2026-11-20) — 운영에 취소된 주문의 대기 요청 9건이 남아 있었다.
+    try {
+        await writePool.query(`UPDATE transaction_cancel_requests SET status=1, processed_at=NOW() WHERE trans_id=? AND status=0`, [tid]);
+    } catch (e) { /* 요청 테이블이 없어도 취소는 끝났다 */ }
     await applyCancelEffects(tid);
     // 전액 취소된 주문의 후기는 손님 화면에서 내린다(설계 §4.6). 절대 던지지 않는다.
     await hideReviewsForCanceled(tid);
@@ -359,34 +409,32 @@ export const cancelLines = async (trans_id, opts = {}) => {
     return 결과 ?? { ok: false, message: '같은 주문의 취소가 처리 중입니다. 잠시 후 다시 확인해 주세요.' };
 };
 
-const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason = null,
-                                             idem_key = null, pgCancel, allow_shipped = false, actor = null } = {}) => {
-    const tid = Number(trans_id) || 0;
-    if (!tid) return { ok: false, message: '주문을 찾을 수 없습니다.' };
-    const 요청 = (Array.isArray(items) ? items : [])
-        .map((x) => ({ order_id: Number(x?.order_id) || 0, qty: Math.max(0, Number(x?.qty) || 0) }))
-        .filter((x) => x.order_id && x.qty);
-    if (!요청.length) return { ok: false, message: '취소할 상품과 수량을 선택해 주세요.' };
-
-    const state = await getCancelState(tid);
-    if (!state) return { ok: false, message: '주문을 찾을 수 없습니다.' };
-    if (!state.cancelable) {
-        // 출고 이후는 관리자가 '회수 확인'을 붙였을 때만 — 화면(PartialCancelDialog)이 확인 칸을 거쳐 shipped_confirm 을 보낸다.
-        if (!(state.cancelable_after_confirm && allow_shipped)) {
-            return { ok: false, message: state.shipped
-                ? '출고된 주문입니다. 회수 확인 후 「출고된 주문 취소」 확인을 거쳐 취소해 주세요.'
-                : '이미 취소되었거나 취소할 수 없는 주문입니다.' };
-        }
-    }
-
-    // 브랜드 배송비 정책
-    let setting = {};
+// 주문할 때의 배송비 규칙(2026-11-20). transactions.ship_policy 에 {base, free_min} 으로 남긴다(pay.controller).
+//   없으면(옛 주문·마이그레이션 전) 지금 몰 설정을 쓴다 — 예전과 같은 동작.
+//   예전엔 늘 지금 설정을 읽어서, 주문 뒤 가맹점이 무료배송 기준을 3만원→5만원으로 올리면
+//   주문 당시엔 무료였던 남은 금액(3만원대)을 기준 미달로 보고 배송비를 뺐다.
+const 배송비규칙 = async (trx) => {
     try {
-        const [[b]] = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [state.trx.brand_id]);
-        setting = JSON.parse(b?.setting_obj ?? '{}');
-    } catch (e) { setting = {}; }
+        const p = trx?.ship_policy ? JSON.parse(trx.ship_policy) : null;
+        if (p && typeof p === 'object') return { delivery_fee_default: Number(p.base) || 0, free_ship_min: Number(p.free_min) || 0 };
+    } catch (e) { /* 깨진 값이면 지금 설정으로 */ }
+    try {
+        const [[b]] = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [trx?.brand_id]);
+        return JSON.parse(b?.setting_obj ?? '{}');
+    } catch (e) { return {}; }
+};
 
-    // ── 금액 계산 (서버만) ──────────────────────────────────────────────
+// 취소 사유(2026-11-20, 네이버페이 방식) — 'seller'(품절·배송 불가 등 판매자 사정)이면 무료배송 기준이 깨져도 배송비를 빼지 않는다.
+//   손님 취소요청을 처리할 때 화면이 'buyer' 로 미리 고른다. 그 밖의 값은 'buyer' 로 본다(예전 동작).
+// 배송비 처리(ship_choice) — 빼야 할 배송비가 이번 상품값보다 커서 환불액이 0 이하가 될 때만 쓴다.
+//   'waive'     : 배송비를 받지 않고 상품값 전부를 돌려준다(가맹점 부담)
+//   'no_refund' : 돌려주지 않고 상품만 주문에서 뺀다(뺀 상품값만큼 배송비를 받은 것으로 기록 — 전체취소 때 함께 돌려준다)
+//   없음        : need_ship_choice 로 돌려보내 화면이 고르게 한다. 예전엔 「환불할 금액이 없습니다」로 취소 자체가 막혔다.
+// 실제 취소(cancelLinesLocked)와 미리보기(취소미리보기)가 이 한 함수로 계산한다 — 화면에 보인 금액과 실제 환불이 어긋나지 않게.
+const 취소계산 = async (state, 요청, { fault = 'buyer', ship_choice = null } = {}) => {
+    const tid = Number(state?.trx?.id) || 0;
+    const setting = await 배송비규칙(state.trx);
+
     const 계산 = [];
     for (const req of 요청) {
         const line = state.lines.find((l) => Number(l.id) === req.order_id);
@@ -414,10 +462,34 @@ const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason 
     // 앞선 부분취소에서 이미 뺀 배송비(transaction_cancels.delivery_fee 음수 합)
     const [[상계]] = await readPool.query(
         `SELECT COALESCE(SUM(CASE WHEN delivery_fee < 0 THEN -delivery_fee ELSE 0 END), 0) AS s FROM transaction_cancels WHERE trans_id=?`, [tid]);
-    const 배송비조정 = calcDeliveryAdjust({ 전체취소, 취소후남은상품가, 총배송비, setting, 이미상계: Number(상계?.s) || 0, 섬추가비: Number(state.trx?.island_fee) || 0 });
+    const [[돌려준]] = await readPool.query(
+        `SELECT COALESCE(SUM(CASE WHEN delivery_fee > 0 THEN delivery_fee ELSE 0 END), 0) AS s FROM transaction_cancels WHERE trans_id=?`, [tid]);
+    // 이번에 남은 수량이 0 이 되는 줄의 배송비(상품별 배송비 몰에서만 쓰인다). 섬추가비는 주문 전체 몫이라 빼 둔다 —
+    //   다른 상품이 그 지역으로 계속 나가기 때문이다(전체취소 때 총배송비로 함께 돌려준다).
+    const 섬줄id = 섬추가비줄id(state.lines);
+    const 다취소된줄배송비 = 계산
+        .filter((c) => c.line.remain_count - c.qty === 0)
+        .reduce((s, c) => s + Math.max(0, (Number(c.line.delivery_fee) || 0)
+            - (Number(c.line.id) === 섬줄id ? (Number(state.trx?.island_fee) || 0) : 0)), 0);
+    let 배송비조정 = calcDeliveryAdjust({ 전체취소, 취소후남은상품가, 총배송비, setting, 이미상계: Number(상계?.s) || 0, 섬추가비: Number(state.trx?.island_fee) || 0,
+        다취소된줄배송비, 이미돌려준배송비: Number(돌려준?.s) || 0 });
+    // 빼려던 배송비(양수). 화면이 「배송비 3,000원 차감」을 보이는 데 쓴다.
+    const 차감예정 = 배송비조정 < 0 ? -배송비조정 : 0;
+    // 판매자 사정이면 빼지 않는다
+    if (fault === 'seller' && 배송비조정 < 0) 배송비조정 = 0;
+
+    let 배송비처리 = null;
+    if (배송비조정 < 0 && 이번상품가 + 배송비조정 <= 0) {
+        if (ship_choice === 'waive') { 배송비조정 = 0; 배송비처리 = 'waive'; }
+        else if (ship_choice === 'no_refund') { 배송비조정 = -이번상품가; 배송비처리 = 'no_refund'; }
+        else {
+            return { ok: false, need_ship_choice: true, 상품가: 이번상품가, 배송비: 차감예정,
+                message: `남은 상품이 무료배송 기준에 못 미쳐 배송비 ${차감예정.toLocaleString('ko-KR')}원을 받아야 하는데, 취소할 상품값(${이번상품가.toLocaleString('ko-KR')}원)보다 큽니다. 배송비를 받지 않고 환불할지, 환불 없이 상품만 뺄지 골라 주세요.` };
+        }
+    }
     const 환불액 = Math.max(0, 이번상품가 + 배송비조정);
-    if (환불액 <= 0) {
-        return { ok: false, message: '환불할 금액이 없습니다. (남은 상품이 무료배송 기준에 미달해 배송비가 상계됩니다)' };
+    if (환불액 <= 0 && 배송비처리 !== 'no_refund') {
+        return { ok: false, message: '환불할 금액이 없습니다.' };
     }
 
     // ── 현금(PG)과 포인트로 나눈다 ─────────────────────────────────────
@@ -431,8 +503,67 @@ const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason 
     const [[앞선]] = await readPool.query(
         `SELECT COALESCE(SUM(cancel_amount), 0) AS s FROM transaction_cancels WHERE trans_id=?`, [tid]);
     const 이미포인트 = await 원장합(tid, 'type=5 AND point>0');
-    const 남은현금 = Math.max(0, (Number(state.trx.amount) || 0) - Math.max(0, (Number(앞선?.s) || 0) - 이미포인트));
+    const 이미현금 = Math.max(0, (Number(앞선?.s) || 0) - 이미포인트);
+    const 남은현금 = Math.max(0, (Number(state.trx.amount) || 0) - 이미현금);
     const PG금액 = Math.max(0, Math.min(남은현금, 환불액 - 포인트몫));
+
+    return { ok: true, 계산, 전체취소, 이번상품가, 배송비조정, 차감예정, 배송비처리, fault: fault === 'seller' ? 'seller' : 'buyer',
+        환불액, 비율, 포인트몫, PG금액, 이미현금 };
+};
+
+// 요청 정리 — 화면이 보낸 items 를 [{order_id, qty}] 로. 0·음수·잘못된 값은 버린다.
+const 요청읽기 = (items) => (Array.isArray(items) ? items : [])
+    .map((x) => ({ order_id: Number(x?.order_id) || 0, qty: Math.max(0, Number(x?.qty) || 0) }))
+    .filter((x) => x.order_id && x.qty);
+
+// 미리보기 — 실제로 취소하지 않고 금액만 계산한다(관리자 확인 단계가 정확한 환불액·배송비 차감을 보이게, 2026-11-20).
+export const 취소미리보기 = async (trans_id, { items = [], fault = 'buyer', ship_choice = null } = {}) => {
+    const tid = Number(trans_id) || 0;
+    const 요청 = 요청읽기(items);
+    if (!tid || !요청.length) return { ok: false, message: '취소할 상품과 수량을 선택해 주세요.' };
+    const state = await getCancelState(tid);
+    if (!state) return { ok: false, message: '주문을 찾을 수 없습니다.' };
+    추가상품함께(state.lines, 요청);
+    const r = await 취소계산(state, 요청, { fault, ship_choice });
+    if (!r.ok) return r;
+    return { ok: true, items: r.계산.map((c) => ({ order_id: Number(c.line.id), qty: c.qty, amount: c.amount })),
+        merch_amount: r.이번상품가, delivery_adjust: r.배송비조정, delivery_planned: r.차감예정, ship_choice: r.배송비처리,
+        amount: r.환불액, pg_amount: r.PG금액, point_amount: r.포인트몫, all_canceled: r.전체취소, fault: r.fault };
+};
+
+const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason = null,
+                                             idem_key = null, pgCancel, pgPrecheck = null, allow_shipped = false, actor = null,
+                                             fault = 'buyer', ship_choice = null } = {}) => {
+    const tid = Number(trans_id) || 0;
+    if (!tid) return { ok: false, message: '주문을 찾을 수 없습니다.' };
+    const 요청 = 요청읽기(items);
+    if (!요청.length) return { ok: false, message: '취소할 상품과 수량을 선택해 주세요.' };
+
+    const state = await getCancelState(tid);
+    if (!state) return { ok: false, message: '주문을 찾을 수 없습니다.' };
+    if (!state.cancelable) {
+        // 출고 이후는 관리자가 '회수 확인'을 붙였을 때만 — 화면(PartialCancelDialog)이 확인 칸을 거쳐 shipped_confirm 을 보낸다.
+        if (!(state.cancelable_after_confirm && allow_shipped)) {
+            return { ok: false, message: state.shipped
+                ? '출고된 주문입니다. 회수 확인 후 「출고된 주문 취소」 확인을 거쳐 취소해 주세요.'
+                : '이미 취소되었거나 취소할 수 없는 주문입니다.' };
+        }
+    }
+
+    // ── 금액 계산 (서버만) ──────────────────────────────────────────────
+    // 본상품을 다 취소하면 그 상품의 추가상품도 함께 취소한다(2026-11-20) — 추가상품은 본상품 없이 못 산다(주문 때와 같은 규칙).
+    //   화면(관리자 부분취소 창·손님 취소요청 창)도 같은 규칙으로 미리 골라 보여 준다. 여기는 안전망.
+    추가상품함께(state.lines, 요청);
+    const 결과 = await 취소계산(state, 요청, { fault, ship_choice });
+    if (!결과.ok) return 결과;
+    const { 계산, 전체취소, 배송비조정, 배송비처리, 환불액, 비율, 포인트몫, PG금액, 이미현금 } = 결과;
+
+    // PG 쪽 취소 내역과 우리 기록이 맞는지 먼저 본다(2026-11-20). 포스페이 콘솔에서 따로 부분취소한 건은
+    //   우리 기록에 없어서, 그대로 두면 같은 상품을 여기서 또 취소해 두 번 환불된다. 맞지 않으면 아무것도 하지 않는다.
+    if (pgPrecheck) {
+        const 확인 = await pgPrecheck({ trx: state.trx, 이미현금 });
+        if (확인 && 확인.ok === false) return { ok: false, message: 확인.message };
+    }
 
     // ── 원장 먼저 (중복 클릭 차단) ───────────────────────────────────────
     let cancel_id = 0;
@@ -508,7 +639,8 @@ const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason 
     }
 
     // 포인트는 환불 비율만큼(위에서 PG 금액을 나눌 때 쓴 것과 같은 누적 비율). 전체취소면 남은 전부를 정산한다.
-    await applyCancelEffects(tid, { ratio: 비율, restock: false });
+    //   환불 없이 상품만 뺀 경우(no_refund)는 포인트도 움직이지 않는다 — 돈이 안 나갔으니. 다음 취소의 누적 비율이 따라잡는다.
+    if (환불액 > 0 || 전체취소) await applyCancelEffects(tid, { ratio: 비율, restock: false });
 
     // 고객이 낸 대기 요청을 닫는다. 안 닫으면 이미 처리한 요청이 계속 대기로 남아
     // 관리자가 같은 건을 또 취소하려 든다.
@@ -572,7 +704,85 @@ const cancelLinesLocked = async (trans_id, { items = [], user_id = null, reason 
     await logTrx({ trans_id: tid, brand_id: state.trx.brand_id, kind: 'cancel', from_status: Number(state.trx.trx_status), to_status: null,
         actor: actor || (user_id ? { type: 'admin', id: user_id } : { type: 'system' }),
         note: `${전체취소 ? '전체' : '부분'} 취소 ${환불액}원(PG ${PG금액}원 · 포인트 ${포인트몫}P) — ` + 계산.map((c) => `${c.line.order_name ?? c.line.product_id} ${c.qty}개`).join(', ')
+            + (결과.fault === 'seller' ? ' / 판매자 사정(배송비 차감 없음)' : '')
+            + (배송비처리 === 'waive' ? ' / 배송비 받지 않음' : 배송비처리 === 'no_refund' ? ' / 환불 없이 상품만 뺌' : '')
             + (reason ? ` / 사유: ${String(reason).slice(0, 120)}` : '') + (state.shipped ? ' / 출고 후 취소(회수 확인)' : '') });
     return { ok: true, cancel_id, amount: 환불액, pg_amount: PG금액, point_amount: 포인트몫,
              delivery_adjust: 배송비조정, all_canceled: 전체취소, ...(반영실패.length ? { warning: 반영실패 } : {}) };
+};
+
+// ── 부분취소·일부 취소요청을 목록·대시보드에 드러내는 공용 함수(2026-11-20) ─────────────
+
+// 손님이 낸 아직 처리 안 한 취소요청이 있는 주문 — SQL 조각. 일부 상품만 요청하면 주문 상태는 그대로(결제완료 등)라
+//   「취소요청」 탭·엑셀·손님 반품/환불 조회가 trx_status=1 만 보면 그 주문을 놓친다.
+export const 요청대기식 = (t = 'transactions') =>
+    `EXISTS (SELECT 1 FROM transaction_cancel_requests tcr WHERE tcr.trans_id=${t}.id AND tcr.status=0)`;
+
+// 부분취소로 돌려준 **현금**(PG) — 주문별. 원장 환불액(cancel_amount)에는 포인트로 돌려준 몫도 들어 있어,
+//   결제금액(amount = Σ줄 − 사용 포인트, 현금)에서 빼려면 포인트 몫을 빼야 한다.
+//   ids: transactions.id 목록 → { [trans_id]: { cash, point } }
+export const 부분환불합 = async (ids) => {
+    const 목록 = [...new Set((ids ?? []).map((x) => Number(x) || 0).filter(Boolean))];
+    const 결과 = {};
+    if (!목록.length) return 결과;
+    const ph = 목록.map(() => '?').join(',');
+    const [환불] = await readPool.query(
+        `SELECT trans_id, SUM(cancel_amount) AS s FROM transaction_cancels WHERE trans_id IN (${ph}) GROUP BY trans_id`, 목록);
+    if (!환불.length) return 결과;
+    const 있는 = 환불.map((r) => Number(r.trans_id));
+    const [포인트] = await readPool.query(
+        `SELECT trans_id, SUM(point) AS p FROM points WHERE trans_id IN (${있는.map(() => '?').join(',')}) AND type=5 AND point>0 GROUP BY trans_id`, 있는);
+    for (const r of 환불) {
+        const p = Number(포인트.find((x) => Number(x.trans_id) === Number(r.trans_id))?.p) || 0;
+        const 전체 = Number(r.s) || 0;
+        결과[r.trans_id] = { cash: Math.max(0, 전체 - p), point: Math.min(전체, p) };
+    }
+    return 결과;
+};
+
+// 목록 줄(transactions 행, .orders 붙은 것)에 부분취소·취소요청 정보를 싣는다. 실패해도 목록은 그대로 낸다.
+//   partial_refund       : 부분취소로 돌려준 현금(살아 있는 주문만)
+//   partial_refund_point : 그중 포인트로 돌려준 몫
+//   cancel_request_count : 아직 처리 안 한 취소요청 수량 합(일부 요청이면 주문 상태는 그대로다)
+//   orders[].requested_count : 줄마다 요청 수량
+export const 부분취소정보붙이기 = async (rows) => {
+    const 줄들 = (rows ?? []).filter((t) => t && Number(t.is_cancel) !== 1);
+    if (!줄들.length) return rows;
+    try {
+        const 살아있는 = 줄들.filter((t) => Number(t.is_cancel_trans) !== 1).map((t) => t.id);
+        const 합 = await 부분환불합(살아있는);
+        for (const t of 줄들) {
+            const h = 합[t.id];
+            if (h && Number(t.is_cancel_trans) !== 1) { t.partial_refund = h.cash; t.partial_refund_point = h.point; }
+        }
+        const ids = 줄들.map((t) => Number(t.id)).filter(Boolean);
+        const [요청] = await readPool.query(
+            `SELECT trans_id, order_id, SUM(req_count) AS n FROM transaction_cancel_requests WHERE trans_id IN (${ids.map(() => '?').join(',')}) AND status=0 GROUP BY trans_id, order_id`, ids);
+        for (const t of 줄들) {
+            const 내것 = 요청.filter((r) => Number(r.trans_id) === Number(t.id));
+            t.cancel_request_count = 내것.reduce((s, r) => s + (Number(r.n) || 0), 0);
+            for (const o of t.orders ?? []) {
+                o.requested_count = Number(내것.find((r) => Number(r.order_id) === Number(o.id))?.n) || 0;
+            }
+        }
+    } catch (e) {
+        logger.error(`[부분취소 정보] 조회 실패(목록은 그대로): ${e?.sqlMessage || e?.message || e}`);
+    }
+    return rows;
+};
+
+// 처리 안 한 취소요청을 닫는다 — 관리자가 「요청 거절」을 누르거나, 요청이 있는 주문의 상태를 직접 바꿀 때.
+//   status=2(거절·닫힘). 예전엔 관리자가 상태를 바꿔도 요청 기록이 대기로 남아, 다음에 취소 창을 열면 그 요청이 미리 채워졌다.
+//   돌려줌: 닫은 줄 수
+export const 취소요청닫기 = async (trans_id) => {
+    const tid = Number(trans_id) || 0;
+    if (!tid) return 0;
+    try {
+        const [r] = await writePool.query(
+            `UPDATE transaction_cancel_requests SET status=2, processed_at=NOW() WHERE trans_id=? AND status=0`, [tid]);
+        return r?.affectedRows || 0;
+    } catch (e) {
+        logger.error(`[취소요청 닫기] 실패 trans_id=${tid}: ${e?.sqlMessage || e?.message || e}`);
+        return 0;
+    }
 };

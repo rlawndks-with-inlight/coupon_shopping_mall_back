@@ -4,7 +4,7 @@ import { checkLevel, checkDns, response, createHashedPassword } from "../utils.j
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
-import { 실제취소시각식 } from "../utils.js/cancel.js";
+import { 실제취소시각식, 부분환불합 } from "../utils.js/cancel.js";
 import { sendMail } from "../utils.js/mail.js";
 import { seedDefaultBoards } from "../utils.js/seed-boards.js";
 import { encForSave, decRow, decRows } from "../utils.js/pii.js";
@@ -723,6 +723,24 @@ const merchantApplicationCtrl = {
                 `SELECT COALESCE(SUM(amount),0) AS sales, COUNT(*) AS cnt FROM transactions WHERE brand_id=? AND trx_status>=5 AND is_cancel=0 AND is_cancel_trans=0 AND is_delete=0${dateWhere}`,
                 [brand.id, ...dateParams]
             ))[0][0];
+            // 부분취소로 돌려준 현금은 주문 금액(amount)에 그대로 남아 있다 — 상태별·총매출에서 뺀다(2026-11-20, 주문일 기준).
+            try {
+                const [부분주문] = await readPool.query(
+                    `SELECT id, trx_status FROM transactions WHERE brand_id=? AND is_cancel=0 AND is_cancel_trans=0 AND is_delete=0${dateWhere}
+                       AND EXISTS (SELECT 1 FROM transaction_cancels tc WHERE tc.trans_id=transactions.id)`,
+                    [brand.id, ...dateParams]);
+                if (부분주문.length) {
+                    const 합 = await 부분환불합(부분주문.map((r) => r.id));
+                    for (const r of 부분주문) {
+                        const 현금 = 합[r.id]?.cash || 0;
+                        if (!현금) continue;
+                        if (status[r.trx_status]) status[r.trx_status].amt = Math.max(0, status[r.trx_status].amt - 현금);
+                        if (Number(r.trx_status) >= 5 && totalRow) totalRow.sales = Math.max(0, (Number(totalRow.sales) || 0) - 현금);
+                    }
+                }
+            } catch (e) {
+                logger.error(`[가맹점 요약] 부분취소 차감 실패(차감 없이 냄): ${e?.sqlMessage || e?.message || e}`);
+            }
             // 최근 주문 30건
             const orders = (await readPool.query(
                 `SELECT id, buyer_name, amount, trx_status, is_cancel, trx_dt, trx_tm, created_at FROM transactions WHERE brand_id=?${dateWhere} ORDER BY id DESC LIMIT 30`,

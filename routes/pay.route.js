@@ -17,6 +17,10 @@ router
     .route('/cancel-partial/:id')
     .get(payCtrl.cancelState)
     .post(payCtrl.cancelPartial);
+// 부분취소 미리보기 — 실제 취소 없이 환불액·배송비 차감만 계산한다(2026-11-20)
+router
+    .route('/cancel-partial/:id/preview')
+    .post(payCtrl.cancelPreview);
 router
     .route('/payletter/callback')
     .post(payCtrl.payletterCallback);

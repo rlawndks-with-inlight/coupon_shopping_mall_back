@@ -5,7 +5,7 @@ import { checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, lowLevelExc
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
-import { 실제취소시각식 } from "../utils.js/cancel.js";
+import { 실제취소시각식, 부분환불합 } from "../utils.js/cancel.js";
 
 const table_name = 'transactions';
 
@@ -142,6 +142,28 @@ const dashboardCtrl = {
             trx_amounts_sql += ` GROUP BY DATE(created_at) `;
             let trx_amounts = await readPool.query(trx_amounts_sql, trx_amounts_params);
             trx_amounts = trx_amounts[0];
+            // 부분취소로 돌려준 현금을 주문일 매출에서 뺀다(2026-11-20). 주문 금액(amount)은 부분취소해도 그대로라
+            //   매출에 취소분이 남아 있었다. 전체취소와 같이 주문일 기준(정산 기준일 변경은 사장님 보류).
+            //   위 매출과 같은 조건(trx_status=5 등)을 다시 걸어 그 주문들의 환불만 모은다 — 취소 원장 테이블은 작다.
+            try {
+                const 부분sql = trx_amounts_sql.replace(` SELECT DATE(created_at) AS date, SUM(amount) AS total_amount FROM ${table_name} `, ` SELECT id, DATE(created_at) AS date FROM ${table_name} `)
+                    .replace(` GROUP BY DATE(created_at) `, ` AND EXISTS (SELECT 1 FROM transaction_cancels tc WHERE tc.trans_id=${table_name}.id) `);
+                const [부분주문] = await readPool.query(부분sql, trx_amounts_params);
+                if (부분주문.length) {
+                    const 합 = await 부분환불합(부분주문.map((r) => r.id));
+                    const 날짜별 = {};
+                    for (const r of 부분주문) {
+                        const 키 = String(r.date instanceof Date ? r.date.toISOString() : r.date).slice(0, 10);
+                        날짜별[키] = (날짜별[키] || 0) + (합[r.id]?.cash || 0);
+                    }
+                    for (const a of trx_amounts) {
+                        const 키 = String(a.date instanceof Date ? a.date.toISOString() : a.date).slice(0, 10);
+                        if (날짜별[키]) a.total_amount = Math.max(0, (Number(a.total_amount) || 0) - 날짜별[키]);
+                    }
+                }
+            } catch (e) {
+                logger.error(`[대시보드] 부분취소 매출 차감 실패(차감 없이 냄): ${e?.sqlMessage || e?.message || e}`);
+            }
             data['trx_amounts_sum'] = trx_amounts;
 
             //console.log(data)

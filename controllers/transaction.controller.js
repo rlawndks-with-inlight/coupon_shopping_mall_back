@@ -4,7 +4,7 @@ import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, update
 import { canWriteBrand, checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
 import { 일괄판정, 택배사목록, 최대줄 } from "../utils.js/invoice-bulk.js";
 import { logTrx, actorOf, listTrxLogs, 취소사유나누기, 취소사유바꾸기 } from "../utils.js/trx-log.js";
-import { 실제취소시각식 } from "../utils.js/cancel.js";
+import { 실제취소시각식, 요청대기식, 부분취소정보붙이기, 취소요청닫기 } from "../utils.js/cancel.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import XLSX from 'xlsx';
@@ -29,7 +29,7 @@ const 정상줄 = ` ${t_}.is_cancel=0 AND ${t_}.is_cancel_trans=0 `;
 export const 엑셀상태조건 = {
   waiting: `(${t_}.trx_status=0 AND ${정상줄} ${HIDE_ABANDONED_PENDING})`,   // 샵고 가맹점 「결제대기」(무통장·상품권 등 진짜 대기)
   0: `(${t_}.trx_status=0 AND ${정상줄})`,                                  // 그 밖 가맹점 「결제대기」(전부)
-  1: `(${t_}.trx_status=1 AND ${정상줄})`,                                  // 취소요청
+  1: `((${t_}.trx_status=1 OR ${요청대기식(t_)}) AND ${정상줄})`,          // 취소요청(일부 상품만 요청한 주문은 상태가 그대로라 요청 기록으로도 본다, 11/20)
   5: `(${t_}.trx_status=5 AND ${정상줄})`,
   10: `(${t_}.trx_status=10 AND ${정상줄})`,
   15: `(${t_}.trx_status=15 AND ${정상줄})`,
@@ -177,9 +177,16 @@ const transactionCtrl = {
                     // ⚠ is_cancel_trans=0 이 빠지면 '취소요청' 탭에서 영영 안 사라진다.
                     // 취소를 실행해도 trx_status 는 1 그대로고 is_cancel 도 0 이라
                     // 이 조건에 계속 맞는다. 실제로 취소된 6건 중 4건이 여기 박혀 있었다.
-                    sql += ` AND trx_status=1 AND is_cancel=0 AND is_cancel_trans=0 `;
+                    // 일부 상품만 요청한 주문은 상태가 결제완료 그대로다(2026-11-20) — 처리 안 한 요청 기록으로도 잡는다.
+                    sql += ` AND (trx_status=1 OR ${요청대기식(table_name)}) AND is_cancel=0 AND is_cancel_trans=0 `;
                 } else if (cancel_status == 2) {
-                    sql += ` AND is_cancel=1 `;
+                    // 취소완료 — 전체취소(취소 원장 줄) + 일부만 취소된 주문(원주문 줄, 2026-11-20 사장님: 취소완료 탭에 함께).
+                    //   cancel_kind: full(전체취소만) / partial(부분취소만) / 없음(둘 다). 부분취소 주문은 살아 있어 남은 상품을 더 취소할 수 있다.
+                    const 부분취소줄 = `(is_cancel=0 AND is_cancel_trans=0 AND EXISTS (SELECT 1 FROM transaction_cancels tc WHERE tc.trans_id=${table_name}.id))`;
+                    const 취소구분 = req.query?.cancel_kind;
+                    sql += 취소구분 === 'full' ? ` AND is_cancel=1 `
+                        : 취소구분 === 'partial' ? ` AND ${부분취소줄} `
+                        : ` AND (is_cancel=1 OR ${부분취소줄}) `;
                 } else if (cancel_status == 5) {
                     // 고객 '반품/환불조회' — 취소요청(trx_status=1) + 취소완료(is_cancel/is_cancel_trans) 전부.
                     // 프론트(shop demo-4·5·9 history.js)가 예전부터 5를 보내왔는데 여기 분기가 없었다.
@@ -189,7 +196,8 @@ const transactionCtrl = {
                     // 취소가 확정되면 원주문(is_cancel_trans=1)과 취소 원장 행(is_cancel=1)이
                     // 둘 다 생긴다. 조건에 둘 다 넣으면 손님에게 **같은 취소가 두 줄로** 보인다.
                     // 손님에게 뜻이 있는 것은 원주문 쪽이다(금액이 양수고 주문 정보가 그대로 있다).
-                    sql += ` AND (trx_status=1 OR is_cancel_trans=1) AND is_cancel=0 `;
+                    // 일부만 취소된 주문도 손님 반품/환불 조회에 보인다(2026-11-20)
+                    sql += ` AND (trx_status=1 OR is_cancel_trans=1 OR ${요청대기식(table_name)} OR EXISTS (SELECT 1 FROM transaction_cancels tc WHERE tc.trans_id=${table_name}.id)) AND is_cancel=0 `;
                 } else if (cancel_status == 0) {
                     sql += ` AND is_cancel=0 AND is_cancel_trans=0 `;
                 } else {
@@ -298,6 +306,9 @@ const transactionCtrl = {
                 for (var i = 0; i < data?.content.length; i++) {
                     data.content[i].orders = transactions_order_obj[data?.content[i]?.is_cancel == 1 ? data?.content[i]?.transaction_id : data?.content[i]?.id];
                 }
+                // 부분취소로 돌려준 금액·처리 안 한 취소요청(2026-11-20) — 목록 금액 칸 「환불·남은 금액」, 상품 줄 「취소요청」 표시, 엑셀.
+                //   주문 줄 수량은 그대로라(cancel_count 만 늘어난다) 목록만 보고 포장하면 취소한 상품까지 나갔다.
+                await 부분취소정보붙이기(data.content);
 
                 // 주문서 추가 입력항목(행사일·행사장소 등). 서식이 걸린 가맹점 주문에만 값이 있다.
                 // 전화·주소 유형은 암호화돼 있어 여기서 되돌린다.
@@ -350,7 +361,10 @@ const transactionCtrl = {
                 let od = await readPool.query(`SELECT * FROM transaction_orders WHERE trans_id=? ORDER BY id DESC`, [row?.id ?? 0]);
                 od = od[0];
                 for (var i = 0; i < od.length; i++) {
-                    od[i].groups = JSON.parse(od[i]?.groups ?? "[]");
+                    // 주문 줄의 옵션 스냅샷 칸은 order_groups 다. 예전엔 없는 칸(groups)을 읽어 늘 빈 배열이라
+                    //   비회원 조회 화면이 추가상품 줄을 알아보지 못했다(2026-11-20).
+                    try { od[i].groups = JSON.parse(od[i]?.order_groups ?? od[i]?.groups ?? "[]"); } catch (e) { od[i].groups = []; }
+                    delete od[i].order_groups;
                 }
                 row.orders = od;
                 return row;
@@ -381,6 +395,7 @@ const transactionCtrl = {
                 for (const row of list) {
                     await attachOrders(row);
                 }
+                await 부분취소정보붙이기(list);
                 decRows('transactions', list); // 읽기 복호화
                 return response(req, res, 100, "success", list) // 배열
             }
@@ -428,6 +443,7 @@ const transactionCtrl = {
                 }
             }
             await attachOrders(data);
+            await 부분취소정보붙이기([data]);
 
             decRow('transactions', data); // 읽기 복호화
             return response(req, res, 100, "success", data)
@@ -761,6 +777,35 @@ const transactionCtrl = {
             return response(req, res, -200, "서버 에러 발생", false);
         }
     },
+    // 손님 취소요청 거절(2026-11-20) — 처리 안 한 요청을 닫고, 주문이 「취소요청」 상태면 「결제완료」로 되돌린다.
+    //   일부 요청은 주문 상태가 그대로라 상태를 바꾸는 것만으로는 요청을 닫을 길이 없었다.
+    rejectCancelRequest: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies.token, 0, res);
+            if (!decode_user || Number(decode_user?.level) < 40) return lowLevelException(req, res);
+            const { id } = req.params;
+            const target = await loadOwnedRow(readPool, table_name, id, decode_user);
+            if (!target) return lowLevelException(req, res);
+            // loadOwnedRow 는 id·brand_id 만 준다
+            const [[현재]] = await readPool.query(`SELECT trx_status, is_cancel_trans FROM ${table_name} WHERE id=?`, [id]);
+            target.trx_status = 현재?.trx_status; target.is_cancel_trans = 현재?.is_cancel_trans;
+            const 닫음 = await 취소요청닫기(id);
+            let 되돌림 = false;
+            if (Number(target.trx_status) === 1 && Number(target.is_cancel_trans) !== 1) {
+                const [r] = await writePool.query(`UPDATE ${table_name} SET trx_status=5 WHERE id=? AND trx_status=1`, [id]);
+                되돌림 = r?.affectedRows > 0;
+            }
+            if (!닫음 && !되돌림) return response(req, res, -100, "처리할 취소요청이 없습니다.", false);
+            const 사유 = String(req.body?.reason ?? '').trim().slice(0, 200);
+            await logTrx({ trans_id: id, brand_id: target.brand_id, kind: 'status', from_status: Number(target.trx_status), to_status: 되돌림 ? 5 : Number(target.trx_status),
+                actor: actorOf(decode_user, 'admin'), note: `취소요청 거절${사유 ? ` — ${사유}` : ''}` });
+            return response(req, res, 100, "success", { closed: 닫음, reverted: 되돌림 });
+        } catch (err) {
+            console.log(err)
+            logger.error(errText(err))
+            return response(req, res, -200, "서버 에러 발생", false)
+        }
+    },
     cancelRequest: async (req, res, next) => {
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
@@ -823,6 +868,15 @@ const transactionCtrl = {
             // 적을 자리가 없어서 관리자는 주문 전체를 취소하거나 고객에게 따로 물어야 했다.
             // items 를 안 보내면 예전처럼 '주문 전체' 요청으로 본다(옛 화면 호환).
             const { items, reason } = req.body ?? {};
+            // 아직 처리 안 한 요청이 있으면 또 받지 않는다 — 일부 요청은 주문 상태가 그대로라 위 「이미 취소 요청된 주문」에 안 걸린다(2026-11-20).
+            try {
+                const [[대기]] = await readPool.query(`SELECT COUNT(*) AS n FROM transaction_cancel_requests WHERE trans_id=? AND status=0`, [id]);
+                if (Number(대기?.n) > 0) return response(req, res, -100, "이미 취소요청한 상품이 있습니다. 판매자가 확인한 뒤 다시 요청해 주세요.", false);
+            } catch (e) { /* 테이블이 없으면 예전처럼 진행 */ }
+            // 남은 수량 전부를 요청했나 — 전부면 주문을 「취소요청」으로, 일부면 상태는 그대로 두고 요청 기록만 남긴다(네이버처럼 상품 줄 단위 요청).
+            let 기록됨 = false;
+            let 요청합 = 0;
+            let 남은합 = 0;
             try {
                 const [lines] = await readPool.query(
                     `SELECT id, order_count, cancel_count FROM transaction_orders WHERE trans_id=?`, [id]);
@@ -835,6 +889,7 @@ const transactionCtrl = {
                     qty: Math.max(0, (Number(l.order_count) || 0) - (Number(l.cancel_count) || 0)),
                 })).filter((x) => x.qty > 0);
 
+                남은합 = lines.reduce((s, l) => s + Math.max(0, (Number(l.order_count) || 0) - (Number(l.cancel_count) || 0)), 0);
                 for (const t of 대상) {
                     const line = lines.find((l) => Number(l.id) === t.order_id);
                     if (!line) continue; // 이 주문에 없는 줄은 무시한다
@@ -845,19 +900,27 @@ const transactionCtrl = {
                         `INSERT INTO transaction_cancel_requests (trans_id, order_id, req_count, reason, user_id)
                          VALUES (?,?,?,?,?)`,
                         [id, t.order_id, qty, reason ?? null, decode_user?.id ?? null]);
+                    요청합 += qty;
+                    기록됨 = true;
                 }
             } catch (e) {
+                // 도중에 실패하면 일부만 남았을 수 있다 — 주문 전체 요청으로 본다(아래에서 상태를 취소요청으로)
+                기록됨 = false;
                 // 요청 내역을 못 남겨도 '취소요청' 자체는 접수되게 한다 —
                 // 여기서 막으면 고객은 취소를 아예 못 한다. 관리자가 물어보면 되는 문제다.
                 console.error('취소요청 상세 저장 실패(요청은 접수됨):', e?.sqlMessage || e?.message || e);
             }
 
-            let result = await updateQuery(`${table_name}`, {
-                trx_status: 1,
-            }, id)
-            await logTrx({ trans_id: id, brand_id: data?.brand_id, kind: 'cancel_request', from_status: data?.trx_status, to_status: 1,
-                actor: 회원본인 ? actorOf(decode_user, 'customer') : { type: 'customer', id: null, name: '비회원' },
-                note: req.body?.reason ? `취소요청 — ${String(req.body.reason).slice(0, 200)}` : '취소요청' });
+            // 일부 요청이고 기록이 남았을 때만 상태를 그대로 둔다. 기록을 못 남겼으면(테이블 오류 등) 예전처럼 주문 전체를 취소요청으로 —
+            //   그래야 가맹점이 요청을 놓치지 않는다.
+            const 일부요청 = 기록됨 && 요청합 > 0 && 요청합 < 남은합;
+            if (!일부요청) {
+                await updateQuery(`${table_name}`, { trx_status: 1 }, id);
+            }
+            const 손님 = 회원본인 ? actorOf(decode_user, 'customer') : { type: 'customer', id: null, name: '비회원' };
+            const 사유글 = req.body?.reason ? ` — ${String(req.body.reason).slice(0, 200)}` : '';
+            await logTrx({ trans_id: id, brand_id: data?.brand_id, kind: 'cancel_request', from_status: data?.trx_status, to_status: 일부요청 ? Number(data?.trx_status) : 1,
+                actor: 손님, note: (일부요청 ? `일부 취소요청(${요청합}개)` : '취소요청') + 사유글 });
             return response(req, res, 100, "success", {})
         } catch (err) {
             console.log(err)

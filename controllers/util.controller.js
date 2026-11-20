@@ -3,6 +3,7 @@ import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 import { checkDns, checkLevel, createHashedPassword, findChildIds, findParent, findParents, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
 import { logTrx, actorOf, statusText } from "../utils.js/trx-log.js";
+import { 취소요청닫기 } from "../utils.js/cancel.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import _ from "lodash";
@@ -229,6 +230,13 @@ const utilCtrl = {
             if (table === 'transactions' && column_name === 'trx_status' && result?.[0]?.affectedRows > 0 && 이전상태 !== Number(value)) {
                 await logTrx({ trans_id: id, brand_id: decode_dns?.id, kind: 'status', from_status: 이전상태, to_status: Number(value),
                     actor: actorOf(decode_user, 'admin'), note: `${statusText(이전상태)} → ${statusText(Number(value))}` });
+                // 손님 취소요청이 걸린 주문의 상태를 관리자가 직접 바꾸면(취소요청으로 바꾸는 경우 빼고) 그 요청은 거절로 닫는다(2026-11-20).
+                //   예전엔 요청 기록이 대기로 남아 다음에 취소 창을 열면 그 요청이 미리 채워졌다. 일부 요청은 상태가 그대로라 더 그랬다.
+                if (Number(value) !== 1) {
+                    const 닫음 = await 취소요청닫기(id);
+                    if (닫음 > 0) await logTrx({ trans_id: id, brand_id: decode_dns?.id, kind: 'status', from_status: Number(value), to_status: Number(value),
+                        actor: actorOf(decode_user, 'admin'), note: '상태를 바꿔 손님 취소요청을 닫음' });
+                }
             }
             // ── 캐시 무효화 ─────────────────────────────────────────────────
             // 이 핸들러는 raw UPDATE 만 하고 Redis 를 건드리지 않았다.
@@ -270,6 +278,11 @@ const utilCtrl = {
                 if (검사.이전상태 === value) { 건너뜀.push({ id, 사유: '이미 그 상태입니다.' }); continue; }
                 // 취소요청은 손님이 취소를 원한 주문 — 일괄로 배송을 진행시키지 않는다. 한 건씩 확인해서 바꾼다.
                 if (검사.이전상태 === 1) { 건너뜀.push({ id, 사유: '취소요청 주문은 한 건씩 확인해 바꿔 주세요.' }); continue; }
+                // 일부 상품만 취소요청한 주문(상태는 그대로)도 같다(2026-11-20)
+                try {
+                    const [[대기]] = await readPool.query(`SELECT COUNT(*) AS n FROM transaction_cancel_requests WHERE trans_id=? AND status=0`, [id]);
+                    if (Number(대기?.n) > 0) { 건너뜀.push({ id, 사유: '취소요청이 걸린 주문은 한 건씩 확인해 바꿔 주세요.' }); continue; }
+                } catch (e) { /* 요청 테이블이 없으면 예전처럼 */ }
                 const [r] = await writePool.query(
                     `UPDATE transactions SET trx_status=? WHERE id=? AND trx_status=? AND IFNULL(is_cancel,0)=0 ${Number(decode_user?.level) >= 50 ? '' : 'AND IFNULL(is_cancel_trans,0)=0'} ${scope.sql}`,
                     [value, id, 검사.이전상태, ...scope.params]);
