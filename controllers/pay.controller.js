@@ -442,11 +442,11 @@ async function 여러곳주문(req, res, ctx) {
   if (Number(seller_id) > 0) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 보내기를 할 수 없습니다.", false);
   if ((parseInt(use_point) || 0) > 0) return response(req, res, -100, "여러 곳으로 보내기에서는 포인트를 사용할 수 없습니다.", false);
   if (!(await hasColumn('transactions', 'pay_group'))) return response(req, res, -100, "여러 곳으로 보내기를 준비 중입니다. 잠시 후 다시 시도해 주세요.", false);
-  // 몰 설정에서 켠 몰만(설정관리 › 배송비설정 「여러 곳으로 보내기」)
+  // 기본은 켜짐(사장님 2026-11-20). 몰 설정에서 명시적으로 끈 몰(multi_ship=0)만 막는다(기본설정 › 배송비설정 탭).
   {
     const [[b]] = await readPool.query(`SELECT setting_obj FROM brands WHERE id=?`, [brand_id]);
     let s = {}; try { s = JSON.parse(b?.setting_obj ?? '{}'); } catch (e) { s = {}; }
-    if (!(Number(s?.multi_ship) === 1 || s?.multi_ship === true)) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 보내기를 할 수 없습니다.", false);
+    if ([0, '0', false, 'false'].includes(s?.multi_ship)) return response(req, res, -100, "이 쇼핑몰에서는 여러 곳으로 보내기를 할 수 없습니다.", false);
   }
 
   // 배송지마다 금액을 서버가 다시 계산한다(무료배송·제주 추가비 모두 배송지별)
