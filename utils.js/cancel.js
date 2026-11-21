@@ -208,6 +208,13 @@ export const getCancelState = async (trans_id) => {
         const [[규칙]] = await readPool.query(`SELECT ship_policy FROM transactions WHERE id=?`, [tid]);
         trx.ship_policy = 규칙?.ship_policy ?? null;
     }
+    // 결제 묶음 번호(여러 곳으로 배송, 2026-11-20) — PG 취소·포스페이 대조가 이 번호로 포스페이를 부른다(결제주문번호).
+    //   빠뜨리면 두 번째 배송지부터(G-2 …) 자기 주문번호로 포스페이를 불러 「1000 Not found」로 취소가 안 된다
+    //   (2026-11-21 포스몰 실주문: 첫 배송지는 ord_num = G 라 우연히 됐고, 둘째 배송지 5,000원이 막혔다).
+    if (await hasColumn('transactions', 'pay_group')) {
+        const [[묶음]] = await readPool.query(`SELECT pay_group FROM transactions WHERE id=?`, [tid]);
+        trx.pay_group = 묶음?.pay_group || null;
+    }
     const [rows] = await readPool.query(
         `SELECT * FROM transaction_orders WHERE trans_id=? ORDER BY id ASC`, [tid]);
     const lines = rows.map((l) => {
