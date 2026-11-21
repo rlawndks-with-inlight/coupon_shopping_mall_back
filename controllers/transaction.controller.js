@@ -146,6 +146,9 @@ const transactionCtrl = {
                         const 대기식 = String(k) === '1' ? 주문목록식(await 요청대기주문(decode_dns?.id), table_name) : null;
                         // 「결제실패/미완료」는 여러 곳 배송을 첫 주문 한 줄로 접는다(메뉴와 같은 조건)
                         if (String(k) === 'failed' && await hasColumn('transactions', 'pay_group')) return `(${엑셀상태조건[k]} AND ${묶음첫줄식(table_name)})`;
+                        // 「취소완료」에는 일부만 취소된 주문도 넣는다 — 관리자 취소완료 탭과 같게(2026-11-21). 있을 때만 id 목록으로(큰 몰도 느려지지 않게)
+                        const 부분식 = String(k) === 'cancelled' ? 주문목록식(await 부분취소주문(decode_dns?.id), table_name) : null;
+                        if (부분식) return `(${엑셀상태조건[k]} OR ${부분식})`;
                         return 대기식 ? `((${table_name}.trx_status=1 OR ${대기식}) AND ${정상줄})` : 엑셀상태조건[k];
                     }))).join(' OR ')}) `
                     : ` AND 1=0 `; // 아는 상태가 하나도 없으면 아무것도 주지 않는다(조건이 빠져 전부 나가면 안 된다)

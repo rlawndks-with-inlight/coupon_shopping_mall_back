@@ -2254,6 +2254,15 @@ async function 묶음정산(trx, txn, data) {
   const rows = await 묶음주문들(trx);
   if (!rows.length) return false;
   const 다됨 = () => rows.every((r) => Number(r.trx_status) >= 5 || Number(r.trx_status) === 1 || Number(r.is_cancel_trans) === 1);
+  // 카드번호는 거래조회 응답엔 없고 웹훅에만 온다. 복귀·confirm 이 먼저 확정했으면 비어 있으므로 뒤늦게 온 웹훅으로 한 번 채운다
+  //   (단건 settleForspayTransaction 과 같은 보강 — 묶음에는 빠져 있어 묶음 주문 카드번호가 전부 빈 칸이었다, 2026-11-22 점검)
+  const 카드번호 = String(data?.card_num ?? '').trim();
+  if (카드번호) {
+    const 빈줄 = rows.filter((r) => (Number(r.trx_status) >= 5 || Number(r.trx_status) === 1) && !r.card_num).map((r) => Number(r.id));
+    if (빈줄.length) {
+      await writePool.query(`UPDATE transactions SET card_num=? WHERE id IN (${빈줄.map(() => '?').join(',')}) AND (card_num IS NULL OR card_num='')`, [카드번호, ...빈줄]);
+    }
+  }
   if (다됨()) return true;
   if (txn?.status !== 'approved') return false;
   if (String(txn?.ord_num ?? '') !== String(trx.pay_group)) {

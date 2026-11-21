@@ -748,14 +748,15 @@ export const 주문목록식 = (ids, t = 'transactions') => {
 
 // 부분취소로 돌려준 **현금**(PG) — 주문별. 원장 환불액(cancel_amount)에는 포인트로 돌려준 몫도 들어 있어,
 //   결제금액(amount = Σ줄 − 사용 포인트, 현금)에서 빼려면 포인트 몫을 빼야 한다.
-//   ids: transactions.id 목록 → { [trans_id]: { cash, point } }
+//   ids: transactions.id 목록 → { [trans_id]: { cash, point, at } }  — at: 마지막 부분취소 시각(엑셀 「취소시간」, 2026-11-21)
 export const 부분환불합 = async (ids) => {
     const 목록 = [...new Set((ids ?? []).map((x) => Number(x) || 0).filter(Boolean))];
     const 결과 = {};
     if (!목록.length) return 결과;
     const ph = 목록.map(() => '?').join(',');
     const [환불] = await readPool.query(
-        `SELECT trans_id, SUM(cancel_amount) AS s FROM transaction_cancels WHERE trans_id IN (${ph}) GROUP BY trans_id`, 목록);
+        `SELECT trans_id, SUM(cancel_amount) AS s, DATE_FORMAT(MAX(created_at), '%Y-%m-%d %H:%i:%s') AS at
+           FROM transaction_cancels WHERE trans_id IN (${ph}) GROUP BY trans_id`, 목록);
     if (!환불.length) return 결과;
     const 있는 = 환불.map((r) => Number(r.trans_id));
     const [포인트] = await readPool.query(
@@ -763,7 +764,7 @@ export const 부분환불합 = async (ids) => {
     for (const r of 환불) {
         const p = Number(포인트.find((x) => Number(x.trans_id) === Number(r.trans_id))?.p) || 0;
         const 전체 = Number(r.s) || 0;
-        결과[r.trans_id] = { cash: Math.max(0, 전체 - p), point: Math.min(전체, p) };
+        결과[r.trans_id] = { cash: Math.max(0, 전체 - p), point: Math.min(전체, p), at: r.at ?? null };
     }
     return 결과;
 };
@@ -771,6 +772,7 @@ export const 부분환불합 = async (ids) => {
 // 목록 줄(transactions 행, .orders 붙은 것)에 부분취소·취소요청 정보를 싣는다. 실패해도 목록은 그대로 낸다.
 //   partial_refund       : 부분취소로 돌려준 현금(살아 있는 주문만)
 //   partial_refund_point : 그중 포인트로 돌려준 몫
+//   partial_cancelled_at : 마지막으로 부분취소한 시각(엑셀 「취소시간」 — 전체취소 시각 cancelled_at 은 목록이 따로 붙인다)
 //   cancel_request_count : 아직 처리 안 한 취소요청 수량 합(일부 요청이면 주문 상태는 그대로다)
 //   orders[].requested_count : 줄마다 요청 수량
 export const 부분취소정보붙이기 = async (rows) => {
@@ -781,7 +783,7 @@ export const 부분취소정보붙이기 = async (rows) => {
         const 합 = await 부분환불합(살아있는);
         for (const t of 줄들) {
             const h = 합[t.id];
-            if (h && Number(t.is_cancel_trans) !== 1) { t.partial_refund = h.cash; t.partial_refund_point = h.point; }
+            if (h && Number(t.is_cancel_trans) !== 1) { t.partial_refund = h.cash; t.partial_refund_point = h.point; t.partial_cancelled_at = h.at; }
         }
         const ids = 줄들.map((t) => Number(t.id)).filter(Boolean);
         const [요청] = await readPool.query(
