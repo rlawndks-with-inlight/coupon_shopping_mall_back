@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl, differenceTwoDate, generateRandomCode, returnMoment } from "../utils.js/function.js";
 import { insertQuery, updateQuery, hasColumn } from "../utils.js/query-util.js";
-import { createHashedPassword, checkLevel, makeUserToken, makeDnsToken, response, checkDns, lowLevelException } from "../utils.js/util.js";
+import { createHashedPassword, checkLevel, makeUserToken, makeDnsToken, response, checkDns, lowLevelException, 서버오류문구 } from "../utils.js/util.js";
 import { encForSave, decRow, decRows, blindIndex } from "../utils.js/pii.js";
 import { isShopgoBrand } from "../utils.js/is-shopgo.js";
 import { 탈퇴막는주문, 남은적립금, 막힘안내 } from "../utils.js/resign-guard.js";
@@ -231,7 +231,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -408,7 +408,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -461,7 +461,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -546,7 +546,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -612,7 +612,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -680,7 +680,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -719,7 +719,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -758,7 +758,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -826,7 +826,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -907,7 +907,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -969,7 +969,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -995,7 +995,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -1038,7 +1038,7 @@ const authCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }

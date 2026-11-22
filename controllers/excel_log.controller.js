@@ -1,5 +1,5 @@
 'use strict';
-import { canWriteBrand, checkDns, checkLevel, errText, lowLevelException, response } from "../utils.js/util.js";
+import { canWriteBrand, checkDns, checkLevel, errText, lowLevelException, response, 서버오류문구 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
@@ -59,7 +59,7 @@ const excelLogCtrl = {
         } catch (err) {
             // 기록을 못 남겨도 파일은 이미 받았다. 서버 로그에만 남기고 화면은 조용히 지나간다.
             logger.error('엑셀 내려받기 기록 실패: ' + errText(err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
     // 최상위 관리자만. scope=all 이면 모든 몰, 아니면 지금 보고 있는 몰.
@@ -91,7 +91,7 @@ const excelLogCtrl = {
             // 테이블이 아직 없으면(마이그레이션 전) 빈 목록 — 화면이 서버 에러로 깨지지 않게
             if (err?.code === 'ER_NO_SUCH_TABLE') return response(req, res, 100, "success", { content: [], total: 0, page: 1, page_size: 20 });
             logger.error(errText(err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 };

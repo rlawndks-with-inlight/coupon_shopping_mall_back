@@ -1,6 +1,6 @@
 'use strict';
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery, hasColumn } from "../utils.js/query-util.js";
-import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeObjByList, resolveWriteBrandId, response, settingFiles, settingLangs } from "../utils.js/util.js";
+import { categoryDepth, checkDns, checkLevel, findChildIds, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, makeObjByList, resolveWriteBrandId, response, settingFiles, settingLangs, 서버오류문구 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { lang_obj_columns } from "../utils.js/schedules/lang-process.js";
@@ -282,6 +282,30 @@ const 가격정리 = (obj) => {
 const cleanCharacters = (characters = []) => (Array.isArray(characters) ? characters : [])
     .filter((c) => c?.is_delete == 1
         || (String(c?.character_name ?? '').trim() !== '' && String(c?.character_value ?? '').trim() !== ''));
+
+// 상품 정보(특성) 글자 수 — DB 칸 product_characters.character_name VARCHAR(100), character_value VARCHAR(1000)
+//   (migrations/2026-11-22_character_value_1000.sql). 칸을 바꾸면 여기와 프론트 ProductOptionEditor 를 같이 바꿀 것.
+// 상품 줄을 만들기 **전에** 본다. 예전엔 상품 줄을 먼저 넣고 특성을 나중에 넣다가 칸 초과로 실패해서,
+// 저장이 실패했다고 떠도 상품은 생겨 있었다 — 다시 누를 때마다 같은 상품이 하나씩 늘었다(해담수산 2026-11-22).
+// MySQL VARCHAR 는 글자(코드포인트) 수로 센다 — JS 의 .length(UTF-16) 가 아니라 Array.from 으로 센다.
+const 특성최대 = { character_name: 100, character_value: 1000 };
+const 특성길이검사 = (characters = []) => {
+    let 줄 = 0;
+    for (const c of characters) {
+        if (c?.is_delete == 1) continue;
+        줄++;
+        const 항목 = String(c?.character_name ?? '').trim();
+        const 항목길이 = Array.from(String(c?.character_name ?? '')).length;
+        const 내용길이 = Array.from(String(c?.character_value ?? '')).length;
+        if (항목길이 > 특성최대.character_name) {
+            return `상품 정보 ${줄}번째 줄의 항목이 ${항목길이.toLocaleString()}자입니다. 항목은 ${특성최대.character_name}자까지 넣을 수 있습니다.`;
+        }
+        if (내용길이 > 특성최대.character_value) {
+            return `상품 정보 「${항목}」 내용이 ${내용길이.toLocaleString()}자입니다. 내용은 ${특성최대.character_value.toLocaleString()}자까지 넣을 수 있습니다.`;
+        }
+    }
+    return null;
+};
 
 const productCtrl = {
     list: async (req, res, next) => {
@@ -614,7 +638,7 @@ const productCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -901,13 +925,15 @@ const productCtrl = {
         } catch (err) {
             console.log(err);
             logger.error(JSON.stringify(err?.response?.data || err));
-            return response(req, res, -200, '서버 에러 발생', false);
+            return response(req, res, -200, 서버오류문구(err), false);
         } finally {
             // 필요 시 정리 작업
         }
     },
 
     create: async (req, res, next) => {
+        // 상품 줄을 넣은 뒤 옵션·특성·사진 단계에서 실패하면 반쪽 상품이 남는다 — catch 에서 지운다.
+        let 만든상품 = { id: 0, brand_id: 0 };
         try {
             const decode_user = checkLevel(req.cookies.token, 0, res);
             const decode_dns = checkDns(req.cookies.dns);
@@ -962,6 +988,10 @@ const productCtrl = {
             // 이름이 빈 옵션그룹·옵션·특성은 저장하지 않는다(cleanOptionGroups 주석 참고).
             groups = cleanOptionGroups(groups);
             characters = cleanCharacters(characters);
+            const 특성잘못 = 특성길이검사(characters);
+            if (특성잘못) {
+                return response(req, res, -100, 특성잘못, false);
+            }
             for (var i = 0; i < categoryDepth; i++) {
                 if (req.body[`category_id${i}`]) {
                     obj[`category_id${i}`] = req.body[`category_id${i}`];
@@ -1008,6 +1038,7 @@ const productCtrl = {
 
 
             const product_id = result?.insertId;
+            만든상품 = { id: product_id, brand_id };
 
             let user = await readPool.query(`SELECT level FROM users WHERE id=?`, [user_id]);
             user = user[0][0];
@@ -1121,7 +1152,22 @@ const productCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            // 저장 실패라고 알리면서 상품이 남아 있으면, 가맹점이 다시 누를 때마다 같은 상품이 하나씩 는다
+            // (2026-11-22 해담수산: 실패 7번에 상품 7개, 셋은 가맹점이 손으로 지웠고 넷은 상품 정보 없이 남았다).
+            // 삭제(remove)와 같은 방식으로 지운다 — is_delete 표시 + 목록 캐시 비우기.
+            if (만든상품.id > 0) {
+                try {
+                    await deleteQuery(`${table_name}`, { id: 만든상품.id });
+                    if (redisClient?.isOpen && 만든상품.brand_id > 0) {
+                        await deleteKeys(redisClient, `product:list:*`,
+                            (key) => key.includes(`"brandId":${만든상품.brand_id}`) || key.includes(`"brandId": ${만든상품.brand_id}`));
+                    }
+                    logger.error(`[product.create] 저장 중 실패 — 반쪽 상품 ${만든상품.id} 지움`);
+                } catch (e) {
+                    logger.error(`[product.create] 반쪽 상품 ${만든상품.id} 지우기 실패 :: ${e?.message || e}`);
+                }
+            }
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -1174,6 +1220,10 @@ const productCtrl = {
             // 이름이 빈 옵션그룹·옵션·특성은 저장하지 않는다(cleanOptionGroups 주석 참고).
             groups = cleanOptionGroups(groups);
             characters = cleanCharacters(characters);
+            const 특성잘못 = 특성길이검사(characters);
+            if (특성잘못) {
+                return response(req, res, -100, 특성잘못, false);
+            }
             let files = settingFiles(req.files);
             let obj = {
                 product_img,
@@ -1381,7 +1431,7 @@ const productCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err));
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -1434,7 +1484,7 @@ const productCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }

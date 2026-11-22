@@ -1,6 +1,6 @@
 'use strict';
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, settingFiles, 서버오류문구 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -44,7 +44,7 @@ const userWishCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -77,7 +77,7 @@ const userWishCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -97,7 +97,7 @@ const userWishCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -133,7 +133,7 @@ const userWishCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -157,7 +157,7 @@ const userWishCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -182,7 +182,7 @@ const userWishCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }

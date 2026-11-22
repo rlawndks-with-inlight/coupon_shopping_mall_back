@@ -1,6 +1,6 @@
 "use strict";
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { checkLevel, makeUserToken, makeDnsToken, response, 공개용브랜드 } from "../utils.js/util.js";
+import { checkLevel, makeUserToken, makeDnsToken, response, 공개용브랜드, 서버오류문구 } from "../utils.js/util.js";
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -251,7 +251,7 @@ const domainCtrl = {
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      return response(req, res, -200, "서버 에러 발생", false);
+      return response(req, res, -200, 서버오류문구(err), false);
     } finally {
     }
   },
@@ -278,7 +278,7 @@ const domainCtrl = {
       return response(req, res, 100, "success", 목록);
     } catch (err) {
       logger.error(JSON.stringify(err?.response?.data || err));
-      return response(req, res, -200, "서버 에러 발생", false);
+      return response(req, res, -200, 서버오류문구(err), false);
     }
   },
 };

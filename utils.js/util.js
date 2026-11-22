@@ -154,6 +154,33 @@ export const response = async (req, res, code, message, data) => { //응답 포�
         }
     }
 }
+// catch 블록의 실패 문구. 대부분은 예전처럼 '서버 에러 발생' 이지만,
+// DB 칸보다 긴 값(ER_DATA_TOO_LONG)은 서버 고장이 아니라 입력 문제라 고칠 곳을 알려 준다.
+//   2026-11-22 해담수산이 상품 정보 「원재료명 및 함량」을 100자 넘게 넣어 저장이 10번 실패했는데
+//   화면엔 '서버 에러 발생' 만 떠서 무엇을 줄여야 하는지 알 수 없었다.
+//
+// 문구는 고정 문장이다 — 손님 화면은 서버 문구를 번역 사전에서 통째로 찾는다(프론트 api.js serverMessage).
+// 칸 이름은 앞에 「…」 로 붙이고, 프론트가 「…」 와 뒤 문장을 따로 번역한다.
+// sqlMessage 에는 칸 이름만 있고 표 이름이 없다 — 어느 표의 칸이어도 맞는 이름만 둔다
+// (name·nickname·comment 처럼 표마다 뜻이 다른 칸은 이름 없이 안내한다).
+export const 너무긴입력문구 = '칸에 입력한 내용이 너무 깁니다. 줄여서 다시 저장해 주세요.';
+export const 너무긴입력문구_칸모름 = '입력한 내용 중 너무 긴 항목이 있습니다. 줄여서 다시 저장해 주세요.';
+const 긴칸이름 = {
+    product_name: '상품명', product_code: '상품코드', product_comment: '상품 간단한 설명',
+    character_name: '상품 정보 항목', character_value: '상품 정보',
+    group_name: '옵션 이름', option_name: '옵션 항목명',
+    property_group_name: '상품특성 그룹명', property_name: '상품특성명',
+    category_name: '카테고리명', category_en_name: '카테고리 영문명', category_group_name: '카테고리 그룹명',
+    post_category_title: '카테고리명', post_title: '제목', title: '제목', popup_title: '팝업 제목',
+    receiver: '받는 분', delivery_memo: '배송 메모', memo: '메모', addr: '주소', detail_addr: '상세주소',
+};
+export const 서버오류문구 = (err) => {
+    if (err?.code === 'ER_DATA_TOO_LONG') {
+        const 칸 = String(err?.sqlMessage ?? err?.message ?? '').match(/column '([^']+)'/)?.[1];
+        return 긴칸이름[칸] ? `「${긴칸이름[칸]}」 ${너무긴입력문구}` : 너무긴입력문구_칸모름;
+    }
+    return '서버 에러 발생';
+};
 // 예외를 사람이 읽을 수 있는 한 줄로 만든다.
 //
 // 예전엔 여기저기서 JSON.stringify(err?.response?.data || err) 를 썼다.

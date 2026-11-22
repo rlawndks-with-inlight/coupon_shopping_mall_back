@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, hasColumn, insertQuery, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, lowLevelException, response, 서버오류문구 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool, writePool } from "../config/db-pool.js";
@@ -257,7 +257,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", await withVoted(data));
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -311,7 +311,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", data);
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -340,7 +340,7 @@ const productReviewCtrl = {
             });
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -363,7 +363,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", shapePublic(row, reviewSettings(decode_dns), { manager: level >= 10 }));
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -431,7 +431,7 @@ const productReviewCtrl = {
         } catch (err) {
             if (err?.code === 'ER_DUP_ENTRY') return response(req, res, -100, "이미 후기를 작성한 주문입니다.", false);
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -478,7 +478,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -500,7 +500,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -524,7 +524,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", { enabled: true, lines: out, writable_count: out.filter((x) => x.state === 'writable').length });
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -590,7 +590,7 @@ const productReviewCtrl = {
         } catch (err) {
             if (err?.code === 'ER_DUP_ENTRY') return response(req, res, -100, "이미 후기를 작성한 주문입니다.", false);
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -628,7 +628,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -644,7 +644,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -702,7 +702,7 @@ const productReviewCtrl = {
             });
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -727,7 +727,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -749,7 +749,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -777,7 +777,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", {});
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 
@@ -811,7 +811,7 @@ const productReviewCtrl = {
             return response(req, res, 100, "success", { helpful_count: Number(n) || 0, voted: on });
         } catch (err) {
             logger.error(JSON.stringify(err?.response?.data || err?.message || err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
 };

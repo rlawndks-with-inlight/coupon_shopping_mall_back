@@ -15,6 +15,7 @@ import {
   lowLevelException,
   response,
   settingFiles,
+  서버오류문구,
 } from "../utils.js/util.js";
 import "dotenv/config";
 import logger from "../utils.js/winston/index.js";
@@ -61,7 +62,7 @@ const brandCtrl = {
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      return response(req, res, -200, "서버 에러 발생", false);
+      return response(req, res, -200, 서버오류문구(err), false);
     } finally {
 
     }
@@ -102,7 +103,7 @@ const brandCtrl = {
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      return response(req, res, -200, "서버 에러 발생", false);
+      return response(req, res, -200, 서버오류문구(err), false);
     } finally {
     }
   },
@@ -268,7 +269,7 @@ const brandCtrl = {
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      return response(req, res, -200, "서버 에러 발생", false);
+      return response(req, res, -200, 서버오류문구(err), false);
     }
   },
   update: async (req, res, next) => {
@@ -409,7 +410,7 @@ const brandCtrl = {
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      return response(req, res, -200, "서버 에러 발생", false);
+      return response(req, res, -200, 서버오류문구(err), false);
     } finally {
     }
   },
@@ -431,7 +432,7 @@ const brandCtrl = {
     } catch (err) {
       console.log(err);
       logger.error(JSON.stringify(err?.response?.data || err));
-      return response(req, res, -200, "서버 에러 발생", false);
+      return response(req, res, -200, 서버오류문구(err), false);
     } finally {
     }
   },
@@ -455,7 +456,7 @@ const brandCtrl = {
       return response(req, res, 100, "success", secret)
     } catch (err) {
       console.log(err)
-      return response(req, res, -200, "서버 에러 발생", false)
+      return response(req, res, -200, 서버오류문구(err), false)
     } finally {
 
     }
@@ -473,7 +474,7 @@ const brandCtrl = {
       } catch (err) {
         console.log(err);
         logger.error(JSON.stringify(err?.response?.data || err));
-        return response(req, res, -200, "서버 에러 발생", false);
+        return response(req, res, -200, 서버오류문구(err), false);
       } finally {
       }
     },
@@ -489,7 +490,7 @@ const brandCtrl = {
       } catch (err) {
         console.log(err);
         logger.error(JSON.stringify(err?.response?.data || err));
-        return response(req, res, -200, "서버 에러 발생", false);
+        return response(req, res, -200, 서버오류문구(err), false);
       } finally {
       }
     },

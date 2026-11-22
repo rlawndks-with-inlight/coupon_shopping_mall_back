@@ -1,7 +1,7 @@
 'use strict';
 import { checkIsManagerUrl, getMainObjType, returnMoment } from "../utils.js/function.js";
 import { deleteQuery, getMultipleQueryByWhen, getSelectQueryList, hasColumn } from "../utils.js/query-util.js";
-import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType } from "../utils.js/util.js";
+import { categoryDepth, checkDns, checkLevel, findChildIds, findParent, homeItemsSetting, homeItemsWithCategoriesSetting, isItemBrandIdSameDnsId, lowLevelException, makeObjByList, makeTree, makeUserToken, response, getPayType, 서버오류문구 } from "../utils.js/util.js";
 import { FORSPAY_METHODS } from "../utils.js/payments/forspay.js";
 import { 대분류읽기, 대분류지금확인, 결제수단목록 } from "../utils.js/payments/forspay-allowed.js";
 import 'dotenv/config';
@@ -454,7 +454,7 @@ const shopCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -473,7 +473,7 @@ const shopCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     main: async (req, res, next) => {
@@ -493,7 +493,7 @@ const shopCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -518,7 +518,7 @@ const shopCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -558,7 +558,7 @@ const shopCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -627,7 +627,7 @@ const shopCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -679,7 +679,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -709,7 +709,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -734,7 +734,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -790,7 +790,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -836,7 +836,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -882,7 +882,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -909,7 +909,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -934,7 +934,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -962,7 +962,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -995,7 +995,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }
@@ -1018,7 +1018,7 @@ const shopCtrl = {
             } catch (err) {
                 console.log(err)
                 logger.error(JSON.stringify(err?.response?.data || err))
-                return response(req, res, -200, "서버 에러 발생", false)
+                return response(req, res, -200, 서버오류문구(err), false)
             } finally {
 
             }

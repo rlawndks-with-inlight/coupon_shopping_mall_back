@@ -3,7 +3,7 @@ import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery } from "../utils.js/query-util.js";
 // lowLevelException 은 45행에서 이미 쓰고 있었는데 import 가 빠져 있었다.
 // try/catch 가 ReferenceError 를 삼켜 '서버 에러 발생'으로 보였을 뿐, 의도한 403 이 아니었다.
-import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles } from "../utils.js/util.js";
+import { checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, resolveWriteBrandId, response, settingFiles, 서버오류문구 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
@@ -36,7 +36,7 @@ const paymentModuleCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -62,7 +62,7 @@ const paymentModuleCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -111,7 +111,7 @@ const paymentModuleCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -157,7 +157,7 @@ const paymentModuleCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -184,7 +184,7 @@ const paymentModuleCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }

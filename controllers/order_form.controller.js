@@ -1,6 +1,6 @@
 'use strict';
 import { deleteQuery, insertQuery, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, lowLevelException, response, settingLangs } from "../utils.js/util.js";
+import { checkDns, checkLevel, lowLevelException, response, settingLangs, 서버오류문구 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { invalidateAllShopSettingCache } from "../utils.js/cache.js";
@@ -74,7 +74,7 @@ const orderFormCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     // 적용 대상으로 고를 수 있는 가맹점 목록(본사 산하만).
@@ -91,7 +91,7 @@ const orderFormCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     // 가맹점 상품등록 화면의 '서식 불러오기'용 — 본사가 만든 템플릿을 읽기만 한다.
@@ -113,7 +113,7 @@ const orderFormCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     create: async (req, res, next) => {
@@ -139,7 +139,7 @@ const orderFormCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     update: async (req, res, next) => {
@@ -166,7 +166,7 @@ const orderFormCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     remove: async (req, res, next) => {
@@ -191,7 +191,7 @@ const orderFormCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
 };

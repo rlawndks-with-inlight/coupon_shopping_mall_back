@@ -1,6 +1,6 @@
 'use strict';
 import { checkIsManagerUrl } from "../utils.js/function.js";
-import { checkLevel, makeUserToken, response, settingFiles } from "../utils.js/util.js";
+import { checkLevel, makeUserToken, response, settingFiles, 서버오류문구 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 const uploadCtrl = {
@@ -13,7 +13,7 @@ const uploadCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -26,7 +26,7 @@ const uploadCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }

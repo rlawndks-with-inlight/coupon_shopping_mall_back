@@ -2,7 +2,7 @@
 import { checkIsManagerUrl } from "../utils.js/function.js";
 import { deleteQuery, getSelectQueryList, insertQuery, selectQuerySimple, updateQuery, hasColumn } from "../utils.js/query-util.js";
 import { 묶음첫줄식, 묶음요약붙이기 } from "../utils.js/pay-group.js";
-import { canWriteBrand, checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText } from "../utils.js/util.js";
+import { canWriteBrand, checkDns, checkLevel, isItemBrandIdSameDnsId, loadOwnedRow, lowLevelException, response, settingFiles, errText, 서버오류문구 } from "../utils.js/util.js";
 import { 일괄판정, 택배사목록, 최대줄 } from "../utils.js/invoice-bulk.js";
 import { logTrx, actorOf, listTrxLogs, 취소사유나누기, 취소사유바꾸기 } from "../utils.js/trx-log.js";
 import { 실제취소시각식, 요청대기주문, 부분취소주문, 주문목록식, 부분취소정보붙이기, 취소요청닫기 } from "../utils.js/cancel.js";
@@ -361,7 +361,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -470,7 +470,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -497,7 +497,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -565,7 +565,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -590,7 +590,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     remove: async (req, res, next) => {
@@ -615,7 +615,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -637,7 +637,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     updateLogMemo: async (req, res, next) => {
@@ -657,7 +657,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     deleteLogMemo: async (req, res, next) => {
@@ -669,7 +669,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     // 취소 사유 고치기(가맹점 요청 2026-11-06 "취소 시 적은 사유를 고칠 수 있어야"). 취소 이력 줄의 사유 부분만 바꾸고,
@@ -705,7 +705,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", {})
         } catch (err) {
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     changeInvoice: async (req, res, next) => {
@@ -738,7 +738,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }
@@ -794,7 +794,7 @@ const transactionCtrl = {
             return response(req, res, 100, "success", { 결과, 요약: 판정.요약, 저장: 저장, 기본택배사 });
         } catch (err) {
             logger.error(errText(err));
-            return response(req, res, -200, "서버 에러 발생", false);
+            return response(req, res, -200, 서버오류문구(err), false);
         }
     },
     // 손님 취소요청 거절(2026-11-20) — 처리 안 한 요청을 닫고, 주문이 「취소요청」 상태면 「결제완료」로 되돌린다.
@@ -823,7 +823,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     cancelRequest: async (req, res, next) => {
@@ -945,7 +945,7 @@ const transactionCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(errText(err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         } finally {
 
         }

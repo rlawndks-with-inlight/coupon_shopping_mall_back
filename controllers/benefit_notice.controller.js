@@ -1,6 +1,6 @@
 'use strict';
 import { deleteQuery, insertQuery, updateQuery } from "../utils.js/query-util.js";
-import { checkDns, checkLevel, lowLevelException, response, settingLangs } from "../utils.js/util.js";
+import { checkDns, checkLevel, lowLevelException, response, settingLangs, 서버오류문구 } from "../utils.js/util.js";
 import 'dotenv/config';
 import logger from "../utils.js/winston/index.js";
 import { invalidateAllShopSettingCache } from "../utils.js/cache.js";
@@ -114,7 +114,7 @@ const benefitNoticeCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     get: async (req, res, next) => {
@@ -141,7 +141,7 @@ const benefitNoticeCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     create: async (req, res, next) => {
@@ -177,7 +177,7 @@ const benefitNoticeCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     update: async (req, res, next) => {
@@ -216,7 +216,7 @@ const benefitNoticeCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
     remove: async (req, res, next) => {
@@ -241,7 +241,7 @@ const benefitNoticeCtrl = {
         } catch (err) {
             console.log(err)
             logger.error(JSON.stringify(err?.response?.data || err))
-            return response(req, res, -200, "서버 에러 발생", false)
+            return response(req, res, -200, 서버오류문구(err), false)
         }
     },
 };
