@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { uploadMultipleFiles } from "./utils.js/api-util.js";
 import { initRedis } from "./config/redis-client.js";
+import { 쿠키없는조회 } from "./utils.js/dns-fallback.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -125,6 +126,10 @@ app.use('/files', (req, res, next) => {
 });
 app.use('/files', express.static(__dirname + '/files'));
 //app.post('/api/upload/multiple', upload.array('post_file'), uploadMultipleFiles);
+
+// 쿠키 없이 온 조회(GET)는 앞단이 알려 준 몰 주소로 몰을 정한다 — 네이버 검색 로봇 대응(utils.js/dns-fallback.js).
+// 아래 「몰 불일치」 검사보다 앞에 있어야 한다: 머리말로 고른 몰도 그 검사를 거친다.
+app.use('/api', 쿠키없는조회);
 
 // 로그인 계정의 몰과 접속 쿠키(dns)의 몰이 다르면 거절한다(본사 레벨 50 이상 제외).
 //

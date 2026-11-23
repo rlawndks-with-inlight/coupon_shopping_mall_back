@@ -6,6 +6,125 @@ import logger from "../utils.js/winston/index.js";
 import { readPool } from "../config/db-pool.js";
 import { redisClient } from "../config/redis-client.js"; // ← 추가
 
+// 주소(dns)로 몰을 찾는다 — 셀러몰(users.dns)이면 그 몰 브랜드에 셀러 로고·색·프레임을 얹는다.
+//   없거나 지운 몰이면 null. /api/domain 과 「쿠키 없는 조회」(utils.js/dns-fallback.js)가 같이 쓴다.
+//   돌려준 객체는 부르는 쪽이 고쳐 써도 된다(매번 새로 만든다).
+export const 몰찾기 = async (dns) => {
+  const columns = [
+    "id",
+    "name",
+    "dns",
+    "logo_img",
+    "dark_logo_img",
+    "favicon_img",
+    "og_img",
+    "og_description",
+    "theme_css",
+    "setting_obj",
+    "none_use_column_obj",
+    "seo_obj",
+    "is_main_dns",
+    "company_name",
+    "business_num",
+    "ceo_name",
+    "pvcy_rep_name",
+    "addr",
+    "phone_num",
+    "fax_num",
+    "establish_date",
+    "mail_order_num",
+    "show_basic_info",
+    "is_use_otp",
+    "is_closure",
+    "parent_id",
+    // 약관·개인정보처리방침의 시행일자로 쓴다. 관리자에서 손으로 넣는 establish_date 는
+    // 대부분 비어 있어 "이 약관은 (빈칸)부터 시행합니다" 로 나갔다 — 가맹점 등록일을 쓴다.
+    "created_at",
+  ];
+
+  const columns_seller = [
+    "id",
+    "brand_id",
+    "is_delete",
+    "user_name",
+    "name",
+    "nickname",
+    "parent_id",
+    "level",
+    "dns",
+    "oper_id",
+    "seller_trx_fee",
+    "seller_trx_fee_type",
+    "seller_point",
+    "seller_logo_img",
+    "seller_color",
+    "seller_demo_num",
+  ];
+
+  // 셀러몰인지 확인 (users.dns)
+  const [sellerRows] = await readPool.query(
+    `SELECT ${columns_seller.join()} FROM users WHERE dns = ? AND is_delete = 0`,
+    [dns]
+  );
+
+  let brandRows;
+
+  if (sellerRows.length === 0) {
+    // 일반 브랜드 도메인
+    [brandRows] = await readPool.query(
+      `SELECT ${columns.join()} FROM brands WHERE (dns = ? OR admin_dns = ?) AND is_delete = 0`, [dns, dns]
+      //`SELECT ${columns.join()} FROM brands WHERE id=74`
+    );
+    if (brandRows.length === 0) {
+      return null;
+    }
+  } else {
+    // 셀러몰 도메인
+    const sellerBrandId = sellerRows[0].brand_id;
+    [brandRows] = await readPool.query(
+      `SELECT ${columns.join()} FROM brands WHERE id = ? AND is_delete = 0`,
+      [sellerBrandId]
+    );
+    if (brandRows.length === 0) {
+      return null;
+    }
+  }
+
+  let brand = brandRows[0];
+
+  // JSON 파싱 (문자 발송 키 bonaeja_obj·주민등록번호 resident_num 은 공개 응답이라 아예 읽지 않는다 — util.js DNS_비공개칸)
+  brand.theme_css = JSON.parse(brand?.theme_css ?? "{}");
+  brand.setting_obj = JSON.parse(brand?.setting_obj ?? "{}");
+  brand.none_use_column_obj = JSON.parse(brand?.none_use_column_obj ?? "{}");
+  brand.seo_obj = JSON.parse(brand?.seo_obj ?? "{}");
+
+  // 셀러몰인 경우 셀러 정보 반영
+  if (sellerRows.length > 0) {
+    const seller = sellerRows[0];
+
+    brand.seller_id = seller.id;
+    brand.oper_id = seller.oper_id;
+    brand.seller_point = seller.seller_point;
+
+    if (seller.seller_logo_img) {
+      brand.logo_img = seller.seller_logo_img;
+    }
+    if (seller.seller_color) {
+      brand.theme_css.main_color = seller.seller_color;
+    }
+    if (seller.seller_demo_num) {
+      brand.setting_obj = brand.setting_obj || {};
+      if (seller.seller_demo_num == 1) {
+        brand.setting_obj.shop_demo_num = 4;
+      }
+      if (seller.seller_demo_num == 2) {
+        brand.setting_obj.shop_demo_num = 9;
+      }
+    }
+  }
+  return brand;
+};
+
 const domainCtrl = {
   get: async (req, res, next) => {
     try {
@@ -53,119 +172,10 @@ const domainCtrl = {
         }
       }
 
-      // ===== 기존 DB 로직 =====
-
-      const columns = [
-        "id",
-        "name",
-        "dns",
-        "logo_img",
-        "dark_logo_img",
-        "favicon_img",
-        "og_img",
-        "og_description",
-        "theme_css",
-        "setting_obj",
-        "none_use_column_obj",
-        "seo_obj",
-        "is_main_dns",
-        "company_name",
-        "business_num",
-        "ceo_name",
-        "pvcy_rep_name",
-        "addr",
-        "phone_num",
-        "fax_num",
-        "establish_date",
-        "mail_order_num",
-        "show_basic_info",
-        "is_use_otp",
-        "is_closure",
-        "parent_id",
-        // 약관·개인정보처리방침의 시행일자로 쓴다. 관리자에서 손으로 넣는 establish_date 는
-        // 대부분 비어 있어 "이 약관은 (빈칸)부터 시행합니다" 로 나갔다 — 가맹점 등록일을 쓴다.
-        "created_at",
-      ];
-
-      const columns_seller = [
-        "id",
-        "brand_id",
-        "is_delete",
-        "user_name",
-        "name",
-        "nickname",
-        "parent_id",
-        "level",
-        "dns",
-        "oper_id",
-        "seller_trx_fee",
-        "seller_trx_fee_type",
-        "seller_point",
-        "seller_logo_img",
-        "seller_color",
-        "seller_demo_num",
-      ];
-
-      // 셀러몰인지 확인 (users.dns)
-      const [sellerRows] = await readPool.query(
-        `SELECT ${columns_seller.join()} FROM users WHERE dns = ? AND is_delete = 0`,
-        [dns]
-      );
-
-      let brandRows;
-
-      if (sellerRows.length === 0) {
-        // 일반 브랜드 도메인
-        [brandRows] = await readPool.query(
-          `SELECT ${columns.join()} FROM brands WHERE (dns = ? OR admin_dns = ?) AND is_delete = 0`, [dns, dns]
-          //`SELECT ${columns.join()} FROM brands WHERE id=74`
-        );
-        if (brandRows.length === 0) {
-          return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
-        }
-      } else {
-        // 셀러몰 도메인
-        const sellerBrandId = sellerRows[0].brand_id;
-        [brandRows] = await readPool.query(
-          `SELECT ${columns.join()} FROM brands WHERE id = ? AND is_delete = 0`,
-          [sellerBrandId]
-        );
-        if (brandRows.length === 0) {
-          return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
-        }
-      }
-
-      let brand = brandRows[0];
-
-      // JSON 파싱 (문자 발송 키 bonaeja_obj·주민등록번호 resident_num 은 공개 응답이라 아예 읽지 않는다 — util.js DNS_비공개칸)
-      brand.theme_css = JSON.parse(brand?.theme_css ?? "{}");
-      brand.setting_obj = JSON.parse(brand?.setting_obj ?? "{}");
-      brand.none_use_column_obj = JSON.parse(brand?.none_use_column_obj ?? "{}");
-      brand.seo_obj = JSON.parse(brand?.seo_obj ?? "{}");
-
-      // 셀러몰인 경우 셀러 정보 반영
-      if (sellerRows.length > 0) {
-        const seller = sellerRows[0];
-
-        brand.seller_id = seller.id;
-        brand.oper_id = seller.oper_id;
-        brand.seller_point = seller.seller_point;
-
-        if (seller.seller_logo_img) {
-          brand.logo_img = seller.seller_logo_img;
-        }
-        if (seller.seller_color) {
-          brand.theme_css.main_color = seller.seller_color;
-        }
-        if (seller.seller_demo_num) {
-          brand.setting_obj = brand.setting_obj || {};
-          if (seller.seller_demo_num == 1) {
-            brand.setting_obj.shop_demo_num = 4;
-          }
-          if (seller.seller_demo_num == 2) {
-            brand.setting_obj.shop_demo_num = 9;
-          }
-        }
+      // ===== 몰 찾기(DB) =====
+      let brand = await 몰찾기(dns);
+      if (!brand) {
+        return response(req, res, -120, "등록된 도메인이 아닙니다.", false);
       }
 
       // ssr_content 및 product/post/seller에 따른 타이틀/OG 수정
