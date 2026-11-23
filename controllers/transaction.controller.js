@@ -63,7 +63,48 @@ const 고칠메모 = async (req, res, decode_user) => {
     return 메모;
 };
 
+// 주문 목록이 보는 범위 — 이 몰 주문, 영업자(15)는 자기 셀러들 것, 셀러몰 주소면 그 셀러 것, 셀러(10)는 자기 것.
+//   관리자 메뉴 건수(menuCounts)도 이걸 쓴다. 메뉴 숫자와 그 메뉴를 열었을 때 나오는 줄 수가 같아야 한다.
+const 주문범위 = (decode_user, decode_dns, type) => {
+    let sql = ` ${table_name}.brand_id=? `;
+    const params = [decode_dns?.id ?? 0];
+    if (type != 'user' && decode_user?.level == 15) { //영업자 관리자
+        sql += ` AND transactions.seller_id IN (SELECT id FROM users WHERE oper_id=?) `;
+        params.push(decode_user?.id);
+    }
+    if (decode_dns?.seller_id > 0) {
+        sql += ` AND transactions.seller_id=? `;
+        params.push(decode_dns?.seller_id);
+    } else if (decode_user?.level == 10 && type != 'user') {
+        sql += ` AND transactions.seller_id=? `;
+        params.push(decode_user?.id);
+    }
+    return { sql, params };
+};
+
 const transactionCtrl = {
+    // 관리자 왼쪽 메뉴 「결제완료」「취소요청」 옆 건수(해담수산 요청 2026-11-23).
+    //   그 상태에 남아 있는 주문 수다 — 다른 상태로 옮기면 줄어든다. 조건은 목록의 그 메뉴와 같다
+    //   (기간·검색 없이 연 목록의 「전체 n건」 과 같은 수). 화면이 1분마다 부르므로 COUNT 두 번만 한다.
+    menuCounts: async (req, res, next) => {
+        try {
+            const decode_user = checkLevel(req.cookies?.token, 10);
+            const decode_dns = checkDns(req.cookies.dns);
+            if (!decode_user || !decode_dns) return lowLevelException(req, res);
+            const 범위 = 주문범위(decode_user, decode_dns);
+            const 살아있는 = ` FROM ${table_name} WHERE ${범위.sql} AND ${table_name}.is_cancel=0 AND ${table_name}.is_cancel_trans=0 AND ${table_name}.is_delete=0 `;
+            // 「취소요청」 메뉴는 일부 상품만 요청한 주문(상태는 결제완료 그대로)도 넣는다 — 목록의 cancel_status=1 과 같게
+            const 대기식 = 주문목록식(await 요청대기주문(decode_dns?.id), table_name);
+            const [[[결제완료]], [[취소요청]]] = await Promise.all([
+                readPool.query(`SELECT COUNT(*) AS n ${살아있는} AND ${table_name}.trx_status=5`, 범위.params),
+                readPool.query(`SELECT COUNT(*) AS n ${살아있는} AND (${table_name}.trx_status=1${대기식 ? ` OR ${대기식}` : ''})`, 범위.params),
+            ]);
+            return response(req, res, 100, "success", { paid: Number(결제완료?.n) || 0, cancel_request: Number(취소요청?.n) || 0 });
+        } catch (err) {
+            logger.error(errText(err));
+            return response(req, res, -200, 서버오류문구(err), false);
+        }
+    },
     list: async (req, res, next) => {
         try {
 
@@ -90,23 +131,9 @@ const transactionCtrl = {
                 sql += `LEFT JOIN users AS sellers ON ${table_name}.seller_id=sellers.id `;
                 columns.push(`users.unipass AS user_unipass`);
             }
-            let params = [];
-            sql += ` WHERE ${table_name}.brand_id=? `;
-            params.push(decode_dns?.id ?? 0);
-            //console.log(decode_dns)
-
-            if (type != 'user' && decode_user?.level == 15) { //영업자 관리자
-                sql += ` AND transactions.seller_id IN (SELECT id FROM users WHERE oper_id=?) `;
-                params.push(decode_user?.id);
-            }
-
-            if (decode_dns?.seller_id > 0) {
-                sql += ` AND transactions.seller_id=? `;
-                params.push(decode_dns?.seller_id);
-            } else if (decode_user?.level == 10 && type != 'user') {
-                sql += ` AND transactions.seller_id=? `;
-                params.push(decode_user?.id);
-            }
+            const 범위 = 주문범위(decode_user, decode_dns, type);
+            sql += ` WHERE ${범위.sql} `;
+            let params = [...범위.params];
             // 본인 주문만 보이도록 스코프.
             // 기존 조건은 `(type=='user' && ...) || !decode_user || type=='user'` 였는데
             // !decode_user 는 위 21행 early return 때문에 도달 불가라 사실상 `type=='user'` 하나였다.
