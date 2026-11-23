@@ -50,6 +50,48 @@ const 옵션스냅샷 = (raw) => {
   catch (e) { return []; }
 };
 
+// ── 칸 길이(2026-11-23 점검) ─────────────────────────────────────────────
+// MySQL VARCHAR 는 글자(코드포인트) 수로 잰다 — JS length(UTF-16)가 아니라 Array.from 으로 센다.
+const 글자수 = (v) => Array.from(String(v ?? '')).length;
+
+// 주문명(transactions.item_name VARCHAR(150)). 프론트가 「첫 상품명 외 N건」으로 만들어 보낸다.
+// 상품명이 150자까지라 여러 줄을 담으면 칸을 넘어 주문 저장이 통째로 실패한다(아직 걸린 주문은 없음) —
+// 넘치면 상품명 쪽을 줄이고 「외 N건」은 남긴다.
+const 주문명최대 = 150;
+const 주문명맞추기 = (v) => {
+  if (v === undefined || v === null) return v;
+  const 글 = String(v).trim();
+  if (글자수(글) <= 주문명최대) return 글;
+  const m = 글.match(/^([\s\S]*?)( 외 \d+건)$/);
+  const 꼬리 = m ? m[2] : '';
+  const 앞 = m ? m[1] : 글;
+  return Array.from(앞).slice(0, 주문명최대 - 글자수(꼬리) - 1).join('') + '…' + 꼬리;
+};
+
+// 주문자·받는 분 이름은 암호화해 255자 칸에 넣는다 — 평문 153바이트(한글 약 51자)까지 들어간다.
+// 주문서는 50자까지만 받는다(maxLength). 화면을 거치지 않은 요청도 여기서 막는다.
+const 이름너무김 = (v) => Buffer.byteLength(String(v ?? ''), 'utf8') > 150;
+
+// 주문 줄의 옵션 스냅샷(transaction_orders.order_groups VARCHAR(12000), 2026-11-23 5000→12000).
+// 프론트가 고른 옵션 그룹을 등록 시각·설명·번역까지 통째로 보낸다 — 그룹이 아주 많으면 칸을 넘어 주문 저장이 실패한다.
+// 넘칠 때만 화면·취소·재고·후기가 안 쓰는 값부터 덜어 내고, 그래도 넘치면 번역(lang_obj)까지 뺀다.
+// id·group_name·option_name·option_price·addon_line 은 남긴다(재고 되돌리기·추가상품 판정·후기 옵션 문구가 쓴다).
+const 옵션칸최대 = 12000;
+const 안쓰는옵션값 = ['created_at', 'updated_at', 'is_delete', 'group_description', 'group_img', 'option_description', 'option_img', 'stock_qty', 'is_soldout', 'sort'];
+const 옵션칸맞추기 = (groups) => {
+  const 원본 = Array.isArray(groups) ? groups : [];
+  const 처음 = JSON.stringify(원본);
+  if (글자수(처음) <= 옵션칸최대) return 처음;
+  const 덜기 = (빼기) => 원본.map((g) => {
+    if (!g || typeof g !== 'object') return g;
+    const 그룹 = _.omit(g, 빼기);
+    return Array.isArray(g.options) ? { ...그룹, options: g.options.map((o) => (o && typeof o === 'object' ? _.omit(o, 빼기) : o)) } : 그룹;
+  });
+  const 둘째 = JSON.stringify(덜기(안쓰는옵션값));
+  if (글자수(둘째) <= 옵션칸최대) return 둘째;
+  return JSON.stringify(덜기([...안쓰는옵션값, 'lang_obj']));
+};
+
 // 결제가 실패로 끝나면 주문을 만들며 잡아둔 것들을 전부 놓아준다.
 //
 // 주문을 만들 때 두 가지를 미리 잡는다:
@@ -458,6 +500,7 @@ async function 여러곳주문(req, res, ctx) {
     const 우편 = String(d.zonecode ?? '').trim();
     const 주소 = String(d.addr ?? '').trim();
     if (!이름 || !전화 || !우편 || !주소) return response(req, res, -100, `${k + 1}번째 배송지의 받는 분·연락처·주소를 모두 입력해 주세요.`, false);
+    if (이름너무김(이름)) return response(req, res, -100, `${k + 1}번째 배송지의 받는 분 이름은 50자 이내로 입력해 주세요.`, false);
     const 줄 = (Array.isArray(d.products) ? d.products : []).filter((p) => (parseInt(p?.order_count) || 0) > 0);
     if (!줄.length) return response(req, res, -100, `${k + 1}번째 배송지에 보낼 상품이 없습니다.`, false);
     const expected = await recalcOrderAmount(brand_id, 줄, 0, 0, { zonecode: 우편, addr: 주소, country_code: 'KR', country_name: null });
@@ -543,7 +586,7 @@ async function 여러곳주문(req, res, ctx) {
       if (!tid) throw new Error('주문 저장 실패');
       만든.push(tid);
       const 행 = 줄.map((p) => [tid, parseInt(p?.id), p?.order_name, parseInt(p?.order_amount), parseInt(p?.order_count),
-        JSON.stringify(p?.groups ?? []), (isNaN(p?.delivery_fee) ? 0 : p?.delivery_fee), 0, 0, 0]);
+        옵션칸맞추기(p?.groups), (isNaN(p?.delivery_fee) ? 0 : p?.delivery_fee), 0, 0, 0]);
       await writePool.query(
         `INSERT INTO transaction_orders (trans_id, product_id, order_name, order_amount, order_count, order_groups, delivery_fee, seller_id, seller_trx_fee, seller_trx_fee_type) VALUES ?`,
         [행]);
@@ -774,6 +817,10 @@ const payCtrl = {
           return response(req, res, -100, "비회원 주문 비밀번호는 6~16자로 입력해 주세요.", false)
         }
       }
+      // 칸 길이(2026-11-23) — 주문명은 잘라 넣고, 이름은 50자를 넘으면 막는다(여러 곳으로 배송도 이 뒤에서 갈라진다)
+      item_name = 주문명맞추기(item_name);
+      if (이름너무김(buyer_name)) return response(req, res, -100, "주문하는 분 이름은 50자 이내로 입력해 주세요.", false);
+      if (이름너무김(receiver)) return response(req, res, -100, "받는 분 이름은 50자 이내로 입력해 주세요.", false);
       let files = settingFiles(req.files);
       if (seller_id > 0) {
         let seller_columns = [
@@ -1074,7 +1121,7 @@ const payCtrl = {
           products[i]?.order_name,
           parseInt(products[i]?.order_amount),
           parseInt(products[i]?.order_count),
-          JSON.stringify(products[i]?.groups ?? []),
+          옵션칸맞추기(products[i]?.groups),
           (isNaN(products[i]?.delivery_fee) ? 0 : products[i]?.delivery_fee),
           parseInt(products[i]?.seller_id ?? 0),
           parseFloat(matchedSeller?.seller_trx_fee ?? 0),

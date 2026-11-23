@@ -192,6 +192,7 @@ const 컬럼한계 = {
     TINYINT: 127,      // status · show_status · product_type · consignment_fee_type
     이름: 150,          // varchar(150) · NOT NULL
     코드: 50,           // varchar(50)
+    설명: 255,          // product_comment varchar(255) — 상품 간단한 설명(2026-11-23)
 };
 // 배송비·위탁수수료는 double 이라 DB 가 범위를 안 막는다 — 우리가 선을 긋는다.
 const 배송비상한 = 10000000;    // 1천만원. 도서산간 실비를 넉넉히 덮는다.
@@ -214,6 +215,7 @@ const 상품값검사 = (b = {}) => {
     if (!이름) return '상품명을 입력해 주세요.';
     if ([...이름].length > 컬럼한계.이름) return '상품명은 150자 이내로 입력해 주세요.';
     if ([...String(b.product_code ?? '')].length > 컬럼한계.코드) return '상품코드는 50자 이내로 입력해 주세요.';
+    if ([...String(b.product_comment ?? '')].length > 컬럼한계.설명) return '상품 간단한 설명은 255자 이내로 입력해 주세요.';
 
     // ② 금액 — 숫자가 아닌 것을 0 으로 접지 않는다
     for (const 키 of ['product_price', 'product_sale_price', 'delivery_fee', 'point_save', 'consignment_fee']) {
@@ -288,6 +290,30 @@ const cleanCharacters = (characters = []) => (Array.isArray(characters) ? charac
 // 상품 줄을 만들기 **전에** 본다. 예전엔 상품 줄을 먼저 넣고 특성을 나중에 넣다가 칸 초과로 실패해서,
 // 저장이 실패했다고 떠도 상품은 생겨 있었다 — 다시 누를 때마다 같은 상품이 하나씩 늘었다(해담수산 2026-11-22).
 // MySQL VARCHAR 는 글자(코드포인트) 수로 센다 — JS 의 .length(UTF-16) 가 아니라 Array.from 으로 센다.
+// 옵션 이름 글자 수 — product_option_groups.group_name VARCHAR(30), product_options.option_name VARCHAR(50)(2026-11-23).
+//   특성과 같은 까닭으로 상품 줄을 만들기 전에 본다. 저장은 앞뒤 공백까지 그대로라 공백 포함으로 센다.
+//   프론트 ProductOptionEditor 옵션최대 와 짝이다.
+const 옵션최대 = { group_name: 30, option_name: 50 };
+const 옵션길이검사 = (groups = []) => {
+    for (const g of (Array.isArray(groups) ? groups : [])) {
+        if (!g || g.is_delete == 1) continue;
+        const 그룹 = String(g.group_name ?? '');
+        const n = Array.from(그룹).length;
+        if (n > 옵션최대.group_name) {
+            return `옵션 「${그룹.trim()}」 이름이 ${n}자입니다. 옵션 이름은 ${옵션최대.group_name}자까지 넣을 수 있습니다.`;
+        }
+        for (const o of (Array.isArray(g.options) ? g.options : [])) {
+            if (!o || o.is_delete == 1) continue;
+            const 항목 = String(o.option_name ?? '');
+            const m = Array.from(항목).length;
+            if (m > 옵션최대.option_name) {
+                return `옵션 항목 「${항목.trim()}」 이름이 ${m}자입니다. 항목명은 ${옵션최대.option_name}자까지 넣을 수 있습니다.`;
+            }
+        }
+    }
+    return null;
+};
+
 const 특성최대 = { character_name: 100, character_value: 1000 };
 const 특성길이검사 = (characters = []) => {
     let 줄 = 0;
@@ -988,7 +1014,7 @@ const productCtrl = {
             // 이름이 빈 옵션그룹·옵션·특성은 저장하지 않는다(cleanOptionGroups 주석 참고).
             groups = cleanOptionGroups(groups);
             characters = cleanCharacters(characters);
-            const 특성잘못 = 특성길이검사(characters);
+            const 특성잘못 = 특성길이검사(characters) || 옵션길이검사(groups);
             if (특성잘못) {
                 return response(req, res, -100, 특성잘못, false);
             }
@@ -1220,7 +1246,7 @@ const productCtrl = {
             // 이름이 빈 옵션그룹·옵션·특성은 저장하지 않는다(cleanOptionGroups 주석 참고).
             groups = cleanOptionGroups(groups);
             characters = cleanCharacters(characters);
-            const 특성잘못 = 특성길이검사(characters);
+            const 특성잘못 = 특성길이검사(characters) || 옵션길이검사(groups);
             if (특성잘못) {
                 return response(req, res, -100, 특성잘못, false);
             }

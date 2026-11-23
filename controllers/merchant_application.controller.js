@@ -384,7 +384,9 @@ const createSubBrandFromApplication = async (app, adminId) => {
             user_pw: pw.hashedPassword,
             user_salt: pw.salt,
             name: app.manager_name || app.business_name || finalAdminId,
-            nickname: app.manager_name || app.business_name || finalAdminId,
+            // users.nickname 은 45자 — 담당자 이름(신청서 60자)·사업자명(120자)이 길면 별명만 자른다(2026-11-23).
+            // 예전엔 여기서 저장이 실패하면 브랜드만 만들어지고 관리자 계정이 없는 몰이 남았다.
+            nickname: Array.from(String(app.manager_name || app.business_name || finalAdminId)).slice(0, 45).join(''),
             level: 40,
             brand_id: newBrandId,
             phone_num: app.manager_phone || app.ceo_phone || '',

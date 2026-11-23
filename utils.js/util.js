@@ -173,6 +173,11 @@ const 긴칸이름 = {
     category_name: '카테고리명', category_en_name: '카테고리 영문명', category_group_name: '카테고리 그룹명',
     post_category_title: '카테고리명', post_title: '제목', title: '제목', popup_title: '팝업 제목',
     receiver: '받는 분', delivery_memo: '배송 메모', memo: '메모', addr: '주소', detail_addr: '상세주소',
+    // 2026-11-23 — 주문자 이름(암호화 칸)·입점 신청서·브랜드(기본설정) 칸
+    buyer_name: '주문하는 분', business_name: '사업자명', mail_order_number: '통신판매업신고번호', mail_order_num: '통신판매업신고번호',
+    company_name: '상호', ceo_name: '대표자', manager_name: '담당자', referrer_name: '영업추천인',
+    // label 은 주문서 입력항목 서식(order_form_fields)에서만 넘칠 수 있다 — 혜택 안내 라벨은 8자 검사가 먼저다
+    label: '항목 이름',
 };
 export const 서버오류문구 = (err) => {
     if (err?.code === 'ER_DATA_TOO_LONG') {
