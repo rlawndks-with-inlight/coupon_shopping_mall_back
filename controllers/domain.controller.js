@@ -184,7 +184,7 @@ const domainCtrl = {
       if (product_id > 0) {
         // 지운 상품·숨긴 상품(status 5)은 손님 화면에도 안 나오므로 제목·검색 정보도 만들지 않는다.
         const [productRows] = await readPool.query(
-          `SELECT id, product_name, product_img, product_comment, product_price, product_sale_price, status
+          `SELECT id, product_name, product_img, product_comment, product_description, product_price, product_sale_price, status
              FROM products WHERE id = ? AND brand_id = ? AND is_delete = 0 AND status != 5`,
           [product_id, brand.id]
         );
@@ -201,6 +201,9 @@ const domainCtrl = {
             name: product.product_name,
             img: product.product_img || '',
             comment: String(product.product_comment ?? '').trim(),
+            // 한 줄 소개가 빈 상품의 검색엔진용 설명(구글 「description 누락」, 2026-11-27) — 상세 설명에서 글자만 앞 300자.
+            //   상세 설명이 그림뿐이면 빈 값이고, 그때는 화면(_app)이 상품명·판매가·몰 이름으로 채운다.
+            detail_text: 글만(product.product_description).slice(0, 300),
             price: Number(product.product_sale_price) || 0,
             list_price: Number(product.product_price) || 0,
             status: Number(product.status),
@@ -319,6 +322,15 @@ const 상품목록붙이기 = async (brand) => {
   }
   return { ...brand, ssr_content: { ...(brand.ssr_content || {}), products: 목록 } };
 };
+
+// 상세 설명(편집기 HTML)에서 글자만 꺼낸다 — 태그·스크립트·스타일을 걷고 자주 쓰는 문자 참조만 되돌린다.
+export const 글만 = (html) => String(html ?? '')
+  .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+  .replace(/<br\s*\/?>|<\/(p|div|li|h[1-6])>/gi, ' ')
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/&nbsp;/gi, ' ').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/g, "'").replace(/&amp;/gi, '&')
+  .replace(/\s+/g, ' ')
+  .trim();
 
 // seo_obj 는 문자열(varchar)로 저장돼 있다. 깨진 값이면 막지 않은 것으로 본다(기본=노출).
 export const 검색막힘 = (seo_obj) => {
